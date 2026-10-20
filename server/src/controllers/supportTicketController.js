@@ -208,7 +208,12 @@ const createTicket = async (req, res) => {
       console.warn('Support desk delivery failed:', error.message);
     }
 
-    await notifyEmail(ticket, support.SUPPORT_EMAIL);
+    // Fan out to Telegram / WhatsApp / email (whichever is configured).
+    try {
+      await require('../support/notifier').notifyTicket(ticket);
+    } catch (notifyError) {
+      console.warn('Support notification failed:', notifyError.message);
+    }
 
     return res.status(201).json({
       ticketId: ticket.ticketId,

@@ -358,3 +358,14 @@ behaviour until AI is enabled. Health OK, /api/config 200, /api/chats 401.
 Guest socket namespace + signed guest tokens (live support replies),
 support-reply propagation, admin ticket badges, delete-my-ticket, Turnstile,
 Playwright suite, backend hardening.
+
+---
+
+## Multi-channel support notifications (2026-10-20)
+
+- server/src/support/notifier.js fans a new ticket out to every configured channel in parallel: Telegram (bot sendMessage), WhatsApp (Meta Cloud API) and email/Gmail (nodemailer). Missing env vars skip a channel; a failing channel never loses the ticket.
+- notifyTicket formats ticket ID, contact, page, browser, problem and last 12 transcript turns. Wired into POST /api/support/tickets.
+- notifySupportReply(ticket, text) is ready for reply propagation; channelStatus() reports what is configured.
+- Verified live: channels telegram=false whatsapp=false email=true; ticket CG-W6ZJE created and logged as notified via email; health OK.
+- Env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID | WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, WHATSAPP_TO, WHATSAPP_API_VERSION | SUPPORT_NOTIFY_EMAIL + SMTP_*.
+
