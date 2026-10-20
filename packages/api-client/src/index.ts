@@ -251,7 +251,7 @@ export class ApiClient {
   }
 
   enableTwoFactor(token: string) {
-    return this.request<{ message: string; twoFactorEnabled: boolean }>('/api/auth/2fa/enable', {
+    return this.request<{ message: string; twoFactorEnabled: boolean; recoveryCodes?: string[] }>('/api/auth/2fa/enable', {
       method: 'POST',
       body: { token },
     });

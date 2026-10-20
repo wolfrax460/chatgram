@@ -546,3 +546,16 @@ Recovery codes: 10 generated (format 4DE2Y-6BDLR); login with no code -> 401 TOT
 ### Not done
 The /web/admin UI for the KB editor and ticket inbox is NOT built - the APIs work but there are no screens yet.
 
+
+---
+
+## Dashboard inbox + KB editor + recovery codes UI (2026-10-20)
+
+- /web/admin rebuilt with three tabs: Overview (AI/model/channels), Tickets (inbox) and Knowledge base (editor).
+- Tickets: status filters (open/answered/closed/all), auto-refresh every 20s, list with ticket ID/status/reply count/summary/contact, detail pane with transcript and replies, and a reply box that posts as Chatgram Support (mirrors to the ticket, pushes to the guest socket, emails the user). Tickets without a chat show their contact instead.
+- Knowledge base: list of entries, expand to edit title/keywords/answer, add, delete, Save (PUT /admin/kb) and Reset to the bundled JSON.
+- Settings: email alerts now carry a note that turning them off means relying on this dashboard; escalations already create tickets so they appear in the Tickets tab.
+- 2FA: after enabling, the 10 backup codes are displayed in a warning card ('Save these backup codes now') with a dismiss button.
+
+Verified: build green; deployed bundle contains Knowledge base, admin/tickets, Send reply, Add entry, Save knowledge base, Save these backup codes, admin/kb. /, /web/, /web/admin all 200.
+

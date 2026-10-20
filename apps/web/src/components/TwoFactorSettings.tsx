@@ -18,6 +18,7 @@ export default function TwoFactorSettings() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [showSecret, setShowSecret] = useState(false);
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
 
   const statusQuery = useQuery({
     queryKey: ['2fa-status'],
@@ -50,7 +51,8 @@ export default function TwoFactorSettings() {
     setBusy(true);
     setError('');
     try {
-      await api.enableTwoFactor(code);
+      const result = await api.enableTwoFactor(code);
+      setBackupCodes((result as { recoveryCodes?: string[] }).recoveryCodes ?? []);
       setNotice('Two-factor authentication is on.');
       setStep('idle');
       setEnrollment(null);
@@ -120,6 +122,19 @@ export default function TwoFactorSettings() {
             Set up two-factor
           </button>
         </>
+      ) : null}
+
+      {backupCodes.length ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <p className="text-[12.5px] font-bold text-amber-900 dark:text-amber-300">Save these backup codes now</p>
+          <p className="mb-2 text-[11.5px] text-amber-800 dark:text-amber-200/90">
+            Each code works once if you lose your authenticator. They will not be shown again.
+          </p>
+          <div className="grid grid-cols-2 gap-1 font-mono text-[12.5px] text-amber-900 dark:text-amber-200">
+            {backupCodes.map((c) => <span key={c}>{c}</span>)}
+          </div>
+          <button type="button" onClick={() => setBackupCodes([])} className="btn-ghost mt-2 h-8 px-3 text-[11.5px]">I have saved them</button>
+        </div>
       ) : null}
 
       {step === 'idle' && enabled ? (

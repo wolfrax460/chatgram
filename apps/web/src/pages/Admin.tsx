@@ -1,70 +1,34 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Save, Zap, RefreshCw, LifeBuoy, ArrowLeft } from 'lucide-react';
+import { Loader2, Save, Zap, RefreshCw, LifeBuoy, ArrowLeft, BookOpen, Inbox, Settings2, Send, RotateCcw, Plus, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useSession } from '@chatgram/core';
 
 /**
  * Support control dashboard (/web/admin).
  *
- * Only reachable for the built-in support account: the API rejects everyone
- * else with 403, so the page simply shows an error for other users.
- * Everything here maps to fields the server applies to the running process
- * immediately — no redeploy needed to change the model or turn the agent off.
+ * Tabs: Overview (AI + channels), Tickets (inbox + reply), Knowledge base.
+ * Only the built-in support account can use it — the API returns 403 otherwise.
  */
 
-type Settings = {
-  configured?: boolean;
-  aiEnabled?: boolean | null;
-  aiProvider?: string | null;
-  aiBaseUrl?: string | null;
-  aiModel?: string | null;
-  aiApiKeySet?: boolean;
-  aiMaxTokens?: number | null;
-  agentEnabled?: boolean | null;
-  telegramEnabled?: boolean | null;
-  telegramChatId?: string | null;
-  emailEnabled?: boolean | null;
-  notifyEmail?: string | null;
-};
-
 type Preset = { id: string; label: string; provider: string; baseUrl: string; model: string };
-type Stats = { counts: { open: number; answered: number; closed: number; total: number }; recent: { ticketId: string; status: string; contact: string; summary: string; createdAt: string }[] };
+type TicketRow = { ticketId: string; status: string; contact: string; summary: string; createdAt: string; replyCount: number; lastReply: string; hasChat: boolean };
+type TicketDetail = { ticketId: string; status: string; contact: string; summary: string; createdAt: string; hasChat: boolean; transcript: { role: string; text: string }[]; replies: { text: string; at: string }[] };
+type KbEntry = { id: string; title: string; keywords: string[]; answer: string };
+
+const TABS = [
+  { id: 'overview', label: 'Overview', icon: Settings2 },
+  { id: 'tickets', label: 'Tickets', icon: Inbox },
+  { id: 'kb', label: 'Knowledge base', icon: BookOpen },
+] as const;
 
 export default function Admin() {
   const user = useSession((s) => s.user);
-  const qc = useQueryClient();
-  const [form, setForm] = useState<Partial<Settings>>({});
-  const [notice, setNotice] = useState('');
-  const [testResult, setTestResult] = useState('');
+  const [tab, setTab] = useState<'overview' | 'tickets' | 'kb'>('overview');
 
   const settingsQuery = useQuery({ queryKey: ['admin-settings'], queryFn: () => api.request<any>('/api/support/admin/settings'), retry: false });
-  const statsQuery = useQuery({ queryKey: ['admin-stats'], queryFn: () => api.request<Stats>('/api/support/admin/stats'), retry: false });
 
-  useEffect(() => {
-    if (settingsQuery.data?.settings) setForm(settingsQuery.data.settings);
-  }, [settingsQuery.data]);
-
-  const save = useMutation({
-    mutationFn: (patch: Partial<Settings>) => api.request<any>('/api/support/admin/settings', { method: 'PUT', body: patch }),
-    onSuccess: (data) => {
-      setNotice(data?.message ?? 'Saved.');
-      qc.invalidateQueries({ queryKey: ['admin-settings'] });
-    },
-    onError: (e: any) => setNotice(e?.message ?? 'Could not save.'),
-  });
-
-  const testAi = useMutation({
-    mutationFn: () => api.request<any>('/api/support/admin/test-ai', { method: 'POST' }),
-    onSuccess: (data) => setTestResult(data?.ok ? `AI replied: ${String(data.answer).slice(0, 120)}` : `AI failed: ${data?.error ?? 'no answer'}`),
-    onError: (e: any) => setTestResult(e?.message ?? 'Test failed'),
-  });
-
-  const status = settingsQuery.data?.status;
-  const presets: Preset[] = settingsQuery.data?.presets ?? [];
-  const forbidden = settingsQuery.isError;
-
-  if (forbidden) {
+  if (settingsQuery.isError) {
     return (
       <div className="mx-auto max-w-lg p-8 text-center">
         <LifeBuoy className="mx-auto mb-3 h-10 w-10 text-ink-400" />
@@ -76,32 +40,81 @@ export default function Admin() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
+    <div className="mx-auto max-w-5xl space-y-4 p-3 sm:p-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">Support control</h1>
-          <p className="text-[13px] text-ink-600 dark:text-ink-300">Changes apply immediately — no redeploy.</p>
+          <p className="text-[13px] text-ink-600 dark:text-ink-300">Everything your support account can manage.</p>
         </div>
         <a href="/web/" className="btn-ghost inline-flex h-9 items-center gap-1.5 px-3 text-[13px]"><ArrowLeft className="h-4 w-4" /> Chatgram</a>
       </header>
 
+      <nav className="flex gap-1 rounded-xl bg-ink-100 p-1 dark:bg-white/5">
+        {TABS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold transition ${
+                tab === t.id ? 'bg-white text-brand-700 shadow-sm dark:bg-ink-700 dark:text-brand-300' : 'text-ink-600 hover:text-ink-800 dark:text-ink-300'
+              }`}
+            >
+              <Icon className="h-4 w-4" /> <span className="hidden sm:inline">{t.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {tab === 'overview' ? <Overview settingsQuery={settingsQuery} /> : null}
+      {tab === 'tickets' ? <Tickets /> : null}
+      {tab === 'kb' ? <KbEditor /> : null}
+
+      <p className="pb-6 text-center text-[11.5px] text-ink-500">Signed in as {user?.displayName ?? 'support'}</p>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- overview */
+
+function Overview({ settingsQuery }: { settingsQuery: any }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<Record<string, any>>({});
+  const [notice, setNotice] = useState('');
+  const [testResult, setTestResult] = useState('');
+
+  useEffect(() => {
+    if (settingsQuery.data?.settings) setForm(settingsQuery.data.settings);
+  }, [settingsQuery.data]);
+
+  const save = useMutation({
+    mutationFn: (patch: any) => api.request<any>('/api/support/admin/settings', { method: 'PUT', body: patch }),
+    onSuccess: (d) => { setNotice(d?.message ?? 'Saved.'); qc.invalidateQueries({ queryKey: ['admin-settings'] }); },
+    onError: (e: any) => setNotice(e?.message ?? 'Could not save.'),
+  });
+  const testAi = useMutation({
+    mutationFn: () => api.request<any>('/api/support/admin/test-ai', { method: 'POST' }),
+    onSuccess: (d) => setTestResult(d?.ok ? `AI replied: ${String(d.answer).slice(0, 100)}` : `AI failed: ${d?.error ?? 'no answer'}`),
+    onError: (e: any) => setTestResult(e?.message ?? 'Test failed'),
+  });
+
+  const status = settingsQuery.data?.status;
+  const presets: Preset[] = settingsQuery.data?.presets ?? [];
+
+  return (
+    <div className="space-y-4">
       {notice ? <p className="rounded-xl bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">{notice}</p> : null}
 
-      {/* live status */}
       <section className="card p-4">
         <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-ink-500">Live status</h2>
         <div className="grid gap-2 text-[13px] sm:grid-cols-2">
           <p>AI: <strong>{status?.ai?.enabled ? 'enabled' : 'disabled'}</strong> {status?.ai?.model ? `· ${status.ai.model}` : ''}</p>
           <p>Telegram: <strong>{status?.channels?.telegram ? 'connected' : 'off'}</strong></p>
           <p>Email: <strong>{status?.channels?.email ? 'connected' : 'off'}</strong></p>
-          <p>Tickets: <strong>{statsQuery.data?.counts?.open ?? '—'} open</strong> · {statsQuery.data?.counts?.total ?? '—'} total</p>
         </div>
-        <button type="button" onClick={() => { settingsQuery.refetch(); statsQuery.refetch(); }} className="btn-ghost mt-3 inline-flex h-9 items-center gap-1.5 px-3 text-[13px]">
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </button>
       </section>
 
-      {/* model picker */}
       <section className="card p-4">
         <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-ink-500">AI model</h2>
         <div className="flex flex-wrap gap-2">
@@ -114,98 +127,229 @@ export default function Admin() {
                 onClick={() => setForm((f) => ({ ...f, aiProvider: p.provider, aiBaseUrl: p.baseUrl, aiModel: p.model, aiEnabled: true }))}
                 className={`rounded-xl border px-3 py-2 text-[13px] font-semibold ${active ? 'border-brand-600 bg-brand-50 text-brand-800 dark:bg-brand-500/15 dark:text-brand-200' : 'border-ink-200 text-ink-700 hover:border-brand-500 dark:border-white/15 dark:text-ink-200'}`}
               >
-                {p.label}
-                <span className="ml-1.5 font-normal text-ink-500">{p.model}</span>
+                {p.label}<span className="ml-1.5 font-normal text-ink-500">{p.model}</span>
               </button>
             );
           })}
         </div>
-
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block">
-            <span className="label">Model id</span>
-            <input className="field h-10" value={form.aiModel ?? ''} onChange={(e) => setForm((f) => ({ ...f, aiModel: e.target.value }))} placeholder="openai/gpt-oss-20b" />
-          </label>
-          <label className="block">
-            <span className="label">Base URL</span>
-            <input className="field h-10" value={form.aiBaseUrl ?? ''} onChange={(e) => setForm((f) => ({ ...f, aiBaseUrl: e.target.value }))} placeholder="https://api.groq.com/openai/v1" />
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="label">API key {form.aiApiKeySet ? '(a key is saved — leave blank to keep it)' : ''}</span>
-            <input className="field h-10" type="password" value={(form as any).aiApiKey ?? ''} onChange={(e) => setForm((f) => ({ ...f, aiApiKey: e.target.value }))} placeholder="paste a new key to replace" />
-          </label>
+          <label className="block"><span className="label">Model id</span><input className="field h-10" value={form.aiModel ?? ''} onChange={(e) => setForm((f) => ({ ...f, aiModel: e.target.value }))} /></label>
+          <label className="block"><span className="label">Base URL</span><input className="field h-10" value={form.aiBaseUrl ?? ''} onChange={(e) => setForm((f) => ({ ...f, aiBaseUrl: e.target.value }))} /></label>
+          <label className="block sm:col-span-2"><span className="label">API key {form.aiApiKeySet ? '(saved — leave blank to keep)' : ''}</span><input className="field h-10" type="password" value={form.aiApiKey ?? ''} onChange={(e) => setForm((f) => ({ ...f, aiApiKey: e.target.value }))} placeholder="paste to replace" /></label>
         </div>
-
         <div className="mt-3 flex flex-wrap items-center gap-4 text-[13px]">
-          <label className="flex items-center gap-2">
-            <input type="checkbox" className="h-4 w-4 rounded border-ink-300 text-brand-600" checked={Boolean(form.aiEnabled)} onChange={(e) => setForm((f) => ({ ...f, aiEnabled: e.target.checked }))} />
-            AI enabled
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" className="h-4 w-4 rounded border-ink-300 text-brand-600" checked={Boolean(form.agentEnabled)} onChange={(e) => setForm((f) => ({ ...f, agentEnabled: e.target.checked }))} />
-            Agent replies in-app
-          </label>
-          <button type="button" onClick={() => testAi.mutate()} className="btn-ghost inline-flex h-9 items-center gap-1.5 px-3">
-            {testAi.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />} Test AI
-          </button>
+          <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 rounded border-ink-300 text-brand-600" checked={Boolean(form.aiEnabled)} onChange={(e) => setForm((f) => ({ ...f, aiEnabled: e.target.checked }))} /> AI enabled</label>
+          <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 rounded border-ink-300 text-brand-600" checked={Boolean(form.agentEnabled)} onChange={(e) => setForm((f) => ({ ...f, agentEnabled: e.target.checked }))} /> Agent replies in-app</label>
+          <button type="button" onClick={() => testAi.mutate()} className="btn-ghost inline-flex h-9 items-center gap-1.5 px-3">{testAi.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />} Test AI</button>
         </div>
         {testResult ? <p className="mt-2 rounded-lg bg-ink-100 px-3 py-2 text-[12.5px] dark:bg-white/10">{testResult}</p> : null}
       </section>
 
-      {/* channels */}
       <section className="card p-4">
         <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-ink-500">Notifications</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block">
-            <span className="label">Telegram chat id</span>
-            <input className="field h-10" value={form.telegramChatId ?? ''} onChange={(e) => setForm((f) => ({ ...f, telegramChatId: e.target.value }))} placeholder="8304746608" />
-          </label>
-          <label className="block">
-            <span className="label">Notify email</span>
-            <input className="field h-10" value={form.notifyEmail ?? ''} onChange={(e) => setForm((f) => ({ ...f, notifyEmail: e.target.value }))} placeholder="you@gmail.com" />
-          </label>
+          <label className="block"><span className="label">Telegram chat id</span><input className="field h-10" value={form.telegramChatId ?? ''} onChange={(e) => setForm((f) => ({ ...f, telegramChatId: e.target.value }))} /></label>
+          <label className="block"><span className="label">Notify email</span><input className="field h-10" value={form.notifyEmail ?? ''} onChange={(e) => setForm((f) => ({ ...f, notifyEmail: e.target.value }))} /></label>
         </div>
         <div className="mt-3 flex flex-wrap gap-4 text-[13px]">
-          <label className="flex items-center gap-2">
-            <input type="checkbox" className="h-4 w-4 rounded border-ink-300 text-brand-600" checked={Boolean(form.telegramEnabled)} onChange={(e) => setForm((f) => ({ ...f, telegramEnabled: e.target.checked }))} />
-            Telegram alerts
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" className="h-4 w-4 rounded border-ink-300 text-brand-600" checked={Boolean(form.emailEnabled)} onChange={(e) => setForm((f) => ({ ...f, emailEnabled: e.target.checked }))} />
-            Email alerts
-          </label>
+          <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 rounded border-ink-300 text-brand-600" checked={Boolean(form.telegramEnabled)} onChange={(e) => setForm((f) => ({ ...f, telegramEnabled: e.target.checked }))} /> Telegram alerts</label>
+          <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 rounded border-ink-300 text-brand-600" checked={Boolean(form.emailEnabled)} onChange={(e) => setForm((f) => ({ ...f, emailEnabled: e.target.checked }))} /> Email alerts <span className="text-ink-500">(turn off to rely on this dashboard)</span></label>
         </div>
       </section>
 
       <div className="sticky bottom-3 flex justify-end">
-        <button
-          type="button"
-          onClick={() => save.mutate(form)}
-          disabled={save.isPending}
-          className="btn-primary inline-flex h-11 items-center gap-2 px-5 shadow-lg"
-        >
-          {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Save settings
+        <button type="button" onClick={() => save.mutate(form)} disabled={save.isPending} className="btn-primary inline-flex h-11 items-center gap-2 px-5 shadow-lg">
+          {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save settings
         </button>
       </div>
+    </div>
+  );
+}
 
-      {/* recent tickets */}
-      <section className="card p-4">
-        <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-ink-500">Recent tickets</h2>
-        <div className="space-y-1.5 text-[13px]">
-          {(statsQuery.data?.recent ?? []).map((t) => (
-            <div key={t.ticketId} className="flex flex-wrap items-center gap-2 border-b border-ink-100 pb-1.5 last:border-0 dark:border-white/5">
-              <span className="font-mono font-bold">{t.ticketId}</span>
-              <span className="rounded-full border border-ink-300 px-2 text-[11px] uppercase dark:border-white/20">{t.status}</span>
-              <span className="text-ink-500">{t.contact}</span>
-              <span className="truncate text-ink-600 dark:text-ink-300">{t.summary}</span>
-            </div>
+/* ----------------------------------------------------------------- tickets */
+
+function Tickets() {
+  const [filter, setFilter] = useState<'open' | 'answered' | 'closed' | 'all'>('open');
+  const [selected, setSelected] = useState<string | null>(null);
+  const [reply, setReply] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const listQuery = useQuery({
+    queryKey: ['admin-tickets', filter],
+    queryFn: () => api.request<{ tickets: TicketRow[] }>(`/api/support/admin/tickets${filter === 'all' ? '' : `?status=${filter}`}`),
+    refetchInterval: 20_000,
+  });
+
+  const detailQuery = useQuery({
+    queryKey: ['admin-ticket', selected],
+    queryFn: () => api.request<{ ticket: TicketDetail }>(`/api/support/admin/tickets/${selected}`),
+    enabled: Boolean(selected),
+  });
+
+  async function sendReply() {
+    if (!selected || !reply.trim()) return;
+    try {
+      await api.request(`/api/support/admin/tickets/${selected}/reply`, { method: 'POST', body: { text: reply.trim() } });
+      setReply('');
+      setNotice('Reply sent to the user.');
+      detailQuery.refetch();
+      listQuery.refetch();
+    } catch (e: any) {
+      setNotice(e?.message ?? 'Could not send the reply.');
+    }
+  }
+
+  const tickets = listQuery.data?.tickets ?? [];
+  const detail = detailQuery.data?.ticket;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        {(['open', 'answered', 'closed', 'all'] as const).map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => { setFilter(s); setSelected(null); }}
+            className={`rounded-full border px-3 py-1.5 text-[12.5px] font-semibold capitalize ${filter === s ? 'border-brand-600 bg-brand-50 text-brand-800 dark:bg-brand-500/15 dark:text-brand-200' : 'border-ink-200 text-ink-600 dark:border-white/15 dark:text-ink-300'}`}
+          >
+            {s}
+          </button>
+        ))}
+        <button type="button" onClick={() => listQuery.refetch()} className="btn-ghost ml-auto inline-flex h-8 items-center gap-1.5 px-2.5 text-[12px]"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>
+      </div>
+
+      {notice ? <p className="rounded-xl bg-ink-100 px-3 py-2 text-[12.5px] dark:bg-white/10">{notice}</p> : null}
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <section className="card max-h-[60vh] overflow-y-auto p-2">
+          {tickets.length === 0 ? <p className="p-3 text-[13px] text-ink-500">No tickets in this view.</p> : null}
+          {tickets.map((t) => (
+            <button
+              key={t.ticketId}
+              type="button"
+              onClick={() => { setSelected(t.ticketId); setNotice(''); }}
+              className={`mb-1 flex w-full flex-col gap-0.5 rounded-xl px-3 py-2 text-left transition ${selected === t.ticketId ? 'bg-brand-50 dark:bg-brand-500/15' : 'hover:bg-ink-100 dark:hover:bg-white/5'}`}
+            >
+              <span className="flex items-center gap-2 text-[13px]">
+                <span className="font-mono font-bold">{t.ticketId}</span>
+                <span className={`rounded-full px-1.5 text-[10.5px] font-bold uppercase ${t.status === 'open' ? 'bg-amber-500 text-white' : t.status === 'answered' ? 'bg-emerald-600 text-white' : 'bg-ink-400 text-white'}`}>{t.status}</span>
+                {t.replyCount ? <span className="text-[11px] text-ink-500">{t.replyCount} repl{t.replyCount === 1 ? 'y' : 'ies'}</span> : null}
+              </span>
+              <span className="truncate text-[12px] text-ink-600 dark:text-ink-300">{t.summary || '(no summary)'}</span>
+              <span className="truncate text-[11px] text-ink-500">{t.contact}</span>
+            </button>
           ))}
-          {!statsQuery.data?.recent?.length ? <p className="text-ink-500">No tickets yet.</p> : null}
-        </div>
-      </section>
+        </section>
 
-      <p className="pb-6 text-center text-[11.5px] text-ink-500">Signed in as {user?.displayName ?? 'support'}</p>
+        <section className="card max-h-[60vh] overflow-y-auto p-3">
+          {!selected ? <p className="p-2 text-[13px] text-ink-500">Pick a ticket to read it and reply.</p> : null}
+          {selected && detailQuery.isLoading ? <p className="p-2 text-[13px] text-ink-500">Loading…</p> : null}
+          {selected && detail ? (
+            <div className="space-y-3">
+              <div>
+                <p className="flex flex-wrap items-center gap-2 text-[13px] font-bold"><span className="font-mono">{detail.ticketId}</span><span className="rounded-full bg-ink-200 px-1.5 text-[10.5px] uppercase dark:bg-white/15">{detail.status}</span></p>
+                <p className="text-[12px] text-ink-500">{detail.contact} · {new Date(detail.createdAt).toLocaleString()}</p>
+              </div>
+              <p className="rounded-lg bg-ink-100 px-2.5 py-2 text-[12.5px] dark:bg-white/10">{detail.summary}</p>
+              {detail.transcript?.length ? (
+                <div className="space-y-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-ink-500">Conversation</p>
+                  {detail.transcript.map((m, i) => (
+                    <p key={i} className={`rounded-lg px-2 py-1 text-[12px] ${m.role === 'guest' ? 'bg-brand-50 dark:bg-brand-500/15' : 'bg-ink-100 dark:bg-white/10'}`}>
+                      <span className="font-semibold">{m.role === 'guest' ? 'User' : 'Assistant'}: </span>{m.text}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+              {detail.replies?.length ? (
+                <div className="space-y-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-ink-500">Replies sent</p>
+                  {detail.replies.map((r, i) => <p key={i} className="rounded-lg bg-emerald-50 px-2 py-1 text-[12px] dark:bg-emerald-500/10">{r.text}</p>)}
+                </div>
+              ) : null}
+              {detail.hasChat ? (
+                <div className="space-y-2 border-t border-ink-200 pt-2 dark:border-white/10">
+                  <textarea className="field min-h-[80px]" placeholder="Write a reply — the user gets it in the app…" value={reply} onChange={(e) => setReply(e.target.value)} />
+                  <button type="button" onClick={sendReply} disabled={!reply.trim()} className="btn-primary inline-flex h-10 items-center gap-2 px-4 text-[13px]"><Send className="h-4 w-4" /> Send reply</button>
+                </div>
+              ) : (
+                <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[12px] text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">This ticket has no in-app conversation — reply by email to {detail.contact}.</p>
+              )}
+            </div>
+          ) : null}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ knowledge base */
+
+function KbEditor() {
+  const qc = useQueryClient();
+  const [entries, setEntries] = useState<KbEntry[]>([]);
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const [notice, setNotice] = useState('');
+
+  const kbQuery = useQuery({ queryKey: ['admin-kb'], queryFn: () => api.request<{ entries: KbEntry[] }>('/api/support/admin/kb'), retry: false });
+
+  useEffect(() => {
+    if (kbQuery.data?.entries) setEntries(kbQuery.data.entries);
+  }, [kbQuery.data]);
+
+  const save = useMutation({
+    mutationFn: (next: KbEntry[]) => api.request<any>('/api/support/admin/kb', { method: 'PUT', body: { entries: next } }),
+    onSuccess: (d) => { setNotice(d?.message ?? 'Saved.'); qc.invalidateQueries({ queryKey: ['admin-kb'] }); },
+    onError: (e: any) => setNotice(e?.message ?? 'Could not save.'),
+  });
+
+  const reset = useMutation({
+    mutationFn: () => api.request<any>('/api/support/admin/kb/reset', { method: 'POST' }),
+    onSuccess: (d) => { setEntries(d?.entries ?? []); setNotice(d?.message ?? 'Restored.'); qc.invalidateQueries({ queryKey: ['admin-kb'] }); },
+  });
+
+  function update(index: number, patch: Partial<KbEntry>) {
+    setEntries((prev) => prev.map((e, i) => (i === index ? { ...e, ...patch } : e)));
+  }
+
+  const total = useMemo(() => entries.length, [entries]);
+
+  return (
+    <div className="space-y-3">
+      {notice ? <p className="rounded-xl bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">{notice}</p> : null}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-[13px] text-ink-600 dark:text-ink-300">{total} entries — the assistant answers only from these.</p>
+        <div className="ml-auto flex gap-2">
+          <button type="button" onClick={() => { setEntries((p) => [...p, { id: `entry-${Date.now()}`, title: '', keywords: [], answer: '' }]); setOpenIndex(entries.length); }} className="btn-ghost inline-flex h-9 items-center gap-1.5 px-3 text-[12.5px]"><Plus className="h-3.5 w-3.5" /> Add entry</button>
+          <button type="button" onClick={() => reset.mutate()} className="btn-ghost inline-flex h-9 items-center gap-1.5 px-3 text-[12.5px]" title="Restore the bundled knowledge base"><RotateCcw className="h-3.5 w-3.5" /> Reset</button>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        {entries.map((entry, index) => (
+          <div key={entry.id} className="card p-0">
+            <button type="button" onClick={() => setOpenIndex(openIndex === index ? null : index)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px]">
+              <span className="font-semibold">{entry.title || '(untitled)'}</span>
+              <span className="truncate text-[11.5px] text-ink-500">{entry.keywords?.slice(0, 4).join(', ')}</span>
+            </button>
+            {openIndex === index ? (
+              <div className="space-y-2 border-t border-ink-200 p-3 dark:border-white/10">
+                <label className="block"><span className="label">Title</span><input className="field h-10" value={entry.title} onChange={(e) => update(index, { title: e.target.value })} /></label>
+                <label className="block"><span className="label">Keywords (comma separated)</span><input className="field h-10" value={entry.keywords?.join(', ') ?? ''} onChange={(e) => update(index, { keywords: e.target.value.split(',').map((k) => k.trim()).filter(Boolean) })} /></label>
+                <label className="block"><span className="label">Answer</span><textarea className="field min-h-[110px]" value={entry.answer} onChange={(e) => update(index, { answer: e.target.value })} /></label>
+                <button type="button" onClick={() => setEntries((p) => p.filter((_, i) => i !== index))} className="btn-ghost inline-flex h-9 items-center gap-1.5 px-3 text-[12.5px] text-rose-600"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
+      <div className="sticky bottom-3 flex justify-end">
+        <button type="button" onClick={() => save.mutate(entries)} disabled={save.isPending} className="btn-primary inline-flex h-11 items-center gap-2 px-5 shadow-lg">
+          {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save knowledge base
+        </button>
+      </div>
     </div>
   );
 }
