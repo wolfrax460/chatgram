@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRealtime, useSession, type Message } from '@chatgram/core';
+import { usePrefs, useRealtime, useSession, type Message } from '@chatgram/core';
+import { playMessageSound, showNotification } from './notify';
 import { api, realtime, SOCKET_URL } from './api';
 
 /**
@@ -16,6 +17,8 @@ export function useRealtimeBridge(): void {
   const setConnected = useRealtime((s) => s.setConnected);
   const setOnline = useRealtime((s) => s.setOnline);
   const setTyping = useRealtime((s) => s.setTyping);
+  const notifications = usePrefs((s) => s.notifications);
+  const sounds = usePrefs((s) => s.sounds);
 
   const userId = user?.id;
 
@@ -46,6 +49,20 @@ export function useRealtimeBridge(): void {
             if (prev.some((m) => m.id === message.id)) return prev;
             return [...prev, message];
           });
+          // Notify only when the window is not in the foreground, so we never
+          // interrupt someone reading the conversation.
+          if (message.senderId !== userId) {
+            const focused = document.visibilityState === 'visible' && document.hasFocus();
+            if (!focused) {
+              if (sounds) playMessageSound();
+              if (notifications) {
+                const body =
+                  message.content ||
+                  (message.type === 'image' ? 'Photo' : message.type === 'video' ? 'Video' : message.type === 'audio' ? 'Voice message' : message.type === 'file' ? 'Document' : 'New message');
+                showNotification('New message', body, () => window.focus());
+              }
+            }
+          }
           // Unread counts and last-message previews come from the server.
           void queryClient.invalidateQueries({ queryKey: ['chats'] });
         },
@@ -77,5 +94,5 @@ export function useRealtimeBridge(): void {
       realtime.disconnect();
       setConnected(false);
     };
-  }, [userId, queryClient, setConnected, setOnline, setTyping]);
+  }, [userId, queryClient, setConnected, setOnline, setTyping, notifications, sounds]);
 }
