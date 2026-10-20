@@ -63,10 +63,30 @@ if (isProd && allowedOrigins.length === 0) {
  *  - **Development** → everything allowed, because Flutter web picks a random
  *    port on each run.
  */
+/**
+ * Origins that are safe to allow in every environment.
+ *
+ * `localhost`/`127.0.0.1` can only be reached from the developer's own machine,
+ * and `capacitor://localhost` / `https://localhost` are the fixed origins that
+ * Capacitor's Android and iOS shells serve from. Electron loads the hosted URL,
+ * so it needs no extra entry.
+ */
+function isAlwaysAllowedOrigin(origin) {
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  if (origin === 'capacitor://localhost') return true;
+  if (origin === 'https://localhost') return true;
+  return false;
+}
+
+function originAllowed(origin) {
+  if (allowedOrigins.includes(origin)) return true;
+  return isAlwaysAllowedOrigin(origin);
+}
+
 function corsOrigin(origin, callback) {
   if (!isProd) return callback(null, true);
   if (!origin) return callback(null, true); // native clients / same-origin
-  if (allowedOrigins.includes(origin)) return callback(null, true);
+  if (originAllowed(origin)) return callback(null, true);
 
   // Passing `false` omits the CORS headers (the browser reports it) without
   // turning a normal request into a 500.
@@ -76,7 +96,7 @@ function corsOrigin(origin, callback) {
 
 const io = socketIo(server, {
   cors: {
-    origin: isProd ? allowedOrigins : true,
+    origin: isProd ? (origin, cb) => cb(null, !origin || originAllowed(origin)) : true,
     methods: ['GET', 'POST'],
     credentials: true,
   },

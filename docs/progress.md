@@ -101,3 +101,21 @@ Monorepo scaffolded and **building green** (	sc --noEmit strict + vite).
 
 **Deviation:** npm workspaces used instead of pnpm (pnpm global install stalled;
 see decisions.md D9).
+
+---
+
+## Phase 1 progress (2026-10-20)
+
+- [x] **CORS origins** — extracted isAlwaysAllowedOrigin/originAllowed in
+      \server/src/server.js\. Always allows \http(s)://localhost:*\,
+      \http(s)://127.0.0.1:*\, \capacitor://localhost\, \https://localhost\;
+      the \CLIENT_URL\ allow-list still governs real domains. Socket.IO uses the
+      same predicate.
+      *This fixed a real user-facing bug: the React dev server on
+      \http://localhost:5174\ was rejected ("CORS: blocked origin"), so sign-in
+      failed locally.*
+      Verified: localhost:5174 → 204 + ACAO; capacitor://localhost → ACAO;
+      vercel origin still allowed; evil.example.com still gets no ACAO header.
+- [ ] \X-Client\ / \X-Client-Version\ logging
+- [ ] \GET /api/app/min-version\
+- [ ] Push token endpoints
