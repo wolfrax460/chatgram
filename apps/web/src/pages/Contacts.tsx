@@ -60,7 +60,7 @@ export default function Contacts({ onOpenChat }: { onOpenChat: (chatId: string) 
   const loading = searching ? search.isLoading : contacts.isLoading;
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-2xl flex-col">
+    <div className="mx-auto flex h-full w-full flex-col">
       <header className="border-b border-ink-200 px-4 py-3 dark:border-white/10">
         <div className="flex items-center gap-2">
           <BookUser className="h-5 w-5 text-brand-600" />

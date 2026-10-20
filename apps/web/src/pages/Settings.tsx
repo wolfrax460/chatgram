@@ -163,7 +163,7 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
   const permission = notificationPermission();
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-2xl flex-col overflow-y-auto">
+    <div className="no-scrollbar mx-auto flex h-full w-full flex-col overflow-y-auto">
       <header className="flex items-center gap-2 border-b border-ink-200 px-4 py-3 dark:border-white/10">
         <SettingsIcon className="h-5 w-5 text-brand-600" />
         <h2 className="font-bold">Settings</h2>

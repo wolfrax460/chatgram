@@ -295,7 +295,7 @@ export default function Status() {
     group.items.some((s) => !s.viewedBy.some((v) => v.id === meId));
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-2xl flex-col">
+    <div className="mx-auto flex h-full w-full flex-col">
       <header className="flex items-center gap-2 border-b border-ink-200 px-4 py-3 dark:border-white/10">
         <CircleDashed className="h-5 w-5 text-brand-600" />
         <h2 className="font-bold">Status</h2>
