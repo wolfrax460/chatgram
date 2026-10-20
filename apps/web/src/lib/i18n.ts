@@ -78,6 +78,11 @@ const en: Dict = {
   infoResetSent: 'If that account exists, a reset code is on its way.',
   infoResetDone: 'Password changed. You can sign in now.',
   infoVerify: 'Check your email or phone for the verification code.',
+  infoCodeSent: 'We sent a 6-digit code to your email. Enter it below to finish.',
+  infoCodeResent: 'A new code is on its way.',
+  infoVerifyEmail: 'Enter the 6-digit code we emailed you to verify your address.',
+  verifyAndCreate: 'Verify and create account',
+  errInvalidCode: 'That code is not valid or has expired.',
 };
 
 const rw: Dict = {

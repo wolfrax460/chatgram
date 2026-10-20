@@ -216,3 +216,20 @@ graph against the *uploaded* file, not only the local one.
   served as a real directory instead of a rewrite.
 - Deployed to production: landing + /docs + /web (new auth screens).
 - /app still 307 -> /web.
+
+---
+
+## Auth polish + desktop release (2026-10-20)
+
+- **Sign-up now verifies the email**: step 1 collects name / email / password /
+  confirm / terms, calls POST /api/auth/verification/send; step 2 takes the
+  6-digit code, calls /verification/check, then registers with the
+  erificationToken. Resend and back actions included.
+- **Auth pages no longer scroll**: the shell is h-full with
+  overflow-hidden, the logo is 64/80px (was 96) and spacing is tighter so
+  sign-in and sign-up fit a 720p viewport without a scrollbar.
+- **Windows installer published**: Chatgram Setup 1.0.0.exe (78 MB, NSIS x64,
+  unsigned) uploaded to
+  https://chatgram.duckdns.org/downloads/chatgram-windows-setup.exe and the
+  landing page's Windows card now points at it instead of the old zip.
+- Deployed: landing + /docs + /web.

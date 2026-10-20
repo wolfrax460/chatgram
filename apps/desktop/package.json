@@ -11,15 +11,17 @@
     "dist": "electron-builder --win nsis",
     "dist:dir": "electron-builder --win --dir"
   },
-  "dependencies": {
-    "electron-updater": "^6.3.9"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8"
+    "electron": "33.4.11",
+    "electron-builder": "^25.1.8",
+    "electron-updater": "^6.3.9"
   },
   "build": {
     "appId": "com.chatgram.desktop",
+    "electronVersion": "33.4.11",
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
     "productName": "Chatgram",
     "directories": {
       "output": "release",

@@ -85,20 +85,20 @@ function AuthShell({ children }: { children: React.ReactNode }) {
   const [langOpen, setLangOpen] = useState(false);
 
   return (
-    <div className="relative flex min-h-full flex-col items-center justify-center overflow-hidden px-4 py-8">
+    <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4 py-4">
       <div className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-brand-500/20 blur-3xl" />
         <div className="absolute -bottom-32 -right-16 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" />
       </div>
 
       <div className="w-full max-w-md animate-fade-up">
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
+        <div className="mb-4 flex flex-col items-center gap-1.5 text-center">
           <img
             src="/web/chatgram-icon.svg"
             alt="Chatgram"
             width={96}
             height={96}
-            className="h-24 w-24 drop-shadow-lg"
+            className="h-16 w-16 drop-shadow-lg sm:h-20 sm:w-20"
           />
           <div>
             <h1 className="text-2xl font-extrabold tracking-tight">Chatgram</h1>
@@ -108,7 +108,7 @@ function AuthShell({ children }: { children: React.ReactNode }) {
 
         {children}
 
-        <footer className="mt-6 space-y-3 text-center text-[12px] text-ink-600 dark:text-ink-300">
+        <footer className="mt-4 space-y-1.5 text-center text-[11.5px] text-ink-600 dark:text-ink-300">
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
             <a href="/docs#privacy" className="hover:underline">{t('privacy')}</a>
             <span aria-hidden>·</span>
@@ -238,7 +238,7 @@ function SignIn({ onGo }: { onGo: (screen: Screen) => void }) {
   }
 
   return (
-    <form onSubmit={submit} className="card space-y-1 p-6" noValidate>
+    <form onSubmit={submit} className="card space-y-1 p-5" noValidate>
       <h2 className="mb-4 text-lg font-bold">{t('welcomeBack')}</h2>
 
       {formError ? (
@@ -349,6 +349,7 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
   const setUser = useSession((s) => s.setUser);
   const { t } = useI18n();
 
+  const [step, setStep] = useState<'details' | 'verify'>('details');
   const [fullName, setFullName] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [country, setCountry] = useState<Country>(DEFAULT_COUNTRY);
@@ -356,13 +357,17 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [agree, setAgree] = useState(false);
+  const [code, setCode] = useState('');
+  const [verificationToken, setVerificationToken] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState('');
+  const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
 
   const showPhone = looksLikePhone(identifier);
 
-  async function submit(e: React.FormEvent) {
+  /** Step 1: validate, then ask the server to email a verification code. */
+  async function requestCode(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
 
@@ -374,107 +379,173 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
       next.identifier =
         resolved.error === 'phone' ? t('errInvalidPhone') : resolved.error === 'required' ? t('errRequired') : t('errInvalidEmail');
     }
-    // Phone sign-up is not live yet: email verification is required to create an
-    // account. Say so plainly rather than letting the server reject it.
-    if (resolved.kind === 'phone') {
-      setFormError(t('errPhoneSignupSoon'));
-    }
+    if (resolved.kind === 'phone') setFormError(t('errPhoneSignupSoon'));
+    else setFormError('');
+
     if (password.length < 8) next.password = t('errPasswordShort');
     if (password !== confirm) next.confirm = t('errPasswordMismatch');
     if (!agree) next.agree = t('errAgreeTerms');
 
     setErrors(next);
-    setFormError('');
-    if (Object.keys(next).length > 0) return;
+    if (Object.keys(next).length > 0 || resolved.kind === 'phone') return;
 
     setBusy(true);
     try {
+      await api.sendCode(resolved.value);
+      setInfo(t('infoCodeSent'));
+      setStep('verify');
+    } catch (error) {
+      const mapped = errorKey(error);
+      setFormError(t(mapped.key, mapped.retryAfter ? { seconds: mapped.retryAfter } : undefined));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Step 2: verify the code, then create the account. */
+  async function finish(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    if (!/^\d{6}$/.test(code.trim())) {
+      setErrors({ code: t('errRequired') });
+      return;
+    }
+    setErrors({});
+    setFormError('');
+    setBusy(true);
+    try {
+      let token = verificationToken;
+      if (!token) {
+        const checked = await api.checkCode(identifier.trim(), code.trim());
+        token = checked.verificationToken ?? '';
+        if (!token) throw new Error('That code was not accepted.');
+        setVerificationToken(token);
+      }
       const result = await api.register({
         displayName: fullName.trim(),
-        identifier: resolved.value,
+        identifier: identifier.trim(),
         password,
+        verificationToken: token,
       });
       setUser(result.user);
     } catch (error) {
       const mapped = errorKey(error);
-      // A duplicate account must not reveal that the account exists.
-      setFormError(t(mapped.key === 'errGeneric' ? 'errGeneric' : mapped.key));
+      setFormError(t(mapped.key === 'errWrongCredentials' ? 'errInvalidCode' : mapped.key));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <form onSubmit={submit} className="card space-y-1 p-6" noValidate>
-      <h2 className="mb-4 text-lg font-bold">{t('createYourAccount')}</h2>
+    <form onSubmit={step === 'details' ? requestCode : finish} className="card space-y-1 p-5" noValidate>
+      <h2 className="mb-3 text-lg font-bold">{t('createYourAccount')}</h2>
 
       {formError ? (
-        <div role="alert" className="mb-2 rounded-xl border border-rose-300/50 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+        <div role="alert" className="mb-2 rounded-xl border border-rose-300/50 bg-rose-50 px-3 py-2 text-[13px] text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
           {formError}
         </div>
       ) : null}
-
-      <Field id="signup-name" label={t('fullName')} error={errors.fullName}>
-        <div className="relative">
-          <User className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-ink-500" />
-          <input id="signup-name" className="field h-11 pl-9" autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+      {info && step === 'verify' ? (
+        <div role="status" className="mb-2 rounded-xl border border-emerald-300/50 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+          {info}
         </div>
-      </Field>
+      ) : null}
 
-      <Field id="signup-identifier" label={t('emailOrPhone')} error={errors.identifier} hint={t('emailOrPhoneHint')}>
-        <div className="flex gap-2">
-          {showPhone ? (
-            <select aria-label={t('countryCode')} value={country.code} onChange={(e) => setCountry(COUNTRIES.find((c) => c.code === e.target.value) ?? DEFAULT_COUNTRY)} className="field h-11 w-[92px] shrink-0 px-2">
-              {COUNTRIES.map((c) => (<option key={c.code} value={c.code}>{c.dial} {c.code}</option>))}
-            </select>
-          ) : null}
-          <div className="relative flex-1">
-            <Mail className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-ink-500" />
-            <input id="signup-identifier" type="text" inputMode={showPhone ? 'tel' : 'email'} autoComplete="username" className="field h-11 pl-9" value={identifier} onChange={(e) => setIdentifier(e.target.value)} aria-invalid={Boolean(errors.identifier)} />
-          </div>
-        </div>
-      </Field>
+      {step === 'details' ? (
+        <>
+          <Field id="signup-name" label={t('fullName')} error={errors.fullName}>
+            <div className="relative">
+              <User className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-ink-500" />
+              <input id="signup-name" className="field h-11 pl-9" autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+            </div>
+          </Field>
 
-      <Field id="signup-password" label={t('password')} error={errors.password}>
-        <div className="relative">
-          <input id="signup-password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" className="field h-11 pr-11" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={Boolean(errors.password)} />
-          <button type="button" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? t('hidePassword') : t('showPassword')} className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-ink-500 hover:bg-ink-200/60 dark:hover:bg-white/10">
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          <Field id="signup-identifier" label={t('emailOrPhone')} error={errors.identifier} hint={t('emailOrPhoneHint')}>
+            <div className="flex gap-2">
+              {showPhone ? (
+                <select aria-label={t('countryCode')} value={country.code} onChange={(e) => setCountry(COUNTRIES.find((c) => c.code === e.target.value) ?? DEFAULT_COUNTRY)} className="field h-11 w-[92px] shrink-0 px-2">
+                  {COUNTRIES.map((c) => (<option key={c.code} value={c.code}>{c.dial} {c.code}</option>))}
+                </select>
+              ) : null}
+              <div className="relative flex-1">
+                <Mail className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-ink-500" />
+                <input id="signup-identifier" type="text" inputMode={showPhone ? 'tel' : 'email'} autoComplete="username" className="field h-11 pl-9" value={identifier} onChange={(e) => setIdentifier(e.target.value)} aria-invalid={Boolean(errors.identifier)} />
+              </div>
+            </div>
+          </Field>
+
+          <Field id="signup-password" label={t('password')} error={errors.password}>
+            <div className="relative">
+              <input id="signup-password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" className="field h-11 pr-11" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={Boolean(errors.password)} />
+              <button type="button" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? t('hidePassword') : t('showPassword')} className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-ink-500 hover:bg-ink-200/60 dark:hover:bg-white/10">
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <StrengthMeter password={password} />
+          </Field>
+
+          <Field id="signup-confirm" label={t('confirmPassword')} error={errors.confirm}>
+            <input id="signup-confirm" type={showPassword ? 'text' : 'password'} autoComplete="new-password" className="field h-11" value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-invalid={Boolean(errors.confirm)} />
+          </Field>
+
+          <label className="mb-1 flex cursor-pointer items-start gap-2 text-[12.5px] text-ink-700 dark:text-ink-200">
+            <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-600" />
+            <span>
+              {t('agreeTerms')}{' '}
+              <a href="/docs#terms" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('terms')}</a>{' '}
+              /{' '}
+              <a href="/docs#privacy" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('privacy')}</a>
+            </span>
+          </label>
+          <p role="alert" aria-live="polite" className="min-h-[14px] text-[12px] font-medium text-rose-600 dark:text-rose-400">{errors.agree ?? ''}</p>
+
+          <button type="submit" className="btn-primary h-11 w-full" disabled={busy}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+            {busy ? t('sendCode') + '…' : t('sendCode')}
           </button>
-        </div>
-        <StrengthMeter password={password} />
-      </Field>
+        </>
+      ) : (
+        <>
+          <p className="mb-1 text-[13px] text-ink-600 dark:text-ink-300">
+            {t('infoVerifyEmail')}
+          </p>
+          <Field id="signup-code" label={t('verificationCode')} error={errors.code}>
+            <input id="signup-code" className="field h-11 text-center text-lg tracking-[.4em]" inputMode="numeric" maxLength={6} autoFocus value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" />
+          </Field>
 
-      <Field id="signup-confirm" label={t('confirmPassword')} error={errors.confirm}>
-        <input id="signup-confirm" type={showPassword ? 'text' : 'password'} autoComplete="new-password" className="field h-11" value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-invalid={Boolean(errors.confirm)} />
-      </Field>
+          <button type="submit" className="btn-primary h-11 w-full" disabled={busy}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            {busy ? t('signUp') + '…' : t('verifyAndCreate')}
+          </button>
 
-      <label className="mb-1 flex cursor-pointer items-start gap-2 text-[13px] text-ink-700 dark:text-ink-200">
-        <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-600" />
-        <span>
-          {t('agreeTerms')}{' '}
-          <a href="/docs#terms" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('terms')}</a>{' '}
-          /{' '}
-          <a href="/docs#privacy" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('privacy')}</a>
-        </span>
-      </label>
-      <p role="alert" aria-live="polite" className="min-h-[16px] text-[12px] font-medium text-rose-600 dark:text-rose-400">{errors.agree ?? ''}</p>
+          <div className="flex items-center justify-between pt-1 text-[12.5px]">
+            <button type="button" className="font-semibold text-ink-600 hover:underline dark:text-ink-300" onClick={() => { setStep('details'); setInfo(''); setFormError(''); }}>
+              ← {t('backToSignIn')}
+            </button>
+            <button
+              type="button"
+              className="font-semibold text-brand-700 hover:underline dark:text-brand-300"
+              onClick={async () => {
+                try { await api.sendCode(identifier.trim()); setInfo(t('infoCodeResent')); } catch { setInfo(''); }
+              }}
+            >
+              {t('resendCode')}
+            </button>
+          </div>
+        </>
+      )}
 
-      <button type="submit" className="btn-primary h-11 w-full" disabled={busy}>
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-        {busy ? t('signUp') + '…' : t('signUp')}
-      </button>
-
-      <p className="pt-3 text-center text-[13px] text-ink-600 dark:text-ink-300">
-        {t('alreadyHaveAccount')}{' '}
-        <button type="button" onClick={() => onGo('signin')} className="font-semibold text-brand-700 hover:underline dark:text-brand-300">
-          {t('signIn')}
-        </button>
-      </p>
+      {step === 'details' ? (
+        <p className="pt-2 text-center text-[12.5px] text-ink-600 dark:text-ink-300">
+          {t('alreadyHaveAccount')}{' '}
+          <button type="button" onClick={() => onGo('signin')} className="font-semibold text-brand-700 hover:underline dark:text-brand-300">
+            {t('signIn')}
+          </button>
+        </p>
+      ) : null}
     </form>
   );
 }
-
 /* ---------------------------------------------------------------- forgot */
 
 function Forgot({ onGo, onSent }: { onGo: (s: Screen) => void; onSent: (identifier: string) => void }) {
@@ -590,7 +661,7 @@ function Reset({
   }
 
   return (
-    <form onSubmit={submit} className="card space-y-1 p-6" noValidate>
+    <form onSubmit={submit} className="card space-y-1 p-5" noValidate>
       <button type="button" onClick={() => onGo('signin')} className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold text-ink-600 hover:underline dark:text-ink-300">
         <ArrowLeft className="h-3.5 w-3.5" /> {t('backToSignIn')}
       </button>
