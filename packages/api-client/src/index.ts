@@ -116,6 +116,23 @@ export class ApiClient {
     if (tokens.refreshToken) this.storage.set(REFRESH_KEY, tokens.refreshToken);
   }
 
+  /**
+   * Switch where tokens live.
+   * `true`  -> localStorage (survives browser restart) = "Keep me signed in"
+   * `false` -> sessionStorage (cleared when the tab closes)
+   */
+  setPersistent(persistent: boolean): void {
+    const from = persistent ? 'session' : 'local';
+    const to = persistent ? 'local' : 'session';
+    const source = from === 'local' ? localStorage : sessionStorage;
+    const target = to === 'local' ? localStorage : sessionStorage;
+    for (const key of [ACCESS_KEY, REFRESH_KEY]) {
+      const value = source.getItem(key);
+      if (value) target.setItem(key, value);
+      source.removeItem(key);
+    }
+  }
+
   clearTokens(): void {
     this.storage.remove(ACCESS_KEY);
     this.storage.remove(REFRESH_KEY);

@@ -23,68 +23,10 @@ import Groups from './pages/Groups';
 import Contacts from './pages/Contacts';
 import Status from './pages/Status';
 import SettingsPage from './pages/Settings';
+import Auth from './pages/Auth';
 import { dateSeparatorLabel, sameDay, statusOf } from './lib/ui';
 
 type Tab = 'chats' | 'status' | 'groups' | 'contacts' | 'settings';
-
-/* ------------------------------------------------------------------- login */
-
-function Login() {
-  const setUser = useSession((s) => s.setUser);
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      const result = await api.login(identifier.trim(), password);
-      setUser(result.user);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign in failed');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="grid min-h-full place-items-center px-4">
-      <div className="w-full max-w-sm animate-fade-up">
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-600 text-white">
-            <MessageCircle className="h-6 w-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-extrabold tracking-tight">Welcome to Chatgram</h1>
-            <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">Sign in to continue</p>
-          </div>
-        </div>
-
-        <form onSubmit={submit} className="card space-y-4 p-6">
-          {error ? (
-            <p className="rounded-xl border border-rose-300/50 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
-              {error}
-            </p>
-          ) : null}
-          <div>
-            <label className="label" htmlFor="id">Email or phone</label>
-            <input id="id" className="field" value={identifier} onChange={(e) => setIdentifier(e.target.value)} required />
-          </div>
-          <div>
-            <label className="label" htmlFor="pw">Password</label>
-            <input id="pw" type="password" className="field" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          </div>
-          <button type="submit" className="btn-primary w-full" disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
 
 /* --------------------------------------------------------------- favicon */
 
@@ -615,5 +557,5 @@ export default function App() {
     };
   }, [setUser, setReady]);
 
-  return user ? <Shell /> : <Login />;
+  return user ? <Shell /> : <Auth />;
 }

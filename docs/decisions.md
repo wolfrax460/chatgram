@@ -135,3 +135,32 @@ that need new endpoints rather than faking them.
 
 **No backend changes were made in this pass.** All backend work above is additive and can be
 done in Phase 1/3 without breaking the Flutter client.
+
+---
+
+## D11 - Auth screens rebuild: substitutions for deferred dependencies
+
+The six new packages (react-i18next, libphonenumber-js, playwright,
+express-rate-limit, speakeasy, qrcode) were deferred by the owner, so the auth
+UI was built with in-house equivalents. All are drop-in replaceable later.
+
+| Spec asked for | Implemented instead | Why / swap path |
+|---|---|---|
+| \chatgram-icon-v4.svg\ / \-animated.svg\ | \pps/web/public/chatgram-icon.svg\ (the mark already in the repo) | **The v4 SVGs were never supplied** (see blockers.md B6). Static only; no animated variant exists. |
+| react-i18next | \src/lib/i18n.ts\ - same \	('key')\ ergonomics, 4 locales (en/rw/fr/sw), persisted choice, browser-locale default | Swapping to react-i18next is mechanical: dictionaries and key names carry over. |
+| libphonenumber-js | \src/lib/phone.ts\ - email detection, E.164 normalisation, 12-country dial list, length validation | Replace \
+ormalizePhone\/\isValidPhone\ bodies with libphonenumber later; call sites unchanged. |
+| Playwright | not written | No local/staging backend exists (blocker B1), and testing against production was forbidden. |
+| express-rate-limit | not added | Backend deferred with the other packages. The UI already renders a 429 as "Too many attempts, try again in Ns" with a countdown. |
+| TOTP / Turnstile | not added | Deferred with the other packages. |
+
+### Behaviour notes
+- **Keep me signed in**: \ApiClient.setPersistent()\ moves tokens between
+  \localStorage\ (persistent) and \sessionStorage\ (tab-only). Default checked.
+- **Error mapping never enumerates accounts**: 400/401/404 all collapse to
+  "Wrong email or password"; network failures map to no-internet vs
+  server-unreachable; 429 parses a retry-after and counts down.
+- **Phone login** is client-side normalisation only; the backend still receives a
+  single \identifier\ string, so no API change was needed.
+- **Cold start**: a 4s timer switches on "Waking up the server..." while the
+  first request is in flight.

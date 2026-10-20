@@ -178,3 +178,26 @@ and nginx returned 502. A destructuring anchor in my patch did not match and I d
 not verify the deployed file before restarting. Caught within minutes, fixed by
 adding the imports, redeployed and verified healthy. Lesson: run the require
 graph against the *uploaded* file, not only the local one.
+
+---
+
+## Auth screens rebuild (2026-10-20)
+
+- [x] Sign in: 96px logo + tagline, email-or-phone with country picker (default
+      +250) and E.164 normalisation, password show/hide, Caps Lock warning,
+      autofocus, Enter submits, Keep-me-signed-in, inline validation, generic
+      credential errors, network/429/session-expired mapping with retry
+      countdown, 4s cold-start hint, loading spinner + no double submit.
+- [x] Sign up: full name, identifier with country logic, password + strength
+      meter + show/hide, confirm password, Terms/Privacy checkbox, safe
+      duplicate handling.
+- [x] Forgot: same confirmation whether or not the account exists.
+- [x] Reset: code + new password + confirm + strength, success message,
+      auto-redirect to sign in.
+- [x] Footer: Privacy / Terms / Help, version, VITE_WINDOWS_URL and
+      VITE_ANDROID_URL download links (hidden when unset), language selector.
+- [x] a11y: 44px+ inputs, visible focus rings, aria-invalid, aria-describedby,
+      role=alert + aria-live, full keyboard navigation, 390px layout.
+- [ ] Backend hardening (rate limit, hashed single-use reset tokens, TOTP,
+      Turnstile) - deferred with the six packages.
+- [ ] Playwright suite - blocked on a non-production backend.
