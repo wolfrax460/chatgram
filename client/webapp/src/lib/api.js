@@ -174,6 +174,13 @@ export const api = {
   checkCode: (target, code) =>
     request('/api/auth/verification/check', { method: 'POST', body: { target, code } }),
   config: () => request('/api/config'),
+  forgotPassword: (identifier) =>
+    request('/api/auth/forgot-password', { method: 'POST', body: { identifier } }),
+  resetPassword: (identifier, code, newPassword) =>
+    request('/api/auth/reset-password', {
+      method: 'POST',
+      body: { identifier, code, newPassword },
+    }),
 
   // --------------------------------------------------------------- chats
   chats: () => request('/api/chats'),

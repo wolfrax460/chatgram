@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { api, tokens, userCache } from './lib/api.js';
 import { connectSocket, disconnectSocket } from './lib/socket.js';
 import { useTheme } from './lib/theme.js';
+import { getPrefs } from './lib/prefs.js';
+import { playMessageSound, showNotification } from './lib/notify.js';
 import { Avatar, Icon, Logo, Spinner } from './components/ui.jsx';
 import Auth from './views/Auth.jsx';
 import Chats from './views/Chats.jsx';
@@ -60,6 +62,40 @@ export default function App() {
     };
   }, [user]);
 
+  // Notifications + sounds for incoming messages while the window is not in
+  // focus (the open chat view handles the in-focus case itself).
+  useEffect(() => {
+    if (!socket) return undefined;
+    const onNew = (msg) => {
+      const prefs = getPrefs();
+      if (!prefs.notifications && !prefs.sounds) return;
+
+      const senderId = msg.senderId?._id || msg.senderId;
+      if (senderId === (user?._id || user?.id)) return; // never notify for my own
+
+      const focused = document.visibilityState === 'visible' && document.hasFocus();
+      if (focused) return;
+
+      if (prefs.sounds) playMessageSound();
+      if (prefs.notifications) {
+        const name = msg.senderId?.displayName || 'New message';
+        const body =
+          msg.content ||
+          (msg.type === 'image'
+            ? 'Photo'
+            : msg.type === 'video'
+              ? 'Video'
+              : msg.type === 'audio'
+                ? 'Voice message'
+                : msg.type === 'file'
+                  ? 'Document'
+                  : 'New message');
+        showNotification(name, body, () => window.focus());
+      }
+    };
+    socket.on('message:new', onNew);
+    return () => socket.off('message:new', onNew);
+  }, [socket, user]);
   const handleSignedIn = useCallback((data) => {
     tokens.save(data.accessToken, data.refreshToken);
     const profile = data.user || userCache.get();

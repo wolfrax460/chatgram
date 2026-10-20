@@ -142,7 +142,6 @@ class AppTheme {
           fontWeight: FontWeight.w700,
           letterSpacing: -0.2,
         ),
-        shape: Border(bottom: BorderSide(color: hairline, width: 1)),
       ),
 
       floatingActionButtonTheme: FloatingActionButtonThemeData(

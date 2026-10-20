@@ -2,6 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api, API_BASE } from '../lib/api.js';
 import { Avatar, Icon, ErrorNote, Spinner } from '../components/ui.jsx';
 import { useTheme } from '../lib/theme.js';
+import { getPrefs, setPref } from '../lib/prefs.js';
+import {
+  notificationPermission,
+  requestNotificationPermission,
+  notificationsSupported,
+} from '../lib/notify.js';
 
 /** Profile, appearance, help & feedback, session. */
 export default function Settings({ user, onSignedOut, onOpenSupport, onUserUpdated }) {
@@ -17,6 +23,46 @@ export default function Settings({ user, onSignedOut, onOpenSupport, onUserUpdat
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
+
+  // ---- device preferences -------------------------------------------------
+  const [prefs, setPrefs] = useState(getPrefs);
+  const [permission, setPermission] = useState(notificationPermission());
+  const [showOnline, setShowOnline] = useState(true);
+
+  useEffect(() => {
+    api
+      .privacy()
+      .then((p) => setShowOnline(p?.showOnlineStatus !== false))
+      .catch(() => {});
+  }, []);
+
+  async function toggleNotifications() {
+    if (prefs.notifications) {
+      setPrefs(setPref('notifications', false));
+      return;
+    }
+    if (!notificationsSupported()) {
+      setError('This browser does not support notifications.');
+      return;
+    }
+    const result = await requestNotificationPermission();
+    setPermission(result);
+    if (result === 'granted') {
+      setPrefs(setPref('notifications', true));
+    } else if (result === 'denied') {
+      setError('Notifications are blocked. Allow them for this site in your browser settings.');
+    }
+  }
+
+  async function toggleOnline(next) {
+    setShowOnline(next);
+    try {
+      await api.updatePrivacy({ showOnlineStatus: next });
+    } catch (err) {
+      setShowOnline(!next);
+      setError(err.message);
+    }
+  }
 
   useEffect(() => {
     setProfile(user || {});
@@ -192,6 +238,37 @@ export default function Settings({ user, onSignedOut, onOpenSupport, onUserUpdat
         </div>
       </Section>
 
+      <Section title="Notifications">
+        <ToggleRow
+          icon={Icon.info}
+          title="Desktop notifications"
+          subtitle={
+            notificationPermission() === 'granted'
+              ? 'You will be notified about new messages'
+              : 'Get a popup when a message arrives'
+          }
+          value={prefs.notifications}
+          onChanged={toggleNotifications}
+        />
+        <ToggleRow
+          icon={Icon.mic}
+          title="Message sounds"
+          subtitle="Play a short chime for new messages"
+          value={prefs.sounds}
+          onChanged={() => setPrefs(setPref('sounds', !prefs.sounds))}
+        />
+      </Section>
+
+      <Section title="Privacy">
+        <ToggleRow
+          icon={Icon.user}
+          title="Show when I am online"
+          subtitle="Contacts can see your online status and last seen"
+          value={showOnline}
+          onChanged={toggleOnline}
+        />
+      </Section>
+
       <Section title="Support">
         <Row
           icon={Icon.chat}
@@ -253,5 +330,35 @@ function Row({ icon: I, title, subtitle, onClick, busy }) {
       </span>
       {busy ? <span className="text-xs text-ink-400">…</span> : null}
     </Tag>
+  );
+}
+
+/** Labelled switch row used by the settings sections. */
+function ToggleRow({ icon: I, title, subtitle, value, onChanged }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChanged(!value)}
+      className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-ink-100/70 dark:hover:bg-white/[.04]"
+    >
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-600/10 text-brand-600 dark:text-brand-300">
+        <I className="h-5 w-5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-semibold">{title}</span>
+        <span className="block truncate text-[13px] text-ink-500 dark:text-ink-400">{subtitle}</span>
+      </span>
+      <span
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+          value ? 'bg-brand-600' : 'bg-ink-300 dark:bg-white/15'
+        }`}
+      >
+        <span
+          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+            value ? 'translate-x-[22px]' : 'translate-x-0.5'
+          }`}
+        />
+      </span>
+    </button>
   );
 }
