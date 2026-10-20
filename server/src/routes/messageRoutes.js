@@ -9,6 +9,8 @@ const {
   markAsRead,
   markChatAsRead,
   uploadMedia,
+  deleteMessage,
+  reactToMessage,
 } = require('../controllers/messageController');
 const upload = require('../utils/upload');
 
@@ -26,6 +28,12 @@ router.get('/', getMessages);
 
 // Mark every unread message in a chat as read
 router.post('/chat/:chatId/read', markChatAsRead);
+
+// Reactions (additive)
+router.post('/:id/reactions', reactToMessage);
+
+// Delete: ?scope=me (default) or ?scope=everyone (sender only)
+router.delete('/:id', deleteMessage);
 
 // Mark a single message as delivered / read
 router.post('/:id/delivered', markAsDelivered);

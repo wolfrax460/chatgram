@@ -153,3 +153,28 @@ see decisions.md D9).
 - Message reactions, forward, delete-for-everyone, mute, block, clear-chat, calls.
 - "Test with two browser sessions" was not performed: no second set of live credentials
   was available in this environment. Type-check and production build pass.
+
+---
+
+## Backend additions for deferred chat features (2026-10-20)
+
+All additive; existing documents and the Flutter client are unaffected.
+
+- \Message\: \eactions[{userId, emoji, createdAt}]\, \deletedFor[userId]\, \isDeleted\
+  (+ indexes on \chatId+isDeleted\ and \deletedFor\).
+- \DELETE /api/messages/:id?scope=me|everyone\ — \me\ pushes to \deletedFor\;
+  \everyone\ (sender only) sets \isDeleted\, clears content/media and emits
+  \message:deleted\ to the chat room.
+- \POST /api/messages/:id/reactions\ \{ emoji }\ — one reaction per user, same
+  emoji toggles off; emits \message:reaction\.
+- \DELETE /api/chats/:id/messages\ — per-user clear (pushes to \deletedFor\ for
+  every current message, so the other participant keeps their history).
+- \getMessages\ now filters \isDeleted: true\ and \deletedFor: <me>\.
+
+### Incident: brief production outage
+While deploying the first version, \messageRoutes.js\ referenced
+\eactToMessage\/\deleteMessage\ without importing them, so the API crash-looped
+and nginx returned 502. A destructuring anchor in my patch did not match and I did
+not verify the deployed file before restarting. Caught within minutes, fixed by
+adding the imports, redeployed and verified healthy. Lesson: run the require
+graph against the *uploaded* file, not only the local one.

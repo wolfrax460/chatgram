@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
+const { clearChatMessages } = require('../controllers/messageController');
 const {
   createChat,
   getChats,
@@ -35,5 +36,8 @@ router.patch('/:id', updateGroup);
 router.post('/:id/participants', addParticipants);
 router.delete('/:id/participants/:userId', removeParticipant);
 router.post('/:id/admins', setGroupAdmin);
+
+// Clear this chat's messages for me only (additive)
+router.delete('/:id/messages', clearChatMessages);
 
 module.exports = router;

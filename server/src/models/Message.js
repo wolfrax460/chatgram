@@ -36,13 +36,32 @@ const messageSchema = new mongoose.Schema({
   readBy: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  }]
+  }],
+
+  // ---- additive: reactions, per-user deletion, delete-for-everyone ----
+  // Kept optional with defaults so existing documents and the Flutter client
+  // are unaffected.
+  reactions: [{
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    emoji: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now }
+  }],
+  deletedFor: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  isDeleted: {
+    type: Boolean,
+    default: false
+  }
 }, {
   timestamps: true
 });
 
 // Indexes for faster queries
 messageSchema.index({ chatId: 1, sentAt: -1 });
+messageSchema.index({ chatId: 1, isDeleted: 1 });
+messageSchema.index({ deletedFor: 1 });
 messageSchema.index({ senderId: 1 });
 messageSchema.index({ 'deliveredTo': 1 });
 messageSchema.index({ 'readBy': 1 });
