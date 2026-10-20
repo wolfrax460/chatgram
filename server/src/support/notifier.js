@@ -7,7 +7,6 @@
  *
  * Channels:
  *   Telegram  TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
- *   WhatsApp  WHATSAPP_TOKEN + WHATSAPP_PHONE_ID + WHATSAPP_TO   (Meta Cloud API)
  *   Gmail/SMTP SUPPORT_NOTIFY_EMAIL + SMTP_HOST/SMTP_USER/SMTP_PASS
  *
  * Nothing here throws: a failing channel must never lose the ticket.
@@ -56,37 +55,6 @@ async function sendTelegram(text) {
   }
 }
 
-/* ---------------------------------------------------------------- whatsapp */
-
-function whatsappConfigured() {
-  return Boolean(
-    process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_ID && process.env.WHATSAPP_TO
-  );
-}
-
-async function sendWhatsApp(text) {
-  if (!whatsappConfigured()) return { channel: 'whatsapp', skipped: true };
-  const version = process.env.WHATSAPP_API_VERSION || 'v20.0';
-  const phoneId = process.env.WHATSAPP_PHONE_ID.trim();
-  const to = process.env.WHATSAPP_TO.replace(/[^\d]/g, '');
-  try {
-    await postJson(
-      `https://graph.facebook.com/${version}/${phoneId}/messages`,
-      { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN.trim()}` },
-      {
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: { preview_url: false, body: text.slice(0, 4000) },
-      }
-    );
-    return { channel: 'whatsapp', ok: true };
-  } catch (error) {
-    console.warn('WhatsApp notify failed:', error.message);
-    return { channel: 'whatsapp', ok: false, error: error.message };
-  }
-}
-
 /* ------------------------------------------------------------------- email */
 
 function emailConfigured() {
@@ -123,7 +91,6 @@ async function sendEmail(subject, text) {
 
 /* --------------------------------------------------------------- formatting */
 
-/** Plain-text summary that reads well in Telegram/WhatsApp/email. */
 function formatTicket(ticket) {
   const lines = [
     `🆘 New Chatgram support ticket ${ticket.ticketId}`,
@@ -147,7 +114,7 @@ function formatTicket(ticket) {
 async function notifyTicket(ticket) {
   const text = formatTicket(ticket);
   const subject = `[${ticket.ticketId}] ${String(ticket.summary || 'New support ticket').slice(0, 60)}`;
-  const results = await Promise.all([sendTelegram(text), sendWhatsApp(text), sendEmail(subject, text)]);
+  const results = await Promise.all([sendTelegram(text), sendEmail(subject, text)]);
   const delivered = results.filter((r) => r.ok).map((r) => r.channel);
   if (delivered.length) console.log(`Support ticket ${ticket.ticketId} notified via: ${delivered.join(', ')}`);
   else console.log(`Support ticket ${ticket.ticketId} created (no notification channel configured)`);
@@ -157,14 +124,13 @@ async function notifyTicket(ticket) {
 /** Short ping, e.g. a support reply went out. */
 async function notifySupportReply(ticket, replyText) {
   const text = `💬 Reply sent on ${ticket.ticketId}\n\n${String(replyText).slice(0, 1500)}`;
-  await Promise.all([sendTelegram(text), sendWhatsApp(text)]);
+  await Promise.all([sendTelegram(text)]);
 }
 
 /** Which channels are live right now — handy for diagnosing setup. */
 function channelStatus() {
   return {
     telegram: telegramConfigured(),
-    whatsapp: whatsappConfigured(),
     email: emailConfigured(),
   };
 }
