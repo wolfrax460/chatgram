@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chatgram — offline</title>
+    <style>
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: grid; place-items: center;
+        background: #0b141a; color: #e9edef;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+      }
+      .card { max-width: 420px; text-align: center; padding: 32px; }
+      .mark {
+        width: 64px; height: 64px; margin: 0 auto 20px;
+        border-radius: 18px; display: grid; place-items: center;
+        background: linear-gradient(135deg, #25d366, #008069);
+        font-size: 30px;
+      }
+      h1 { font-size: 20px; margin: 0 0 8px; }
+      p { color: #8696a0; font-size: 14px; line-height: 1.5; margin: 0 0 20px; }
+      button {
+        background: #008069; color: #fff; border: 0; cursor: pointer;
+        padding: 12px 22px; border-radius: 12px; font-size: 14px; font-weight: 600;
+      }
+      button:hover { background: #066353; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="mark">💬</div>
+      <h1>You&rsquo;re offline</h1>
+      <p>
+        Chatgram needs a connection to load your messages. Check your internet and try again.
+      </p>
+      <button onclick="location.replace(document.referrer || 'https://chatgram-xi.vercel.app/web/')">
+        Try again
+      </button>
+    </div>
+  </body>
+</html>

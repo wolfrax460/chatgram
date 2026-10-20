@@ -468,6 +468,10 @@ function Shell() {
   useEffect(() => {
     document.title = unreadTotal > 0 ? `(${unreadTotal}) Chatgram` : 'Chatgram';
     setUnreadFavicon(unreadTotal);
+    // Tell the Electron shell (if we are running inside it) so the taskbar and
+    // tray badges stay in sync.
+    (window as unknown as { chatgramDesktop?: { setUnread?: (n: number) => void } })
+      .chatgramDesktop?.setUnread?.(unreadTotal);
   }, [unreadTotal]);
 
   const openChat = useCallback((chatId: string) => {

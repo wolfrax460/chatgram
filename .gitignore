@@ -50,3 +50,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# electron
+/apps/desktop/release/
+/apps/desktop/node_modules/
