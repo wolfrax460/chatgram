@@ -36,3 +36,9 @@
     @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400;
   }
 }
+
+/* Status viewer progress bar */
+@keyframes status-progress {
+  from { width: 0%; }
+  to   { width: 100%; }
+}

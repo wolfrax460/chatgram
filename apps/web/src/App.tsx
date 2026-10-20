@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Moon, Sun, Monitor, MessageCircle, LogOut, Send, Wifi, WifiOff, Users, BookUser, ChevronLeft,
+  Moon, Sun, Monitor, MessageCircle, LogOut, Send, Wifi, WifiOff, Users, BookUser, ChevronLeft, CircleDashed,
 } from 'lucide-react';
 import {
   chatPartner,
@@ -16,8 +16,9 @@ import { api, realtime } from './lib/api';
 import { useRealtimeBridge } from './lib/useRealtime';
 import Groups from './pages/Groups';
 import Contacts from './pages/Contacts';
+import Status from './pages/Status';
 
-type Tab = 'chats' | 'groups' | 'contacts';
+type Tab = 'chats' | 'status' | 'groups' | 'contacts';
 
 /* ------------------------------------------------------------------- login */
 
@@ -314,6 +315,7 @@ function ChatList({
 
 const NAV: { key: Tab; label: string; Icon: typeof MessageCircle }[] = [
   { key: 'chats', label: 'Chats', Icon: MessageCircle },
+  { key: 'status', label: 'Status', Icon: CircleDashed },
   { key: 'groups', label: 'Groups', Icon: Users },
   { key: 'contacts', label: 'Contacts', Icon: BookUser },
 ];
@@ -404,6 +406,8 @@ function Shell() {
             </section>
           )}
         </>
+      ) : tab === 'status' ? (
+        <Status />
       ) : tab === 'groups' ? (
         <Groups onOpenChat={openChat} />
       ) : (
