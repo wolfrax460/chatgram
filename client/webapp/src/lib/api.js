@@ -200,6 +200,21 @@ export const api = {
   addContact: (userId) => request('/api/contacts', { method: 'POST', body: { userId } }),
   removeContact: (userId) => request(`/api/contacts/${userId}`, { method: 'DELETE' }),
 
+  // -------------------------------------------------------------- profile
+  updateProfile: (id, fields) =>
+    request('/api/users/' + id, { method: 'PUT', body: fields }),
+  uploadAvatar: (id, file) => {
+    const form = new FormData();
+    form.append('avatar', file);
+    return multipartUpload('/api/users/' + id + '/avatar', form);
+  },
+
+  // --------------------------------------------------------------- status
+  statuses: () => request('/api/status'),
+  createStatus: (payload) => request('/api/status', { method: 'POST', body: payload }),
+  deleteStatus: (id) => request('/api/status/' + id, { method: 'DELETE' }),
+  viewStatus: (id) => request('/api/status/' + id + '/view', { method: 'POST' }),
+
   // --------------------------------------------------------------- misc
   support: () => request('/api/support'),
   openSupportChat: () => request('/api/support/chat', { method: 'POST' }),

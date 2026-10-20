@@ -132,6 +132,12 @@ export const Icon = {
       <path d="M8 10V7a4 4 0 0 1 8 0v3" />
     </S>
   ),
+  statusRing: (p) => (
+    <S {...p}>
+      <circle cx="12" cy="12" r="9" strokeDasharray="3.5 3" />
+      <path d="M12 7.5v5l3 1.8" />
+    </S>
+  ),
   user: (p) => (
     <S {...p}>
       <circle cx="12" cy="8" r="3.6" />

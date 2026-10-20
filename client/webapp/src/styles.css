@@ -37,3 +37,9 @@
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: rgba(134,150,160,.35); border-radius: 999px; }
 *::-webkit-scrollbar-track { background: transparent; }
+/* Status viewer progress bar */
+@keyframes pd-progress {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+.pd-progress { animation-fill-mode: forwards; }

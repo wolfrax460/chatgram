@@ -7,9 +7,11 @@ import Auth from './views/Auth.jsx';
 import Chats from './views/Chats.jsx';
 import Contacts from './views/Contacts.jsx';
 import Settings from './views/Settings.jsx';
+import Status from './views/Status.jsx';
 
 const NAV = [
   { key: 'chats', label: 'Chats', icon: Icon.chat },
+  { key: 'status', label: 'Status', icon: Icon.statusRing },
   { key: 'contacts', label: 'Contacts', icon: Icon.users },
   { key: 'settings', label: 'Settings', icon: Icon.settings },
 ];
@@ -167,6 +169,8 @@ export default function App() {
               onOpenContacts={() => setTab('contacts')}
               initialChatId={pendingChat}
             />
+          ) : tab === 'status' ? (
+            <Status meId={meId} user={user} />
           ) : tab === 'contacts' ? (
             <Contacts meId={meId} onOpenChat={openChatById} />
           ) : (
@@ -174,6 +178,9 @@ export default function App() {
               user={user}
               onSignedOut={handleSignOut}
               onOpenSupport={openChatById}
+              onUserUpdated={(updated) =>
+                setUser((prev) => ({ ...prev, ...updated }))
+              }
             />
           )}
         </main>
