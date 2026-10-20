@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
-import { getSocket } from '../lib/socket.js';
 import {
   Avatar,
   Icon,
@@ -10,6 +9,8 @@ import {
   formatTime,
   formatDay,
 } from '../components/ui.jsx';
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // matches the server's multer limit
 
 /* ------------------------------------------------------------- utilities */
 function otherParticipants(chat, meId) {
@@ -37,15 +38,35 @@ function lastLine(chat, meId) {
   const body =
     m.content ||
     (m.type === 'image'
-      ? 'Photo'
+      ? '📷 Photo'
       : m.type === 'video'
-        ? 'Video'
+        ? '🎬 Video'
         : m.type === 'audio'
-          ? 'Voice message'
+          ? '🎤 Voice message'
           : m.type === 'file'
-            ? 'Document'
+            ? '📎 Document'
             : '');
   return `${prefix}${body}`;
+}
+
+/** Message type derived from a MIME type. */
+function typeFromMime(mimetype = '') {
+  if (mimetype.startsWith('image/')) return 'image';
+  if (mimetype.startsWith('video/')) return 'video';
+  if (mimetype.startsWith('audio/')) return 'audio';
+  return 'file';
+}
+
+function formatBytes(bytes = 0) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDuration(seconds = 0) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 /* ------------------------------------------------------------- chat list */
@@ -84,6 +105,78 @@ function ChatRow({ chat, meId, active, onClick }) {
   );
 }
 
+/* --------------------------------------------------------------- media */
+function MediaContent({ message, mine }) {
+  const url = message.mediaUrl;
+  const [failed, setFailed] = useState(false);
+
+  if (!url) return null;
+
+  if (message.type === 'image') {
+    if (failed) {
+      return (
+        <a href={url} target="_blank" rel="noreferrer" className="mb-1 flex items-center gap-2 underline opacity-80">
+          <Icon.image className="h-4 w-4" /> Photo (tap to open)
+        </a>
+      );
+    }
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="block">
+        <img
+          src={url}
+          alt={message.content || 'Photo'}
+          className="mb-1 max-h-80 w-full rounded-lg object-cover"
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
+      </a>
+    );
+  }
+
+  if (message.type === 'video') {
+    return (
+      <video
+        src={url}
+        controls
+        preload="metadata"
+        className="mb-1 max-h-80 w-full rounded-lg bg-black"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  if (message.type === 'audio') {
+    return (
+      <div className={`mb-1 flex items-center gap-2 rounded-xl px-1 py-1 ${mine ? 'bg-white/15' : 'bg-black/5 dark:bg-white/10'}`}>
+        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${mine ? 'bg-white/25' : 'bg-brand-600 text-white'}`}>
+          <Icon.mic className="h-4 w-4" />
+        </span>
+        <audio src={url} controls preload="metadata" className="h-8 w-56 max-w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      download
+      className={`mb-1 flex items-center gap-2 rounded-xl px-2.5 py-2 ${mine ? 'bg-white/15' : 'bg-black/5 dark:bg-white/10'}`}
+    >
+      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${mine ? 'bg-white/25' : 'bg-brand-600 text-white'}`}>
+        <Icon.attach className="h-4 w-4" />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-[13px] font-semibold">
+          {message.content || 'Document'}
+        </span>
+        <span className="block text-[11px] opacity-70">Tap to download</span>
+      </span>
+    </a>
+  );
+}
+
 /* ----------------------------------------------------------- chat window */
 function Bubble({ message, meId }) {
   const mine = (message.senderId?._id || message.senderId) === meId;
@@ -104,15 +197,10 @@ function Bubble({ message, meId }) {
             {senderName}
           </div>
         ) : null}
-        {message.type === 'image' && message.mediaUrl ? (
-          <img
-            src={message.mediaUrl}
-            alt=""
-            className="mb-1 max-h-72 rounded-lg object-cover"
-            loading="lazy"
-          />
+        <MediaContent message={message} mine={mine} />
+        {message.content && message.type !== 'file' ? (
+          <div className="whitespace-pre-wrap break-words">{message.content}</div>
         ) : null}
-        {message.content ? <div className="whitespace-pre-wrap break-words">{message.content}</div> : null}
         <div
           className={`mt-1 flex items-center justify-end gap-1 text-[10.5px] ${
             mine ? 'text-white/70' : 'text-ink-400'
@@ -126,45 +214,231 @@ function Bubble({ message, meId }) {
   );
 }
 
-function Composer({ onSend, disabled }) {
+/* ------------------------------------------------------------- composer */
+function Composer({ onSend, onSendMedia, disabled }) {
   const [text, setText] = useState('');
-  const ref = useRef(null);
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  const inputRef = useRef(null);
+  const textRef = useRef(null);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
+  const cancelRef = useRef(false);
 
   function submit(e) {
     e?.preventDefault();
     const value = text.trim();
-    if (!value || disabled) return;
+    if (!value || disabled || busy) return;
     onSend(value);
     setText('');
-    ref.current?.focus();
+    textRef.current?.focus();
   }
 
+  async function pickFiles(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    for (const file of files) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        setNotice(`"${file.name}" is ${formatBytes(file.size)} — the limit is 10 MB.`);
+        continue;
+      }
+      setBusy(true);
+      setNotice('');
+      try {
+        await onSendMedia(file);
+      } catch (err) {
+        setNotice(err.message);
+      } finally {
+        setBusy(false);
+      }
+    }
+  }
+
+  function pickMime() {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+    ];
+    for (const type of candidates) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported?.(type)) return type;
+    }
+    return '';
+  }
+
+  async function startRecording() {
+    setNotice('');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setNotice('Recording is not supported in this browser.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = pickMime();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      chunksRef.current = [];
+      cancelRef.current = false;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        clearInterval(timerRef.current);
+        setRecording(false);
+        setSeconds(0);
+
+        if (cancelRef.current) return;
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        if (blob.size < 800) {
+          setNotice('That recording was too short.');
+          return;
+        }
+        if (blob.size > MAX_UPLOAD_BYTES) {
+          setNotice(`Recording is ${formatBytes(blob.size)} — the limit is 10 MB.`);
+          return;
+        }
+        const ext = (recorder.mimeType || 'audio/webm').includes('mp4') ? 'm4a' : 'webm';
+        const file = new File([blob], `voice-note-${Date.now()}.${ext}`, {
+          type: recorder.mimeType || 'audio/webm',
+        });
+        setBusy(true);
+        try {
+          await onSendMedia(file, 'audio');
+        } catch (err) {
+          setNotice(err.message);
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      recorder.start();
+      recorderRef.current = recorder;
+      setRecording(true);
+      setSeconds(0);
+      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+    } catch (err) {
+      setNotice('Microphone permission was denied.');
+    }
+  }
+
+  function stopRecording(cancel = false) {
+    cancelRef.current = cancel;
+    try {
+      recorderRef.current?.stop();
+    } catch {
+      /* already stopped */
+    }
+  }
+
+  useEffect(
+    () => () => {
+      clearInterval(timerRef.current);
+      try {
+        recorderRef.current?.stop();
+      } catch {
+        /* ignore */
+      }
+    },
+    [],
+  );
+
   return (
-    <form onSubmit={submit} className="flex items-end gap-2 border-t border-ink-200 p-3 dark:border-white/10">
-      <button type="button" className="btn-ghost !px-2.5" title="Attachments (coming soon)" disabled>
-        <Icon.attach className="h-5 w-5" />
-      </button>
-      <textarea
-        ref={ref}
-        rows={1}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            submit();
-          }
-        }}
-        placeholder="Type a message"
-        className="field max-h-32 min-h-[44px] flex-1 resize-none py-2.5"
-      />
-      <button type="submit" className="btn-primary !px-3" disabled={!text.trim() || disabled}>
-        <Icon.send className="h-5 w-5" />
-      </button>
-    </form>
+    <div className="border-t border-ink-200 dark:border-white/10">
+      {notice ? (
+        <div className="px-3 pt-2">
+          <ErrorNote onDismiss={() => setNotice('')}>{notice}</ErrorNote>
+        </div>
+      ) : null}
+
+      {recording ? (
+        <div className="flex items-center gap-3 p-3">
+          <button
+            type="button"
+            className="btn-ghost !px-2 text-rose-600"
+            onClick={() => stopRecording(true)}
+            title="Cancel recording"
+          >
+            <Icon.close className="h-5 w-5" />
+          </button>
+          <div className="flex flex-1 items-center gap-2 rounded-xl bg-rose-500/10 px-3 py-2">
+            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-rose-500" />
+            <span className="text-sm font-semibold text-rose-600 dark:text-rose-300">
+              Recording {formatDuration(seconds)}
+            </span>
+            <span className="ml-auto text-xs text-ink-400">tap ✓ to send</span>
+          </div>
+          <button
+            type="button"
+            className="btn-primary !px-3"
+            onClick={() => stopRecording(false)}
+            title="Send voice note"
+          >
+            <Icon.check className="h-5 w-5" />
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="flex items-end gap-2 p-3">
+          <input
+            ref={inputRef}
+            type="file"
+            multiple
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+            className="hidden"
+            onChange={pickFiles}
+          />
+          <button
+            type="button"
+            className="btn-ghost !px-2.5"
+            title="Attach a file"
+            onClick={() => inputRef.current?.click()}
+            disabled={busy || disabled}
+          >
+            {busy ? <Spinner className="h-5 w-5" /> : <Icon.attach className="h-5 w-5" />}
+          </button>
+
+          <textarea
+            ref={textRef}
+            rows={1}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder="Type a message"
+            className="field max-h-32 min-h-[44px] flex-1 resize-none py-2.5"
+          />
+
+          {text.trim() ? (
+            <button type="submit" className="btn-primary !px-3" disabled={disabled || busy}>
+              <Icon.send className="h-5 w-5" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn-soft !px-3"
+              onClick={startRecording}
+              disabled={busy || disabled}
+              title="Record a voice note"
+            >
+              <Icon.mic className="h-5 w-5" />
+            </button>
+          )}
+        </form>
+      )}
+    </div>
   );
 }
 
+/* ------------------------------------------------------------ chat view */
 function ChatWindow({ chat, meId, onBack, socket }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -201,7 +475,6 @@ function ChatWindow({ chat, meId, onBack, socket }) {
     load();
   }, [load]);
 
-  // Live incoming messages for this chat.
   useEffect(() => {
     if (!socket) return undefined;
     const onNew = (msg) => {
@@ -253,6 +526,23 @@ function ChatWindow({ chat, meId, onBack, socket }) {
     }
   }
 
+  /** Upload a file, then send it as a message. Media always goes over REST. */
+  async function sendMedia(file, forcedType) {
+    const uploaded = await api.uploadMedia(file);
+    const stored = uploaded?.file;
+    if (!stored?.url) throw new Error('Upload did not return a file URL.');
+
+    const type = forcedType || typeFromMime(stored.mimetype);
+    const saved = await api.sendMessage({
+      chatId,
+      type,
+      mediaUrl: stored.url,
+      content: type === 'file' ? stored.originalname || file.name : undefined,
+    });
+    setMessages((prev) => [...prev, saved]);
+    scrollToBottom();
+  }
+
   const grouped = useMemo(() => {
     const out = [];
     let lastDay = '';
@@ -298,7 +588,7 @@ function ChatWindow({ chat, meId, onBack, socket }) {
           <EmptyState
             icon={Icon.chat}
             title="No messages yet"
-            message="Say hello to start the conversation."
+            message="Say hello, attach a file or record a voice note."
           />
         ) : (
           <div className="space-y-2">
@@ -318,7 +608,7 @@ function ChatWindow({ chat, meId, onBack, socket }) {
         {error ? <div className="mt-3"><ErrorNote onDismiss={() => setError('')}>{error}</ErrorNote></div> : null}
       </div>
 
-      <Composer onSend={send} disabled={sending} />
+      <Composer onSend={send} onSendMedia={sendMedia} disabled={sending} />
     </div>
   );
 }
@@ -361,7 +651,12 @@ export default function Chats({ meId, socket, onOpenContacts, initialChatId }) {
     load();
   }, [load]);
 
-  // Keep the list fresh as messages arrive.
+  useEffect(() => {
+    if (!initialChatId?.id) return;
+    setActiveId(initialChatId.id);
+    load();
+  }, [initialChatId, load]);
+
   useEffect(() => {
     if (!socket) return undefined;
     const onNew = () => load();
@@ -382,7 +677,6 @@ export default function Chats({ meId, socket, onOpenContacts, initialChatId }) {
 
   return (
     <div className="flex h-full">
-      {/* list column */}
       <div
         className={`flex w-full flex-col border-r border-ink-200 dark:border-white/10 lg:w-[380px] ${
           active ? 'hidden lg:flex' : 'flex'
@@ -474,7 +768,6 @@ export default function Chats({ meId, socket, onOpenContacts, initialChatId }) {
         </div>
       </div>
 
-      {/* conversation column */}
       <div className={`min-w-0 flex-1 ${active ? 'flex' : 'hidden lg:flex'} flex-col`}>
         {active ? (
           <ChatWindow

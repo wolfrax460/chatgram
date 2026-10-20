@@ -104,6 +104,42 @@ async function refreshAccessToken() {
   return refreshing;
 }
 
+/** Multipart upload — FormData needs the browser to set its own boundary. */
+async function multipartUpload(path, formData) {
+  const headers = { Accept: 'application/json' };
+  const auth = tokens.access;
+  if (auth) headers.Authorization = `Bearer ${auth}`;
+
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: formData });
+  } catch {
+    throw new ApiError('Cannot reach the server. Check that the backend is running.', 0);
+  }
+
+  if (res.status === 401 && tokens.refresh) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) return multipartUpload(path, formData);
+  }
+
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  if (!res.ok) {
+    throw new ApiError(
+      (data && (data.message || data.error)) || `Upload failed (${res.status})`,
+      res.status,
+      data?.code,
+    );
+  }
+  return data;
+}
+
 export async function request(path, options = {}) {
   let result = await raw(path, options);
 
@@ -149,6 +185,12 @@ export const api = {
     request('/api/chats', { method: 'POST', body: { type: 'group', groupName, participantIds } }),
   messages: (chatId) => request(`/api/messages?chatId=${encodeURIComponent(chatId)}`),
   sendMessage: (payload) => request('/api/messages', { method: 'POST', body: payload }),
+  /** Upload a file; resolves to { file: { url, mimetype, size, originalname } } */
+  uploadMedia: (file) => {
+    const form = new FormData();
+    form.append('file', file);
+    return multipartUpload('/api/messages/media', form);
+  },
   markRead: (chatId) => request(`/api/messages/chat/${chatId}/read`, { method: 'POST' }),
 
   // ------------------------------------------------------------ contacts
