@@ -520,9 +520,32 @@ export class ApiClient {
     userAgent?: string;
     appVersion?: string;
   }) {
-    return this.request<{ ticketId: string; status: string; message: string }>(
+    return this.request<{ ticketId: string; status: string; message: string; guestToken?: string; guestTokenExpiresAt?: string }>(
       '/api/support/tickets',
       { method: 'POST', body: input, anonymous: true },
+    );
+  }
+
+  /** Public: delete a ticket (ID + the contact used when reporting). */
+  deleteSupportTicket(ticketId: string, contact: string) {
+    return this.request<{ message: string; ticketId: string }>(
+      `/api/support/tickets/${encodeURIComponent(ticketId)}`,
+      { method: 'DELETE', query: { contact }, anonymous: true },
+    );
+  }
+
+  /** Private (Support account): the ticket attached to a chat. */
+  getTicketByChat(chatId: string) {
+    return this.request<{ ticket: { ticketId: string; status: string; contact: string } | null }>(
+      `/api/support/tickets/by-chat/${chatId}`,
+    );
+  }
+
+  /** Private (Support account): close a ticket. */
+  closeSupportTicket(ticketId: string) {
+    return this.request<{ message: string; ticketId: string; status: string }>(
+      `/api/support/tickets/${encodeURIComponent(ticketId)}/close`,
+      { method: 'POST' },
     );
   }
 

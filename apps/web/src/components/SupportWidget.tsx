@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LifeBuoy, X, Send, CheckCircle2, Loader2, ShieldAlert } from 'lucide-react';
-import { api, APP_VERSION } from '../lib/api';
+import { io } from 'socket.io-client';
+import { api, APP_VERSION, SOCKET_URL } from '../lib/api';
 
 /**
  * Public help widget.
@@ -63,6 +64,8 @@ export default function SupportWidget() {
   const [ticketId, setTicketId] = useState('');
   const [lookupId, setLookupId] = useState('');
   const [lookupResult, setLookupResult] = useState<string | null>(null);
+  const [guestToken, setGuestToken] = useState('');
+  const [live, setLive] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -150,6 +153,47 @@ export default function SupportWidget() {
     return (map[id] ?? []).some((k) => text.includes(k));
   }
 
+  // While a ticket is open, listen on the guest namespace for support replies.
+  useEffect(() => {
+    if (!guestToken) return undefined;
+    const socket = io(`${SOCKET_URL}/support-guest`, {
+      auth: { token: guestToken },
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+    });
+    socket.on('guest:ready', () => setLive(true));
+    socket.on('ticket:reply', (payload: { replies?: { text: string }[] }) => {
+      const latest = payload?.replies?.[payload.replies.length - 1];
+      if (latest?.text) push({ role: 'assistant', text: `Support: ${latest.text}` });
+    });
+    socket.on('ticket:closed', () => {
+      push({ role: 'assistant', text: 'This ticket was closed by support.' });
+      setLive(false);
+    });
+    socket.on('connect_error', () => setLive(false));
+    socket.on('disconnect', () => setLive(false));
+    return () => {
+      socket.disconnect();
+    };
+  }, [guestToken, push]);
+
+  async function deleteTicket() {
+    if (!ticketId || !contact.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.deleteSupportTicket(ticketId, contact.trim());
+      setTicketId('');
+      setGuestToken('');
+      setStage('chat');
+      push({ role: 'assistant', text: 'Your ticket was deleted.' });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete the ticket.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submitReport(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -178,6 +222,7 @@ export default function SupportWidget() {
         appVersion: APP_VERSION,
       });
       setTicketId(result.ticketId);
+      if (result.guestToken) setGuestToken(result.guestToken);
       setStage('done');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send the report. Please try again.');
@@ -341,6 +386,16 @@ export default function SupportWidget() {
               </p>
               <button type="button" className="btn-ghost h-10 w-full" onClick={() => setStage('status')}>
                 Check ticket status
+              </button>
+              <p
+                className={`text-center text-[11.5px] font-semibold ${
+                  live ? 'text-emerald-600 dark:text-emerald-400' : 'text-ink-500 dark:text-ink-400'
+                }`}
+              >
+                {live ? 'Live — support replies appear here' : 'Live updates unavailable (check status instead)'}
+              </p>
+              <button type="button" className="btn-ghost h-10 w-full text-rose-600" onClick={deleteTicket} disabled={busy}>
+                Delete this ticket
               </button>
               <button type="button" className="btn-primary h-10 w-full" onClick={() => setOpen(false)}>
                 Done

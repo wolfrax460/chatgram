@@ -90,6 +90,15 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Support-account only: is this conversation attached to a ticket?
+  const ticketQuery = useQuery({
+    queryKey: ['ticket-by-chat', chat.id],
+    queryFn: () => api.getTicketByChat(chat.id),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const ticket = ticketQuery.data?.ticket ?? null;
+
   const messages = useQuery<Message[]>({
     queryKey: ['messages', chat.id],
     queryFn: () => api.messages(chat.id),
@@ -276,6 +285,31 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
         onBack={onBack}
       />
 
+      {ticket ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-ink-200 bg-amber-50 px-4 py-2 text-[12px] dark:border-white/10 dark:bg-amber-500/10">
+          <span className="rounded bg-amber-500 px-1.5 py-0.5 font-bold uppercase tracking-wide text-white">Ticket</span>
+          <span className="font-mono font-bold text-amber-800 dark:text-amber-300">{ticket.ticketId}</span>
+          <span className="rounded-full border border-amber-400 px-2 py-0.5 font-semibold uppercase text-amber-800 dark:text-amber-300">{ticket.status}</span>
+          <span className="flex-1" />
+          {ticket.status !== 'closed' ? (
+            <button
+              type="button"
+              className="rounded border border-amber-500 px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-500/20"
+              onClick={async () => {
+                try {
+                  await api.closeSupportTicket(ticket.ticketId);
+                  await ticketQuery.refetch();
+                  setNotice('Ticket ' + ticket.ticketId + ' closed.');
+                } catch (err) {
+                  setNotice(err instanceof Error ? err.message : 'Could not close the ticket');
+                }
+              }}
+            >
+              Close ticket
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {searchOpen ? (
         <div className="relative border-b border-ink-200 px-3 py-2 dark:border-white/10">
           <Search className="pointer-events-none absolute left-6 top-4.5 h-4 w-4 text-ink-500" />

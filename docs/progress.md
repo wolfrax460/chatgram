@@ -389,3 +389,23 @@ Playwright suite, backend hardening.
 ### Remaining
 The widget does not yet connect to /support-guest, and reply propagation is not yet proven end-to-end with a real Support reply. Backend hardening still outstanding.
 
+
+---
+
+## Guest socket UI, ticket badges, delete, Turnstile (2026-10-20)
+
+Backend:
+- DELETE /api/support/tickets/:id?contact= (public, 10/hr per IP) - delete-my-ticket
+- GET /api/support/tickets/by-chat/:chatId (private) - admin badge data
+- POST /api/support/tickets/:ticketId/close (private) - closes + emits ticket:closed to the guest
+- Turnstile verification in createTicket, only when TURNSTILE_SECRET is set; fails open so a captcha outage cannot block reports
+
+Frontend:
+- Widget connects to /support-guest with the signed token from ticket creation, shows a live indicator, appends ticket:reply messages and handles ticket:closed. Falls back gracefully when the socket cannot connect.
+- Delete this ticket on the confirmation screen (ticketId + contact).
+- Ticket badge in the conversation header for the Support account: ticket ID, status, contact and a Close ticket action.
+
+Verified: build green, deployed bundle contains support-guest / ticket:reply / Delete this ticket / Close ticket. Backend endpoints previously verified (404/401 correctly).
+
+Playwright suite NOT written - no non-production backend exists and testing production was explicitly forbidden.
+

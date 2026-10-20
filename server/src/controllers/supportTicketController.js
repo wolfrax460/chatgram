@@ -130,7 +130,15 @@ const createTicket = async (req, res) => {
     }
 
     const ip = req.ip || req.connection?.remoteAddress;
-    const perIp = rateLimit(`ticket:ip:${ip}`, 5, 60 * 60 * 1000);
+
+    // Optional captcha (only enforced when TURNSTILE_SECRET is set).
+    const captcha = await verifyTurnstile(req.body?.turnstileToken, ip);
+    if (!captcha.ok) {
+      return res.status(400).json({ message: 'Captcha check failed. Please try again.', code: 'TURNSTILE_FAILED' });
+    }
+
+    const perIp = rateLimit(
+`ticket:ip:${ip}`, 5, 60 * 60 * 1000);
     if (!perIp.ok) {
       return res.status(429).json({ message: `Too many reports. Try again in ${perIp.retryAfter}s.` });
     }
@@ -264,4 +272,96 @@ const getTicket = async (req, res) => {
   }
 };
 
-module.exports = { createTicket, getTicket, stripHtml, rateLimit };
+/** Cloudflare Turnstile check — skipped entirely when no secret is configured. */
+async function verifyTurnstile(token, ip) {
+  const secret = (process.env.TURNSTILE_SECRET || '').trim();
+  if (!secret) return { ok: true, skipped: true };
+  if (!token) return { ok: false, reason: 'missing-token' };
+  try {
+    const params = new URLSearchParams();
+    params.set('secret', secret);
+    params.set('response', String(token));
+    if (ip) params.set('remoteip', String(ip));
+    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body: params,
+    });
+    const data = await response.json();
+    return { ok: data?.success === true, skipped: false };
+  } catch (error) {
+    console.warn('Turnstile verify failed:', error.message);
+    // Fail open: a captcha outage must not block support reports.
+    return { ok: true, skipped: true };
+  }
+}
+
+// @desc    Delete my ticket (ID + matching contact)
+// @route   DELETE /api/support/tickets/:ticketId?contact=
+// @access  Public
+const deleteTicket = async (req, res) => {
+  try {
+    const ip = req.ip || req.connection?.remoteAddress;
+    const limited = rateLimit(`delete:ip:${ip}`, 10, 60 * 60 * 1000);
+    if (!limited.ok) {
+      return res.status(429).json({ message: `Too many requests. Try again in ${limited.retryAfter}s.` });
+    }
+    const contact = stripHtml(req.query.contact).slice(0, 160);
+    if (!contact) return res.status(400).json({ message: 'Contact is required' });
+
+    const ticket = await SupportTicket.findOne({ ticketId: req.params.ticketId, contact });
+    if (!ticket) return res.status(404).json({ message: 'No ticket found for that ID and contact.' });
+
+    await SupportTicket.deleteOne({ _id: ticket._id });
+    return res.json({ message: 'Ticket deleted.', ticketId: ticket.ticketId });
+  } catch (error) {
+    console.error('Delete ticket error:', error.message);
+    return res.status(500).json({ message: 'Could not delete the ticket.' });
+  }
+};
+
+// @desc    Ticket attached to a chat (used for the admin badge)
+// @route   GET /api/support/tickets/by-chat/:chatId
+// @access  Private (Support account)
+const getTicketByChat = async (req, res) => {
+  try {
+    const ticket = await SupportTicket.findOne({ chatId: req.params.chatId });
+    if (!ticket) return res.json({ ticket: null });
+    return res.json({
+      ticket: {
+        ticketId: ticket.ticketId,
+        status: ticket.status,
+        contact: ticket.contact,
+        contactType: ticket.contactType,
+        createdAt: ticket.createdAt,
+        replies: ticket.replies.map((r) => ({ text: r.text, at: r.at })),
+      },
+    });
+  } catch (error) {
+    console.error('Ticket by chat error:', error.message);
+    return res.status(500).json({ message: 'Could not load the ticket.' });
+  }
+};
+
+// @desc    Close a ticket
+// @route   POST /api/support/tickets/:ticketId/close
+// @access  Private (Support account)
+const closeTicket = async (req, res) => {
+  try {
+    const ticket = await SupportTicket.findOne({ ticketId: req.params.ticketId });
+    if (!ticket) return res.status(404).json({ message: 'Ticket not found.' });
+    ticket.status = 'closed';
+    await ticket.save();
+    require('../sockets/supportGuestSocket').emitToTicket(
+      require('../utils/realtime').getIo(),
+      ticket.ticketId,
+      'ticket:closed',
+      { ticketId: ticket.ticketId, status: 'closed' }
+    );
+    return res.json({ message: 'Ticket closed.', ticketId: ticket.ticketId, status: ticket.status });
+  } catch (error) {
+    console.error('Close ticket error:', error.message);
+    return res.status(500).json({ message: 'Could not close the ticket.' });
+  }
+};
+
+module.exports = { createTicket, getTicket, deleteTicket, getTicketByChat, closeTicket, verifyTurnstile, stripHtml, rateLimit };
