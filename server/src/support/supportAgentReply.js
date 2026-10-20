@@ -75,14 +75,60 @@ async function historyFor(chatId, supportId) {
   }));
 }
 
-async function escalateToOwner(senderName, text, history) {
+async function escalateToOwner(senderName, text, history, ctx = {}) {
+  // Open a real ticket so the owner has a reference and /reply reaches the user.
+  let ticket = null;
+  try {
+    let ticketId = SupportTicket.newTicketId();
+    for (let i = 0; i < 5 && (await SupportTicket.exists({ ticketId })); i += 1) {
+      ticketId = SupportTicket.newTicketId();
+    }
+    ticket = await SupportTicket.create({
+      ticketId,
+      guestId: `user:${ctx.senderId || 'unknown'}`,
+      userId: ctx.senderId || null,
+      contact: 'in-app chat',
+      contactType: 'email',
+      status: 'open',
+      summary: String(text || '').slice(0, 1500) || `Message from ${senderName}`,
+      transcript: history.slice(-12),
+      meta: { page: 'in-app chat', userAgent: '', appVersion: '' },
+      chatId: ctx.chatId || null,
+    });
+  } catch (error) {
+    console.warn('Could not open escalation ticket:', error.message);
+  }
+
+  // Tell the user a human is being asked, so they are not left in silence.
+  if (ctx.chatId && ctx.supportId) {
+    try {
+      const ref = ticket ? ` (ref ${ticket.ticketId})` : '';
+      const created = await Message.create({
+        chatId: ctx.chatId,
+        senderId: ctx.supportId,
+        type: 'text',
+        content: `I'm not sure about that one, so I'm asking the Chatgram admin${ref}. They'll reply here as soon as they can — thanks for your patience.`,
+        sentAt: new Date(),
+        deliveredTo: [],
+        readBy: [],
+      });
+      const populated = await Message.findById(created._id).populate('senderId', '_id displayName avatarUrl');
+      const realtime = require('../utils/realtime');
+      realtime.getIo()?.to(realtime.roomForChat(ctx.chatId)).emit('message:new', populated);
+      realtime.emitToUser(ctx.senderId, 'chat:updated', { chatId: ctx.chatId });
+    } catch (error) {
+      console.warn('Could not post holding message:', error.message);
+    }
+  }
+
   const summary = `Chatgram Support could not answer ${senderName} in-app.\n\nTheir message: ${text}\n\nRecent conversation:\n${history
     .slice(-6)
     .map((h) => `${h.role === 'user' ? senderName : 'Assistant'}: ${h.text}`)
-    .join('\n')}`;
+    .join('\n')}${ticket ? `\n\nReply with: /reply ${ticket.ticketId} your message` : ''}`;
+
   try {
     await notifier.notifyTicket({
-      ticketId: 'in-app',
+      ticketId: ticket ? ticket.ticketId : 'in-app',
       contact: `in-app message from ${senderName}`,
       contactType: 'email',
       status: 'open',
@@ -140,7 +186,11 @@ async function answerSupportChat(message, io) {
     const verdict = parseVerdict(raw);
 
     if (!verdict.confident) {
-      await escalateToOwner(senderName, String(message.content || '').slice(0, 500), history);
+      await escalateToOwner(senderName, String(message.content || '').slice(0, 500), history, {
+        chatId: chat._id,
+        senderId,
+        supportId,
+      });
       return;
     }
 

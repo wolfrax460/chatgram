@@ -475,3 +475,17 @@ The agent previously only fired on widget tickets. Users who message the Chatgra
 
 Verified with a simulated conversation: 'How do I reset my password?' -> log 'Support assistant answered in-app for Agent Test' with a correct KB reply. Test user, chat and messages deleted afterwards. /api/config 200, /health 200.
 
+
+---
+
+## Two-way Telegram bot + escalation holding message (2026-10-20)
+
+- In-app escalation now (a) opens a real SupportTicket so there is a reference and /reply can reach the user, and (b) posts a holding message as the Chatgram Support account: 'I'm not sure about that one, so I'm asking the Chatgram admin (ref CG-XXXXX). They'll reply here as soon as they can.' The Telegram/email alert includes the exact /reply command.
+- server/src/support/telegramBot.js: inbound webhook at POST /api/support/telegram/:secret. Commands: /start, /help, /tickets, /reply CG-XXXXX text, /close CG-XXXXX, plus a bare 'CG-XXXXX text' shorthand. A reply posts into the ticket conversation as the Support account, which then mirrors to the ticket, pushes to the guest socket and emails the user. Only the configured owner chat id may drive it; a wrong secret returns 403.
+
+### Verified live
+Webhook registered with Telegram (setWebhook ok). /help and /tickets simulated -> 200. A wrong secret -> 403. /api/config 200, /health 200.
+
+### Env added
+TELEGRAM_WEBHOOK_SECRET (generated, stored on the server only).
+

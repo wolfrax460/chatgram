@@ -5,9 +5,12 @@ const { protect } = require('../middleware/auth');
 const { openSupportChat, supportInfo } = require('../controllers/supportController');
 const { createTicket, getTicket, deleteTicket, getTicketByChat, closeTicket } = require('../controllers/supportTicketController');
 const { askSupportAssistant } = require('../controllers/supportAssistantController');
+const { webhookHandler: telegramWebhook } = require('../support/telegramBot');
 
 // --- public help-widget endpoints (no auth) ---
 router.post('/assistant', askSupportAssistant);
+// Telegram bot webhook (secret in the path).
+router.post('/telegram/:secret', telegramWebhook);
 router.post('/tickets', createTicket);
 router.get('/tickets/:ticketId', getTicket);
 router.delete('/tickets/:ticketId', deleteTicket);
