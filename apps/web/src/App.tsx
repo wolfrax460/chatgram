@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Moon, Sun, Monitor, MessageCircle, LogOut, Send, Wifi, WifiOff, Users, BookUser, ChevronLeft, CircleDashed, Settings as SettingsIcon,
+  Moon, Sun, Monitor, MessageCircle, LogOut, Wifi, WifiOff, Users, BookUser, ChevronLeft, CircleDashed, Settings as SettingsIcon,
 } from 'lucide-react';
 import {
   chatPartner,
@@ -15,6 +15,8 @@ import {
 import { api, realtime } from './lib/api';
 import { useRealtimeBridge } from './lib/useRealtime';
 import Groups from './pages/Groups';
+import Composer from './components/Composer';
+import { MessageMedia } from './components/MessageMedia';
 import Contacts from './pages/Contacts';
 import Status from './pages/Status';
 import SettingsPage from './pages/Settings';
@@ -98,89 +100,6 @@ function ThemeButton() {
   );
 }
 
-/* --------------------------------------------------------------- composer */
-
-function Composer({ chatId }: { chatId: string }) {
-  const [text, setText] = useState('');
-  const typingTimer = useRef<number | null>(null);
-  const queryClient = useQueryClient();
-  const me = useSession((s) => s.user);
-  const connected = useRealtime((s) => s.connected);
-
-  const stopTyping = useCallback(() => {
-    if (typingTimer.current) {
-      window.clearTimeout(typingTimer.current);
-      typingTimer.current = null;
-    }
-    realtime.typingStop(chatId);
-  }, [chatId]);
-
-  useEffect(() => () => stopTyping(), [stopTyping]);
-
-  function onChange(value: string) {
-    setText(value);
-    if (!value.trim()) return;
-    realtime.typingStart(chatId);
-    if (typingTimer.current) window.clearTimeout(typingTimer.current);
-    typingTimer.current = window.setTimeout(() => {
-      realtime.typingStop(chatId);
-      typingTimer.current = null;
-    }, 1500);
-  }
-
-  async function send(e: React.FormEvent) {
-    e.preventDefault();
-    const value = text.trim();
-    if (!value || !me) return;
-
-    const clientId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const optimistic: Message = {
-      id: clientId,
-      clientId,
-      chatId,
-      senderId: me.id,
-      type: 'text',
-      content: value,
-      sentAt: new Date().toISOString(),
-      deliveredTo: [],
-      readBy: [],
-    };
-
-    queryClient.setQueryData<Message[]>(['messages', chatId], (prev) => [...(prev ?? []), optimistic]);
-    setText('');
-    stopTyping();
-
-    if (realtime.connected) {
-      realtime.sendMessage({ chatId, type: 'text', content: value, clientId });
-    } else {
-      try {
-        const saved = await api.sendMessage({ chatId, type: 'text', content: value, clientId });
-        queryClient.setQueryData<Message[]>(['messages', chatId], (prev) =>
-          (prev ?? []).map((m) => (m.clientId === clientId ? saved : m)),
-        );
-      } catch {
-        queryClient.setQueryData<Message[]>(['messages', chatId], (prev) =>
-          (prev ?? []).map((m) => (m.clientId === clientId ? { ...m, failed: true } : m)),
-        );
-      }
-    }
-  }
-
-  return (
-    <form onSubmit={send} className="flex items-center gap-2 border-t border-ink-200 p-3 dark:border-white/10">
-      <input
-        className="field flex-1"
-        placeholder={connected ? 'Type a message' : 'Reconnecting…'}
-        value={text}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <button type="submit" className="btn-primary !px-3" disabled={!text.trim()}>
-        <Send className="h-4 w-4" />
-      </button>
-    </form>
-  );
-}
-
 /* -------------------------------------------------------------------- chat */
 
 function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: () => void }) {
@@ -242,7 +161,10 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
                     : 'rounded-bl-md bg-white text-ink-800 dark:bg-ink-700 dark:text-ink-100'
                 } ${m.failed ? 'opacity-60' : ''}`}
               >
-                <span className="whitespace-pre-wrap break-words">{m.content}</span>
+                <MessageMedia message={m} mine={mine} />
+                {m.content && m.type !== 'file' ? (
+                  <span className="whitespace-pre-wrap break-words">{m.content}</span>
+                ) : null}
                 <span className={`ml-2 align-bottom text-[10px] ${mine ? 'text-white/70' : 'text-ink-400'}`}>
                   {pending ? '…' : m.failed ? 'failed' : new Date(m.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
