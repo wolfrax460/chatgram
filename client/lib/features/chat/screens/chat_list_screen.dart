@@ -186,10 +186,10 @@ class ChatListScreen extends StatelessWidget {
               width: 30,
               height: 30,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColors.brand600,
                 borderRadius: BorderRadius.circular(9),
               ),
-              child: const FaIcon(AppIcons.chat, size: 18, color: AppColors.teal),
+              child: const FaIcon(AppIcons.chat, size: 18, color: Colors.white),
             ),
             const SizedBox(width: 10),
             const Text('Chatgram'),
