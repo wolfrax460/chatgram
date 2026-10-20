@@ -168,6 +168,10 @@ function registerSocketHandlers(io) {
 
         const payload = { ...populated.toObject(), clientId: clientId || null };
         // Mirror a Support-account reply onto its ticket (additive, non-fatal).
+      require('../support/supportAgentReply')
+        .answerSupportChat(payload, io)
+        .catch(() => {});
+
       require('../support/replyHook')
         .propagateSupportReply(payload, io)
         .catch(() => {});

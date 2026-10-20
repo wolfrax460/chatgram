@@ -462,3 +462,16 @@ reset with a wrong code -> 400 'That code is not correct' (reason invalid), no c
 Store unit check: wrong code invalid, right code ok, replay not_found.
 verification/send still 200 (its own store). /api/config 200, /health 200.
 
+
+---
+
+## In-app Chatgram Support is now answered by the AI (2026-10-20)
+
+The agent previously only fired on widget tickets. Users who message the Chatgram Support account directly in the app got no answer.
+
+- server/src/support/supportAgentReply.js: when a direct message is sent to the support account, the assistant reads the conversation, answers from the knowledge base as that account (so it appears as a normal Support message, live over the existing socket), and escalates to Telegram/email when not confident.
+- Skips messages sent BY support, the ticket Support Desk conversation (owned by agentResponder), chats that already have a ticket, and anything when SUPPORT_AGENT_ENABLED is not true.
+- Hooked into both REST sendMessage and Socket.IO message:send.
+
+Verified with a simulated conversation: 'How do I reset my password?' -> log 'Support assistant answered in-app for Agent Test' with a correct KB reply. Test user, chat and messages deleted afterwards. /api/config 200, /health 200.
+

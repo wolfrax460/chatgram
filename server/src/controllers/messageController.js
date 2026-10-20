@@ -65,6 +65,12 @@ const sendMessage = async (req, res) => {
     realtime.joinUsersToChat(chatId, chat.participants.map((p) => p.toString()));
     // If this is the Support account replying on a ticket, mirror it to the
     // guest's ticket room (additive; failures are swallowed).
+    // If this is a user writing to the Chatgram Support account, let the
+    // assistant answer (or escalate to the owner).
+    require('../support/supportAgentReply')
+      .answerSupportChat(message, realtime.getIo())
+      .catch(() => {});
+
     require('../support/replyHook')
       .propagateSupportReply(message, realtime.getIo())
       .catch(() => {});
