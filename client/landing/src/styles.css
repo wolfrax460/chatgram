@@ -1246,3 +1246,38 @@ svg {
   .pd-fade, .pd-bubble { animation: none; }
   .pd-wrap:hover .pd-phone { transform: none; }
 }
+/* ==========================================================================
+   /docs — Terms & Privacy
+   ========================================================================== */
+.docs-page { min-height: 100vh; background: var(--bg); color: var(--text); }
+.docs-head {
+  background: var(--hero-bg);
+  padding: 48px 0 32px;
+  margin-bottom: 40px;
+}
+.docs-back { font-size: 13px; font-weight: 650; color: var(--brand); }
+.docs-head h1 { font-size: clamp(26px, 3.4vw, 38px); margin: 14px 0 6px; font-weight: 800; letter-spacing: -0.03em; }
+.docs-updated { color: var(--hero-muted); font-size: 13.5px; margin: 0 0 18px; }
+.docs-toc { display: flex; flex-wrap: wrap; gap: 10px; }
+.docs-toc a {
+  font-size: 13px; font-weight: 650; padding: 7px 14px; border-radius: 999px;
+  border: 1px solid var(--line-strong); color: var(--text-soft);
+}
+.docs-toc a:hover { border-color: var(--brand); color: var(--brand); }
+
+.docs-body { max-width: 780px; padding-bottom: 60px; }
+.docs-body section { margin-bottom: 56px; scroll-margin-top: 90px; }
+.docs-body h2 {
+  font-size: 26px; font-weight: 800; margin: 0 0 20px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--line);
+}
+.docs-body h3 { font-size: 16.5px; font-weight: 750; margin: 26px 0 8px; }
+.docs-body p, .docs-body li { font-size: 15px; line-height: 1.7; color: var(--text-soft); }
+.docs-body p { margin: 0 0 12px; }
+.docs-body ul { margin: 0 0 14px; padding-left: 22px; }
+.docs-body li { margin-bottom: 7px; }
+.docs-body a { color: var(--brand); text-decoration: underline; }
+
+.docs-foot { border-top: 1px solid var(--line); padding: 26px 0; font-size: 13px; color: var(--muted); }
+.docs-foot a { color: var(--text-soft); }
+.docs-foot a:hover { color: var(--brand); }

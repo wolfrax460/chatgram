@@ -110,9 +110,9 @@ function AuthShell({ children }: { children: React.ReactNode }) {
 
         <footer className="mt-6 space-y-3 text-center text-[12px] text-ink-600 dark:text-ink-300">
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-            <a href="/privacy" className="hover:underline">{t('privacy')}</a>
+            <a href="/docs#privacy" className="hover:underline">{t('privacy')}</a>
             <span aria-hidden>·</span>
-            <a href="/terms" className="hover:underline">{t('terms')}</a>
+            <a href="/docs#terms" className="hover:underline">{t('terms')}</a>
             <span aria-hidden>·</span>
             <a href="mailto:support@chatgram.local" className="hover:underline">{t('help')}</a>
           </div>
@@ -374,6 +374,11 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
       next.identifier =
         resolved.error === 'phone' ? t('errInvalidPhone') : resolved.error === 'required' ? t('errRequired') : t('errInvalidEmail');
     }
+    // Phone sign-up is not live yet: email verification is required to create an
+    // account. Say so plainly rather than letting the server reject it.
+    if (resolved.kind === 'phone') {
+      setFormError(t('errPhoneSignupSoon'));
+    }
     if (password.length < 8) next.password = t('errPasswordShort');
     if (password !== confirm) next.confirm = t('errPasswordMismatch');
     if (!agree) next.agree = t('errAgreeTerms');
@@ -448,9 +453,9 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
         <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-600" />
         <span>
           {t('agreeTerms')}{' '}
-          <a href="/terms" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('terms')}</a>{' '}
+          <a href="/docs#terms" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('terms')}</a>{' '}
           /{' '}
-          <a href="/privacy" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('privacy')}</a>
+          <a href="/docs#privacy" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('privacy')}</a>
         </span>
       </label>
       <p role="alert" aria-live="polite" className="min-h-[16px] text-[12px] font-medium text-rose-600 dark:text-rose-400">{errors.agree ?? ''}</p>

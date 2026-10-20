@@ -201,3 +201,18 @@ graph against the *uploaded* file, not only the local one.
 - [ ] Backend hardening (rate limit, hashed single-use reset tokens, TOTP,
       Turnstile) - deferred with the six packages.
 - [ ] Playwright suite - blocked on a non-production backend.
+
+---
+
+## Live deployment + auth + docs (2026-10-20)
+
+- Phone **sign-up** now shows a clear message that phone registration is still in
+  development and to use email (the UI previously let the server reject it).
+- /docs published: **Terms of Service** and **Privacy Policy** as a real page
+  (served from docs/index.html — the same SPA shell, routed by pathname in
+  main.jsx). Sign-in/sign-up Terms and Privacy links deep-link to
+  /docs#terms and /docs#privacy.
+  Note: a Vercel ewrites entry for /docs did not take effect, so /docs is
+  served as a real directory instead of a rewrite.
+- Deployed to production: landing + /docs + /web (new auth screens).
+- /app still 307 -> /web.
