@@ -253,3 +253,34 @@ graph against the *uploaded* file, not only the local one.
 The full spec (tickets model, 6 endpoints, guest socket namespace, AI proxy,
 admin ticket badges, Playwright suite) is multi-session work. The knowledge base
 above is the shared prerequisite for it, so it was done first.
+
+---
+
+## Support widget — step 1 backend (2026-10-20)
+
+- **Model** SupportTicket: ticketId (CG-XXXXX), guestId, contact/contactType,
+  status open|answered|closed, summary, transcript[], replies[], meta
+  (userAgent/page/appVersion/ipHash), chatId. **TTL index deletes transcripts
+  after 90 days.**
+- **POST /api/support/tickets** (public): validates contact (email or phone),
+  summary required, strips HTML, caps summary 2000 / transcript 40 entries /
+  4000 chars each, rate limits 5/hour per IP and 3/hour per guestId. Creates the
+  ticket, then inserts a formatted message (ticket ID, contact, page, browser,
+  summary, transcript) into the Support account's inbox via a "Support Desk"
+  conversation and emits the existing \message:new\ socket event, then emails
+  SUPPORT_NOTIFY_EMAIL when SMTP is configured.
+- **GET /api/support/tickets/:ticketId?contact=** (public, 30/hour per IP):
+  returns status + replies only when the contact matches; otherwise 404.
+- **Nothing existing changed** — routes are mounted before \protect\.
+
+### Deviation (documented)
+The spec asked for one conversation **per ticket** between a "Support Desk"
+system user and the Support user. Chats are pairwise, so per-ticket threads would
+require a synthetic user per ticket. Instead all tickets arrive in a **single
+"Support Desk" conversation**, each message prefixed with its ticket ID. Simpler,
+no user-table pollution, and still live via the socket.
+
+### Still to build
+Widget UI, guest socket namespace + signed guest tokens, AI proxy
+(POST /api/support/assistant), support-reply propagation, admin ticket badges,
+delete-my-ticket, Turnstile, Playwright suite.
