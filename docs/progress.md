@@ -119,3 +119,37 @@ see decisions.md D9).
 - [ ] \X-Client\ / \X-Client-Version\ logging
 - [ ] \GET /api/app/min-version\
 - [ ] Push token endpoints
+
+---
+
+## Web UI overhaul (2026-10-20)
+
+### Done
+- **A1** Delivery ticks: sent (single), delivered (double grey), read (double #53bdeb).
+  Live: message:delivered / message:read now patch the messages cache.
+- **A2** Date separators (Today / Yesterday / date).
+- **A3** Grouped consecutive messages: 3px spacing, timestamp on last of the run,
+  sender name on first of the run.
+- **A4 (partial)** Hover actions: reply (quoted preview above the bubble, sent as a
+  \> Name: text\ prefix), copy, delete-for-me (local, see gaps).
+- **A5** "Scroll to latest" floating button; "New messages" divider derived from
+  the first message not in \eadBy\.
+- **A6** Typing indicator in the chat header and in the chat-list row.
+- **B1-B5** Emoji picker (32 emoji), send/mic swap, Enter sends + Shift+Enter newline,
+  textarea auto-grows to ~5 lines, per-chat drafts, attach menu (photo / document / camera).
+- **C1-C3** Header: in-chat search, call button, ⋮ menu; connection state shown only
+  when disconnected ("Reconnecting…"); subtitle is online / typing… / "last seen today at …".
+- **D1-D4** Chat list: time, unread badge, tick or "You:" prefix, initials from first+last
+  word, stable colour hash of the user id, profile photo when set, search bar, new-chat
+  button, sorted by most recent.
+- **E1-E4** Message column capped at 860px centred, bubbles at 65%; received bubbles get a
+  1px border; rail labels 11.5px with tooltips + aria-labels; logout confirmation dialog;
+  secondary text moved to ink-600/ink-300 for WCAG AA.
+- **E5** 12h/24h time-format setting (Settings → Time format), persisted.
+- **F1-F2** Unread total in the tab title ("(2) Chatgram") and a badge drawn onto the
+  favicon via canvas when unread > 0.
+
+### Not done (need backend additions — see decisions.md D10)
+- Message reactions, forward, delete-for-everyone, mute, block, clear-chat, calls.
+- "Test with two browser sessions" was not performed: no second set of live credentials
+  was available in this environment. Type-check and production build pass.

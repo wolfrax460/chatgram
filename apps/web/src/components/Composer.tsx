@@ -1,175 +1,119 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { Mic, Paperclip, Send, X, Check } from 'lucide-react';
-import { useRealtime, useSession, type Message, type MessageType } from '@chatgram/core';
-import { api, realtime } from '../lib/api';
-import { formatDuration, MAX_UPLOAD_BYTES, useVoiceRecorder } from '../lib/useVoiceRecorder';
+import { useEffect, useRef, useState } from 'react';
+import { Smile, Paperclip, Send, Mic, Image as ImageIcon, FileText, Camera } from 'lucide-react';
+import { useRealtime } from '@chatgram/core';
+import { formatDuration, useVoiceRecorder } from '../lib/useVoiceRecorder';
 
-function typeFromMime(mimetype: string): MessageType {
-  if (mimetype.startsWith('image/')) return 'image';
-  if (mimetype.startsWith('video/')) return 'video';
-  if (mimetype.startsWith('audio/')) return 'audio';
-  return 'file';
-}
+const EMOJIS = [
+  '😀', '😂', '😊', '😍', '😎', '🤔', '😅', '🙃',
+  '😢', '😭', '😡', '👍', '👎', '🙏', '👏', '💪',
+  '🔥', '❤️', '💚', '🎉', '✅', '❌', '⭐', '💯',
+  '☕', '🍕', '⚽', '🎵', '📷', '📎', '💬', '🚀',
+];
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+export interface ComposerProps {
+  chatId: string;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSendText: (text: string) => void;
+  onSendFile: (file: File, type?: 'image' | 'file' | 'audio') => void;
+  onTyping: (typing: boolean) => void;
+  replyTo: { name: string; preview: string } | null;
+  onCancelReply: () => void;
+  busy?: boolean;
+  notice?: string | null;
+  onDismissNotice: () => void;
 }
 
 /**
- * Message composer: text, file attachments and voice notes.
- *
- * Media always goes over REST (upload, then create the message); text prefers
- * the socket with a REST fallback so it still works while reconnecting.
+ * Composer: emoji picker, attach menu, auto-growing textarea with per-chat
+ * drafts, and a mic that swaps to send once there is text.
  */
-export default function Composer({ chatId }: { chatId: string }) {
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+export default function Composer({
+  chatId,
+  draft,
+  onDraftChange,
+  onSendText,
+  onSendFile,
+  onTyping,
+  replyTo,
+  onCancelReply,
+  busy,
+  notice,
+  onDismissNotice,
+}: ComposerProps) {
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
 
-  const typingTimer = useRef<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const queryClient = useQueryClient();
-  const me = useSession((s) => s.user);
+  const imageRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const typingTimer = useRef<number | null>(null);
   const connected = useRealtime((s) => s.connected);
 
-  const appendMessage = useCallback(
-    (message: Message) => {
-      queryClient.setQueryData<Message[]>(['messages', chatId], (prev) => [...(prev ?? []), message]);
-      void queryClient.invalidateQueries({ queryKey: ['chats'] });
-    },
-    [chatId, queryClient],
-  );
+  const recorder = useVoiceRecorder((file) => onSendFile(file, 'audio'));
 
-  /* ---------------------------------------------------------- attachments */
-
-  const sendMedia = useCallback(
-    async (file: File, forcedType?: MessageType) => {
-      if (file.size > MAX_UPLOAD_BYTES) {
-        setNotice(`"${file.name}" is ${formatBytes(file.size)} — the limit is 10 MB.`);
-        return;
-      }
-      setBusy(true);
-      setNotice(null);
-      try {
-        const uploaded = await api.uploadMedia(file);
-        const type = forcedType ?? typeFromMime(uploaded.mimetype);
-        const saved = await api.sendMessage({
-          chatId,
-          type,
-          mediaUrl: uploaded.url,
-          content: type === 'file' ? uploaded.originalname || file.name : undefined,
-        });
-        appendMessage(saved);
-      } catch (err) {
-        setNotice(err instanceof Error ? err.message : 'Upload failed');
-      } finally {
-        setBusy(false);
-      }
-    },
-    [chatId, appendMessage],
-  );
-
-  async function pickFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = '';
-    for (const file of files) {
-      await sendMedia(file);
-    }
-  }
-
-  /* -------------------------------------------------------------- voice */
-
-  const recorder = useVoiceRecorder((file) => {
-    void sendMedia(file, 'audio');
-  });
-
+  // Auto-grow up to ~5 lines.
   useEffect(() => {
-    if (recorder.error) setNotice(recorder.error);
-  }, [recorder.error]);
+    const el = textRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 24 * 5)}px`;
+  }, [draft]);
 
-  /* -------------------------------------------------------------- text */
-
-  const stopTyping = useCallback(() => {
-    if (typingTimer.current) {
-      window.clearTimeout(typingTimer.current);
-      typingTimer.current = null;
-    }
-    realtime.typingStop(chatId);
+  // Focus the textarea when switching chats.
+  useEffect(() => {
+    textRef.current?.focus();
   }, [chatId]);
 
-  useEffect(() => () => stopTyping(), [stopTyping]);
+  useEffect(() => {
+    if (recorder.error) onDismissNotice();
+  }, [recorder.error, onDismissNotice]);
 
-  function onChange(value: string) {
-    setText(value);
-    if (!value.trim()) return;
-    realtime.typingStart(chatId);
+  function change(value: string) {
+    onDraftChange(value);
+    if (value.trim()) onTyping(true);
     if (typingTimer.current) window.clearTimeout(typingTimer.current);
-    typingTimer.current = window.setTimeout(() => {
-      realtime.typingStop(chatId);
-      typingTimer.current = null;
-    }, 1500);
+    typingTimer.current = window.setTimeout(() => onTyping(false), 1500);
   }
 
-  async function sendText(e: React.FormEvent) {
-    e.preventDefault();
-    const value = text.trim();
-    if (!value || !me) return;
-
-    const clientId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const optimistic: Message = {
-      id: clientId,
-      clientId,
-      chatId,
-      senderId: me.id,
-      type: 'text',
-      content: value,
-      sentAt: new Date().toISOString(),
-      deliveredTo: [],
-      readBy: [],
-    };
-
-    appendMessage(optimistic);
-    setText('');
-    stopTyping();
-
-    if (realtime.connected) {
-      realtime.sendMessage({ chatId, type: 'text', content: value, clientId });
-    } else {
-      try {
-        const saved = await api.sendMessage({ chatId, type: 'text', content: value, clientId });
-        queryClient.setQueryData<Message[]>(['messages', chatId], (prev) =>
-          (prev ?? []).map((m) => (m.clientId === clientId ? saved : m)),
-        );
-      } catch {
-        queryClient.setQueryData<Message[]>(['messages', chatId], (prev) =>
-          (prev ?? []).map((m) => (m.clientId === clientId ? { ...m, failed: true } : m)),
-        );
-      }
-    }
+  function submit(e?: React.FormEvent) {
+    e?.preventDefault();
+    const value = draft.trim();
+    if (!value || busy) return;
+    onTyping(false);
+    onSendText(value);
+    onCancelReply();
+    setEmojiOpen(false);
+    requestAnimationFrame(() => textRef.current?.focus());
   }
 
-  /* -------------------------------------------------------------- render */
+  function pick(ref: React.RefObject<HTMLInputElement>) {
+    ref.current?.click();
+    setAttachOpen(false);
+  }
 
   if (recorder.recording) {
     return (
       <div className="border-t border-ink-200 p-3 dark:border-white/10">
-        {notice ? <p className="mb-2 text-xs text-rose-500">{notice}</p> : null}
         <div className="flex items-center gap-3">
-          <button type="button" className="btn-ghost !px-2 text-rose-600" onClick={() => recorder.stop(true)} title="Cancel">
-            <X className="h-5 w-5" />
+          <button
+            type="button"
+            className="btn-ghost !px-2 text-rose-600"
+            onClick={() => recorder.stop(true)}
+            title="Cancel"
+          >
+            ✕
           </button>
           <div className="flex flex-1 items-center gap-2 rounded-xl bg-rose-500/10 px-3 py-2">
             <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-rose-500" />
             <span className="text-sm font-semibold text-rose-600 dark:text-rose-300">
               Recording {formatDuration(recorder.seconds)}
             </span>
-            <span className="ml-auto text-xs text-ink-400">tap ✓ to send</span>
+            <span className="ml-auto text-xs text-ink-500 dark:text-ink-400">tap ✓ to send</span>
           </div>
-          <button type="button" className="btn-primary !px-3" onClick={() => recorder.stop(false)} title="Send voice note">
-            <Check className="h-5 w-5" />
+          <button type="button" className="btn-primary !px-3" onClick={() => recorder.stop(false)} title="Send">
+            ✓
           </button>
         </div>
       </div>
@@ -177,45 +121,111 @@ export default function Composer({ chatId }: { chatId: string }) {
   }
 
   return (
-    <div className="border-t border-ink-200 dark:border-white/10">
+    <div className="relative border-t border-ink-200 dark:border-white/10">
+      {/* reply preview */}
+      {replyTo ? (
+        <div className="mx-3 mt-2 flex items-start gap-2 rounded-xl border-l-4 border-brand-600 bg-ink-100 px-3 py-2 dark:bg-white/5">
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-semibold text-brand-700 dark:text-brand-300">{replyTo.name}</p>
+            <p className="truncate text-[12.5px] text-ink-600 dark:text-ink-300">{replyTo.preview}</p>
+          </div>
+          <button type="button" className="text-ink-500 hover:text-ink-800 dark:hover:text-white" onClick={onCancelReply}>
+            ✕
+          </button>
+        </div>
+      ) : null}
+
       {notice ? (
         <p className="px-3 pt-2 text-xs text-rose-500">
           {notice}{' '}
-          <button type="button" className="underline" onClick={() => setNotice(null)}>
+          <button type="button" className="underline" onClick={onDismissNotice}>
             dismiss
           </button>
         </p>
       ) : null}
 
-      <form onSubmit={sendText} className="flex items-end gap-2 p-3">
-        <input
-          ref={fileRef}
-          type="file"
-          multiple
-          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
-          className="hidden"
-          onChange={pickFiles}
-        />
+      {/* emoji picker */}
+      {emojiOpen ? (
+        <div className="absolute bottom-full left-3 z-30 mb-1 grid w-64 grid-cols-8 gap-1 rounded-xl border border-ink-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-ink-700">
+          {EMOJIS.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              className="rounded-md p-1 text-lg hover:bg-ink-100 dark:hover:bg-white/10"
+              onClick={() => {
+                change(draft + emoji);
+                textRef.current?.focus();
+              }}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {/* attach menu */}
+      {attachOpen ? (
+        <div className="absolute bottom-full left-3 z-30 mb-1 w-44 overflow-hidden rounded-xl border border-ink-200 bg-white py-1 shadow-xl dark:border-white/10 dark:bg-ink-700">
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10" onClick={() => pick(imageRef)}>
+            <ImageIcon className="h-4 w-4" /> Photo
+          </button>
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10" onClick={() => pick(fileRef)}>
+            <FileText className="h-4 w-4" /> Document
+          </button>
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10" onClick={() => pick(cameraRef)}>
+            <Camera className="h-4 w-4" /> Camera
+          </button>
+        </div>
+      ) : null}
+
+      <form onSubmit={submit} className="flex items-end gap-1.5 p-2.5">
         <button
           type="button"
-          className="btn-ghost !px-2.5"
-          title="Attach a file"
-          onClick={() => fileRef.current?.click()}
+          className="btn-ghost !px-2"
+          title="Emoji"
+          onClick={() => {
+            setEmojiOpen((v) => !v);
+            setAttachOpen(false);
+          }}
+        >
+          <Smile className="h-5 w-5" />
+        </button>
+
+        <button
+          type="button"
+          className="btn-ghost !px-2"
+          title="Attach"
+          onClick={() => {
+            setAttachOpen((v) => !v);
+            setEmojiOpen(false);
+          }}
           disabled={busy}
         >
           {busy ? <span className="text-xs">…</span> : <Paperclip className="h-5 w-5" />}
         </button>
 
-        <input
-          className="field flex-1"
+        <input ref={imageRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onSendFile(f, 'image'); }} />
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onSendFile(f, 'image'); }} />
+        <input ref={fileRef} type="file" multiple accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" className="hidden" onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; for (const f of files) onSendFile(f); }} />
+
+        <textarea
+          ref={textRef}
+          rows={1}
+          value={draft}
+          onChange={(e) => change(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
           placeholder={connected ? 'Type a message' : 'Reconnecting…'}
-          value={text}
-          onChange={(e) => onChange(e.target.value)}
+          className="field max-h-[120px] min-h-[42px] flex-1 resize-none py-2.5 leading-6"
         />
 
-        {text.trim() ? (
-          <button type="submit" className="btn-primary !px-3">
-            <Send className="h-4 w-4" />
+        {draft.trim() ? (
+          <button type="submit" className="btn-primary !px-3" disabled={busy} title="Send">
+            <Send className="h-5 w-5" />
           </button>
         ) : (
           <button

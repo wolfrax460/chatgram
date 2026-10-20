@@ -130,38 +130,59 @@ export const useRealtime = create<RealtimeState>((set) => ({
 
 /* ------------------------------------------------------------------- prefs */
 
+export type TimeFormat = '12h' | '24h';
+
 interface PrefsState {
   notifications: boolean;
   sounds: boolean;
+  timeFormat: TimeFormat;
   setPref: (key: 'notifications' | 'sounds', value: boolean) => void;
+  setTimeFormat: (format: TimeFormat) => void;
 }
 
 const PREFS_KEY = 'chatgram.prefs';
 
-function readPrefs(): Pick<PrefsState, 'notifications' | 'sounds'> {
+function readPrefs(): Pick<PrefsState, 'notifications' | 'sounds' | 'timeFormat'> {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
     return {
       notifications: parsed.notifications === true,
       sounds: parsed.sounds !== false,
+      timeFormat: parsed.timeFormat === '24h' ? '24h' : '12h',
     };
   } catch {
-    return { notifications: false, sounds: true };
+    return { notifications: false, sounds: true, timeFormat: '12h' };
   }
 }
 
 export const usePrefs = create<PrefsState>((set) => ({
   ...(typeof localStorage === 'undefined'
-    ? { notifications: false, sounds: true }
+    ? { notifications: false, sounds: true, timeFormat: '12h' as TimeFormat }
     : readPrefs()),
+  setTimeFormat: (format) =>
+    set((state) => {
+      try {
+        localStorage.setItem(
+          PREFS_KEY,
+          JSON.stringify({
+            notifications: state.notifications,
+            sounds: state.sounds,
+            timeFormat: format,
+          }),
+        );
+      } catch {
+        /* ignore */
+      }
+      return { timeFormat: format };
+    }),
   setPref: (key, value) =>
     set((state) => {
       const next = { ...state, [key]: value };
       try {
         localStorage.setItem(
           PREFS_KEY,
-          JSON.stringify({ notifications: next.notifications, sounds: next.sounds }),
+          JSON.stringify({ notifications: next.notifications, sounds: next.sounds, timeFormat: next.timeFormat }),
         );
       } catch {
         /* ignore */

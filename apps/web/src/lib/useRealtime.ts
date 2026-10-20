@@ -67,6 +67,27 @@ export function useRealtimeBridge(): void {
           void queryClient.invalidateQueries({ queryKey: ['chats'] });
         },
 
+        onMessageDelivered: ({ messageId, chatId, userId: target }) => {
+          queryClient.setQueryData<Message[]>(['messages', chatId], (prev) =>
+            (prev ?? []).map((m) =>
+              m.id === messageId && !m.deliveredTo.includes(target)
+                ? { ...m, deliveredTo: [...m.deliveredTo, target] }
+                : m,
+            ),
+          );
+        },
+
+        onMessageRead: ({ chatId, userId: reader, all }) => {
+          queryClient.setQueryData<Message[]>(['messages', chatId], (prev) =>
+            (prev ?? []).map((m) => {
+              if (m.senderId === reader) return m;
+              if (!all && m.readBy.includes(reader)) return m;
+              if (m.readBy.includes(reader)) return m;
+              return { ...m, readBy: [...m.readBy, reader] };
+            }),
+          );
+        },
+
         onTyping: ({ chatId, userId: typingId, isTyping }) => {
           if (typingId === userId) return;
           setTyping(chatId, isTyping ? typingId : null);

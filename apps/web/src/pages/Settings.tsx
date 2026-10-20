@@ -278,6 +278,26 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
         />
       </Section>
 
+      {/* time format */}
+      <Section title="Time format">
+        <div className="flex gap-2 px-4 py-3">
+          {(['12h', '24h'] as const).map((format) => (
+            <button
+              key={format}
+              type="button"
+              onClick={() => prefs.setTimeFormat(format)}
+              className={`flex flex-1 items-center justify-center rounded-xl border px-3 py-3 text-sm font-semibold transition ${
+                prefs.timeFormat === format
+                  ? 'border-brand-600 bg-brand-600/10 text-brand-700 dark:text-brand-300'
+                  : 'border-ink-200 text-ink-600 hover:bg-ink-100/70 dark:border-white/10 dark:text-ink-300 dark:hover:bg-white/5'
+              }`}
+            >
+              {format === '12h' ? '12-hour (9:19 AM)' : '24-hour (09:19)'}
+            </button>
+          ))}
+        </div>
+      </Section>
+
       {/* privacy */}
       <Section title="Privacy">
         <ToggleRow

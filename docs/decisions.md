@@ -112,3 +112,26 @@ was replacing the \workspace:*\ protocol with \*\.
 **Cost to reverse:** trivial — add \pnpm-workspace.yaml\, swap \*\ back to \workspace:*\ and
 \
 pm i\ → \pnpm i\. Nothing in the source depends on the package manager.
+
+---
+
+## D10 — UI overhaul: what was implemented client-side vs deferred
+
+**Decision:** implement everything that the frozen API already supports, and defer features
+that need new endpoints rather than faking them.
+
+| Feature | Status | Why |
+|---|---|---|
+| Reply | ✅ client-side | Sent as a \> Name: text\ prefix in \content\. Persists and shows for everyone without a schema change. |
+| Copy | ✅ client-side | Clipboard API. |
+| Delete for me | ⚠️ local only | No \DELETE /api/messages/:id\. Removed from the cache and restored on refetch. |
+| Delete for everyone | ❌ deferred | Needs the endpoint above + an "is deleted" flag on the model. |
+| Reactions | ❌ deferred | Needs a \eactions\ field on Message, a socket event and a REST route. |
+| Forward | ❌ deferred | Implementable as send-to-another-chat, but needs a chat picker UI; not a backend gap. |
+| Mute | ❌ deferred | Would need per-user muted-chats storage; currently only a placeholder toast. |
+| Block contact | ❌ deferred | Needs a \locked\ relation + server-side message filtering. |
+| Clear chat | ❌ deferred | Needs \DELETE /api/chats/:id/messages\. |
+| Calls | ❌ N/A | No WebRTC anywhere in the product; header button is a placeholder. |
+
+**No backend changes were made in this pass.** All backend work above is additive and can be
+done in Phase 1/3 without breaking the Flutter client.
