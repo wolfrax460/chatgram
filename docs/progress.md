@@ -369,3 +369,23 @@ Playwright suite, backend hardening.
 - Verified live: channels telegram=false whatsapp=false email=true; ticket CG-W6ZJE created and logged as notified via email; health OK.
 - Env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID | WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, WHATSAPP_TO, WHATSAPP_API_VERSION | SUPPORT_NOTIFY_EMAIL + SMTP_*.
 
+
+---
+
+## Guest socket + support-reply propagation (2026-10-20)
+
+- server/src/support/guestToken.js: HMAC-signed, 30-minute tokens granting read access to ONE ticket. Format base64url(payload).base64url(hmac), constant-time compare, tamper + expiry rejected.
+- server/src/sockets/supportGuestSocket.js: separate /support-guest namespace. Auth middleware verifies the token; the socket can only join ticket:<id> for its own ticket. emitToTicket(io, ticketId, event, payload) helper.
+- POST /api/support/tickets now returns guestToken + guestTokenExpiresAt alongside ticketId.
+- server/src/support/replyHook.js: propagateSupportReply() detects a Support-account message in a desk conversation, appends it to the ticket replies, flips status to answered, emits ticket:reply to the guest room and pings the owner channels.
+- Hooked into BOTH message paths: REST sendMessage and Socket.IO message:send.
+- Registered at startup (log: 'Support guest namespace ready at /support-guest').
+
+### Verified live
+- token issue/verify ok; tampered token rejected with bad-signature
+- ticket CG-8BNFA returned a valid guestToken with a 30-minute expiry
+- health OK after restart; /api/config 200; /api/chats 401 (unchanged)
+
+### Remaining
+The widget does not yet connect to /support-guest, and reply propagation is not yet proven end-to-end with a real Support reply. Backend hardening still outstanding.
+

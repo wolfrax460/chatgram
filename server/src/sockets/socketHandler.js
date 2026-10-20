@@ -167,7 +167,12 @@ function registerSocketHandlers(io) {
         realtime.joinUsersToChat(chatId, chat.participants.map((p) => p.toString()));
 
         const payload = { ...populated.toObject(), clientId: clientId || null };
-        io.to(realtime.roomForChat(chatId)).emit('message:new', payload);
+        // Mirror a Support-account reply onto its ticket (additive, non-fatal).
+      require('../support/replyHook')
+        .propagateSupportReply(payload, io)
+        .catch(() => {});
+
+      io.to(realtime.roomForChat(chatId)).emit('message:new', payload);
       } catch (error) {
         console.error('Message send error:', error);
         socket.emit('message:error', {

@@ -215,8 +215,15 @@ const createTicket = async (req, res) => {
       console.warn('Support notification failed:', notifyError.message);
     }
 
+    const guest = require('../support/guestToken').issueGuestToken({
+      ticketId: ticket.ticketId,
+      guestId,
+    });
+
     return res.status(201).json({
       ticketId: ticket.ticketId,
+      guestToken: guest.token,
+      guestTokenExpiresAt: guest.expiresAt,
       status: ticket.status,
       message: "We'll reply by email, or you can check the status with this ticket ID.",
     });

@@ -15,6 +15,7 @@ dotenv.config();
 const connectDB = require('./utils/db');
 const realtime = require('./utils/realtime');
 const { registerSocketHandlers } = require('./sockets/socketHandler');
+const { registerSupportGuestNamespace } = require('./sockets/supportGuestSocket');
 const mongoose = require('mongoose');
 
 const authRoutes = require('./routes/authRoutes');
@@ -110,6 +111,7 @@ const io = socketIo(server, {
 });
 
 realtime.setIo(io);
+registerSupportGuestNamespace(io);
 
 // Connect to MongoDB (non-fatal: the API stays up and reports 503 instead of
 // the whole process exiting, which is what previously black-holed the client).

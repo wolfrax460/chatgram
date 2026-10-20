@@ -63,6 +63,12 @@ const sendMessage = async (req, res) => {
     );
 
     realtime.joinUsersToChat(chatId, chat.participants.map((p) => p.toString()));
+    // If this is the Support account replying on a ticket, mirror it to the
+    // guest's ticket room (additive; failures are swallowed).
+    require('../support/replyHook')
+      .propagateSupportReply(message, realtime.getIo())
+      .catch(() => {});
+
     realtime.emitToChat(chatId, 'message:new', {
       ...populated.toObject(),
       clientId: clientId || null,
