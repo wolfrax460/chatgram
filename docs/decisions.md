@@ -99,3 +99,16 @@ These need a human answer and block progress — see `blockers.md`.
    on the same VM with its own Mongo database name.
 4. **Is the Flutter app currently in the Play Store / distributed to real users?** This decides
    whether §5.1's update-in-place requirement is real or theoretical.
+
+---
+
+## D9 — npm workspaces instead of pnpm
+
+**Decision:** use npm workspaces (root \package.json\ → \workspaces\) rather than pnpm.
+**Why:** \
+pm i -g pnpm\ stalled for 10+ minutes in this environment. npm 11 is present and
+its workspaces give the same hoisting/symlink behaviour for this repo. The only change needed
+was replacing the \workspace:*\ protocol with \*\.
+**Cost to reverse:** trivial — add \pnpm-workspace.yaml\, swap \*\ back to \workspace:*\ and
+\
+pm i\ → \pnpm i\. Nothing in the source depends on the package manager.

@@ -75,3 +75,29 @@ Plus: push notifications (greenfield) and deep links.
 
 See `blockers.md`. Three need the owner: staging environment, Android applicationId,
 release keystore.
+
+---
+
+## Phase 2 progress (2026-10-20)
+
+Monorepo scaffolded and **building green** (	sc --noEmit strict + vite).
+
+- [x] Workspace root (\package.json\ workspaces, \	sconfig.base.json\)
+- [x] \packages/core\ — models (\User\, \Chat\, \Message\, \StatusItem\), JSON
+      normalisers (\_id\/\id\ tolerance), display helpers, Zustand stores
+      (session, theme, realtime, prefs)
+- [x] \packages/api-client\ — typed client: bearer auth, single-flight refresh +
+      replay on 401, \ApiError\, one method per endpoint in docs/api-contract.md
+- [x] \packages/realtime\ — socket wrapper matching Flutter exactly: websocket +
+      polling fallback, 20 retries 1s→5s, re-emit \uthenticate\ on every connect
+- [x] \pps/web\ — React 18 + TS + Vite + Tailwind + lucide-react +
+      TanStack Query + Zustand; login, session restore, chat list, conversation
+      view, light/dark/system theme
+- [ ] React Router routes beyond the shell
+- [ ] Live socket wiring into the UI
+- [ ] Remaining Section 7 features
+
+**Build output:** 278.7 KB JS (88.7 KB gzip), 13.9 KB CSS (3.4 KB gzip).
+
+**Deviation:** npm workspaces used instead of pnpm (pnpm global install stalled;
+see decisions.md D9).
