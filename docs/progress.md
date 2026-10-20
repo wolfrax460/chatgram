@@ -447,3 +447,18 @@ The first deploy crashed the API because express-rate-limit was installed locall
 - TOTP 2FA.
 - Playwright suite (blocked on a non-production backend).
 
+
+---
+
+## Dedicated password-reset tokens + Telegram connected (2026-10-20)
+
+- server/src/utils/resetTokenStore.js: password resets now use their own store, completely separate from email verification. Codes are stored HASHED (HMAC-SHA256 with RESET_TOKEN_SECRET or JWT_SECRET), live 15 minutes, allow 5 attempts, and are single-use (consumed on success, so a replay returns not_found). 1-minute resend cooldown.
+- authController.forgotPassword/resetPassword switched to resetStore; the verification path is untouched.
+- Telegram: TELEGRAM_CHAT_ID=8304746608 set; channelStatus now reports telegram:true. Verified a real ticket notifies via telegram AND email.
+
+### Verified live
+forgot-password -> expiresInSeconds 900, delivered via smtp.
+reset with a wrong code -> 400 'That code is not correct' (reason invalid), no crash.
+Store unit check: wrong code invalid, right code ok, replay not_found.
+verification/send still 200 (its own store). /api/config 200, /health 200.
+

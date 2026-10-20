@@ -3,6 +3,8 @@ const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const { parseTarget, readVerificationToken } = require('./verificationController');
 const store = require('../utils/verificationStore');
+// Password resets use their own hashed, single-use, 15-minute tokens.
+const resetStore = require('../utils/resetTokenStore');
 const notifier = require('../utils/notifier');
 
 const ACCESS_SECRET = () => process.env.JWT_SECRET || 'your-secret-key';
@@ -281,7 +283,7 @@ const forgotPassword = async (req, res) => {
 
     if (!user) return res.json(genericReply);
 
-    const issued = store.issue(parsed.channel, parsed.target);
+    const issued = resetStore.issue(parsed.channel, parsed.target);
     if (!issued.ok) {
       return res.status(429).json({
         message: `Please wait ${issued.retryAfterSeconds}s before requesting another code.`,
@@ -341,7 +343,7 @@ const resetPassword = async (req, res) => {
       return res.status(400).json({ message: 'Password must be at least 6 characters long' });
     }
 
-    const result = store.check(parsed.channel, parsed.target, code);
+    const result = resetStore.check(parsed.channel, parsed.target, code);
     if (!result.ok) {
       const status = result.reason === 'too_many_attempts' ? 429 : 400;
       return res.status(status).json({
