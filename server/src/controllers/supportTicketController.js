@@ -110,6 +110,10 @@ async function notifyEmail(ticket, supportEmail) {
 // @access  Public
 const createTicket = async (req, res) => {
   try {
+    // A request with no JSON body would otherwise throw a 500.
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ message: 'A JSON body is required' });
+    }
     const guestId = stripHtml(req.body.guestId).slice(0, 64);
     const contact = stripHtml(req.body.contact).slice(0, 160);
     const summary = stripHtml(req.body.summary).slice(0, MAX_SUMMARY);

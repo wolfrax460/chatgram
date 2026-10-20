@@ -37,8 +37,9 @@ function kbFallback(text) {
 // @access  Public
 const askSupportAssistant = async (req, res) => {
   try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
     const ip = req.ip || req.connection?.remoteAddress;
-    const guestId = stripHtml(req.body.guestId).slice(0, 64);
+    const guestId = stripHtml(body.guestId).slice(0, 64);
 
     // Caps: per guest per hour and per IP per day.
     const guestLimit = rateLimit(`ai:guest:${guestId || ip}`, 30, 60 * 60 * 1000);
@@ -50,7 +51,7 @@ const askSupportAssistant = async (req, res) => {
       return res.status(429).json({ message: 'Daily limit reached. Please send a report to support.' });
     }
 
-    const raw = Array.isArray(req.body.messages) ? req.body.messages : [];
+    const raw = Array.isArray(body.messages) ? body.messages : [];
     const messages = raw
       .slice(-MAX_MESSAGES)
       .map((m) => ({
