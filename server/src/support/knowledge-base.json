@@ -1,0 +1,86 @@
+{
+  "$comment": "Machine-readable copy of docs/support-kb.md. Used by the support assistant and as the FAQ fallback when AI is disabled or unavailable.",
+  "version": 1,
+  "entries": [
+    {
+      "id": "register",
+      "title": "How to register",
+      "keywords": ["register", "sign up", "signup", "create account", "new account", "fungura konti", "créer un compte", "fungua akaunti"],
+      "answer": "Open https://chatgram-xi.vercel.app/web/ and choose Create account. Enter your full name, an email address, a password, and confirm the password. Tick the Terms and Privacy box, then press Send code. We email a 6-digit code — enter it to finish. You are signed in straight away.\n\nPhone sign-up is not available yet — please use an email address. Phone login works if your account already has a phone number."
+    },
+    {
+      "id": "phone-format",
+      "title": "Phone number format",
+      "keywords": ["phone", "number", "country code", "+250", "format", "telephone"],
+      "answer": "Phone numbers use the international E.164 format: a +, the country code, then the number with no spaces — for example +250788123456 for Rwanda. In the sign-in screen a country picker appears automatically when you type a number, and local numbers starting with 0 are converted for you (0788123456 -> +250788123456)."
+    },
+    {
+      "id": "password-rules",
+      "title": "Password rules",
+      "keywords": ["password", "strong", "length", "characters", "ijambo ry'ibanga", "mot de passe", "neno la siri"],
+      "answer": "Passwords must be at least 8 characters. A mix of upper and lower case, numbers and symbols makes an account much harder to break into. The sign-up form shows a strength meter. We never ask for your password by email or chat — anyone who does is not us."
+    },
+    {
+      "id": "forgot-password",
+      "title": "Forgot or reset password",
+      "keywords": ["forgot", "reset", "reset password", "can't sign in", "locked out", "change password", "wibagiwe", "oublié", "umesahau"],
+      "answer": "On the sign-in screen choose Forgot password?, enter the email or phone on your account and press Send code. We email a 6-digit code that expires quickly. Enter the code with a new password, then sign in again. If the code does not arrive, check spam and try again after a minute."
+    },
+    {
+      "id": "no-code",
+      "title": "I did not receive the code",
+      "keywords": ["no code", "didn't get code", "not received", "email not arrived", "spam", "verification code", "kode", "msimbo"],
+      "answer": "Check these in order: (1) the spam/junk folder; (2) that you typed the address correctly; (3) wait up to 5 minutes; (4) press Resend once, not repeatedly, because repeated requests are rate limited; (5) try a different email provider.\n\nIf nothing arrives after 10 minutes, send a report to Chatgram Support from the help panel and we will verify your address manually."
+    },
+    {
+      "id": "account-locked",
+      "title": "Account locked after too many attempts",
+      "keywords": ["locked", "too many attempts", "blocked", "retry after", "rate limit"],
+      "answer": "After several failed sign-ins the account is temporarily locked to protect it. The message tells you how many seconds to wait — usually a few minutes. Wait, then try once with the correct password. If you are unsure of the password, use Forgot password? instead of guessing again."
+    },
+    {
+      "id": "install-windows",
+      "title": "Install on Windows",
+      "keywords": ["windows", "install", "desktop", "pc", "setup", "exe", "download windows"],
+      "answer": "Download the installer from https://chatgram.duckdns.org/downloads/chatgram-windows-setup.exe and run it. Because the installer is not code-signed yet, Windows SmartScreen may warn — choose More info, then Run anyway. The desktop app uses the same account as the web app."
+    },
+    {
+      "id": "install-android",
+      "title": "Install on Android",
+      "keywords": ["android", "apk", "phone install", "mobile", "download android"],
+      "answer": "Download the APK from https://chatgram.duckdns.org/downloads/chatgram.apk. Android will ask you to allow installation from your browser — enable it, then install. The APK is not on the Play Store yet, so updates are manual for now."
+    },
+    {
+      "id": "notifications",
+      "title": "Notifications are not working",
+      "keywords": ["notification", "no notification", "sound", "alert", "popup", "email notification"],
+      "answer": "On the web app, open Settings, then Notifications, and enable Desktop notifications; your browser will ask for permission — allow it. Notifications only appear when the Chatgram window is not focused. Message sounds have a separate toggle. On Android, enable notifications for Chatgram in the system settings."
+    },
+    {
+      "id": "contact-support",
+      "title": "How to contact support",
+      "keywords": ["support", "contact", "human", "agent", "help", "report", "ticket"],
+      "answer": "Use the help panel and choose Send report to support. Include the email or phone on your account so we can reply, and optionally attach technical details (browser and page) which makes problems much faster to diagnose. You get a ticket ID such as CG-7F3K9 — keep it to check the status. Support replies by email, and you can watch the ticket in the panel."
+    },
+    {
+      "id": "ticket-status",
+      "title": "Check a ticket status",
+      "keywords": ["ticket", "status", "ticket id", "my report", "follow up"],
+      "answer": "Choose Check ticket status in the help panel, enter the ticket ID (for example CG-7F3K9) and the same email or phone you used when reporting. We only show the ticket to the matching contact, so a wrong contact returns not found."
+    },
+    {
+      "id": "security",
+      "title": "Account security",
+      "keywords": ["hacked", "suspicious", "security", "stolen", "compromise", "password leaked"],
+      "answer": "If you think someone else has access to your account: change your password immediately with Forgot password?, then send a report to support from the help panel so we can review recent activity. Never share your password or verification codes — Chatgram staff will never ask for them."
+    },
+    {
+      "id": "encryption",
+      "title": "Is Chatgram encrypted?",
+      "keywords": ["encryption", "privacy", "secure", "end-to-end", "e2ee", "read messages"],
+      "answer": "Connections are encrypted in transit with TLS. Messages are not end-to-end encrypted yet, which means our servers can technically read them. End-to-end encryption is on the roadmap and is stated publicly in our Privacy Policy at https://chatgram-xi.vercel.app/docs#privacy."
+    }
+  ],
+  "fallback": "I do not have an answer for that in my knowledge base. I can send your report to Chatgram Support so a person can help — choose Send report to support.",
+  "systemPrompt": "You are Chatgram's help assistant. Use ONLY the knowledge base entries provided. Never ask for passwords, verification codes or tokens. Never claim to be a human. If the knowledge base does not answer the question, say so and offer to send the report to Chatgram Support. Reply in the user's language: English, Kinyarwanda, French or Swahili. Keep answers short and practical."
+}

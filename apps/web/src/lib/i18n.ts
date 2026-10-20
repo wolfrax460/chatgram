@@ -83,6 +83,9 @@ const en: Dict = {
   infoVerifyEmail: 'Enter the 6-digit code we emailed you to verify your address.',
   verifyAndCreate: 'Verify and create account',
   errInvalidCode: 'That code is not valid or has expired.',
+  or: 'or',
+  continueWithGoogle: 'Continue with Google',
+  errGoogleTimeout: 'Google sign-in timed out. Please try again.',
 };
 
 const rw: Dict = {

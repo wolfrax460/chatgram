@@ -3,7 +3,7 @@ import {
   Mail, Lock, User, Eye, EyeOff, ArrowLeft, AlertCircle, CheckCircle2,
   Globe, Loader2, ShieldAlert, ArrowRight,
 } from 'lucide-react';
-import { useSession } from '@chatgram/core';
+import { useSession, userFromJson } from '@chatgram/core';
 import { api, APP_VERSION } from '../lib/api';
 import { ApiError } from '@chatgram/api-client';
 import { useI18n, LOCALES, LOCALE_LABELS, type Locale } from '../lib/i18n';
@@ -185,6 +185,49 @@ function SignIn({ onGo }: { onGo: (screen: Screen) => void }) {
   const [retryAfter, setRetryAfter] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [slow, setSlow] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
+
+  /**
+   * Google OAuth.
+   *
+   * The backend exposes /api/auth/google/url + /google/poll (that is the flow
+   * the Flutter client uses). We open the consent screen in a popup and poll
+   * until it completes, then store the tokens exactly like a password login.
+   */
+  async function googleSignIn() {
+    if (googleBusy) return;
+    setGoogleBusy(true);
+    setFormError('');
+    try {
+      const { url, state } = await api.googleUrl();
+      const popup = window.open(url, 'chatgram-google', 'width=520,height=640');
+      const started = Date.now();
+      const timer = window.setInterval(async () => {
+        try {
+          const result = await api.googlePoll(state);
+          if (result?.accessToken) {
+            window.clearInterval(timer);
+            popup?.close();
+            api.setTokens({ accessToken: result.accessToken, refreshToken: result.refreshToken });
+            const me = result.user ? userFromJson(result.user) : await api.me();
+            setUser(me);
+          }
+        } catch {
+          /* keep polling until the timeout below */
+        }
+        if (Date.now() - started > 180000) {
+          window.clearInterval(timer);
+          popup?.close();
+          setGoogleBusy(false);
+          setFormError(t('errGoogleTimeout'));
+        }
+      }, 2000);
+    } catch (error) {
+      const mapped = errorKey(error);
+      setFormError(t(mapped.key));
+      setGoogleBusy(false);
+    }
+  }
 
   const identifierRef = useRef<HTMLInputElement>(null);
   const showPhone = looksLikePhone(identifier);
@@ -332,6 +375,33 @@ function SignIn({ onGo }: { onGo: (screen: Screen) => void }) {
       {slow ? (
         <p className="pt-1 text-center text-[12px] text-ink-600 dark:text-ink-300" aria-live="polite">{t('wakingUp')}</p>
       ) : null}
+
+      <div className="flex items-center gap-3 py-2">
+        <span className="h-px flex-1 bg-ink-200 dark:bg-white/10" />
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-500 dark:text-ink-400">
+          {t('or')}
+        </span>
+        <span className="h-px flex-1 bg-ink-200 dark:bg-white/10" />
+      </div>
+
+      <button
+        type="button"
+        onClick={googleSignIn}
+        disabled={googleBusy || busy}
+        className="btn h-11 w-full border border-ink-300 bg-white font-semibold text-ink-800 hover:bg-ink-50 dark:border-white/15 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+      >
+        {googleBusy ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+            <path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.2-2.2H12v4.1h6.5c-.1 1.1-.8 2.7-2.3 3.8v3.2h3.9c2.3-2.1 3.4-5.2 3.4-8.9Z" />
+            <path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-3.9-3.2c-1 .7-2.4 1.2-4 1.2-3.1 0-5.8-2.1-6.7-5H1.3v3.3C3.3 21.4 7.3 24 12 24Z" />
+            <path fill="#FBBC05" d="M5.3 14.1c-.2-.7-.4-1.4-.4-2.1s.1-1.5.4-2.1V6.6H1.3C.5 8.2 0 10 0 12s.5 3.8 1.3 5.4l4-3.3Z" />
+            <path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.5 1.8l3.4-3.4C17.9 1.2 15.2 0 12 0 7.3 0 3.3 2.6 1.3 6.6l4 3.3c.9-2.9 3.6-5.1 6.7-5.1Z" />
+          </svg>
+        )}
+        {t('continueWithGoogle')}
+      </button>
 
       <p className="pt-3 text-center text-[13px] text-ink-600 dark:text-ink-300">
         {t('newToChatgram')}{' '}

@@ -233,3 +233,23 @@ graph against the *uploaded* file, not only the local one.
   https://chatgram.duckdns.org/downloads/chatgram-windows-setup.exe and the
   landing page's Windows card now points at it instead of the old zip.
 - Deployed: landing + /docs + /web.
+
+---
+
+## Google sign-in + support KB (2026-10-20)
+
+- **Continue with Google** added to the sign-in screen: opens the consent popup
+  via \GET /api/auth/google/url\ and polls \/google/poll\ (the same flow the
+  Flutter client uses), then stores the tokens and loads the profile. 3-minute
+  timeout with a clear message. No backend change needed.
+- **docs/support-kb.md** written: 13 entries (register, phone format, password
+  rules, forgot/reset, no-code, locked account, Windows install, Android
+  install, notifications, contact support, ticket status, security, encryption)
+  plus rules for the assistant.
+- **server/src/support/knowledge-base.json**: machine-readable mirror with
+  keywords, fallback text, and the system prompt for the AI assistant.
+
+### Not built: the support widget itself
+The full spec (tickets model, 6 endpoints, guest socket namespace, AI proxy,
+admin ticket badges, Playwright suite) is multi-session work. The knowledge base
+above is the shared prerequisite for it, so it was done first.
