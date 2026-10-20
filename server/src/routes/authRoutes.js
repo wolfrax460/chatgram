@@ -18,22 +18,29 @@ const {
   googlePoll,
 } = require('../controllers/googleAuthController');
 const { protect } = require('../middleware/auth');
+const {
+  loginLimiter,
+  signupLimiter,
+  resetLimiter,
+  verifyLimiter,
+  accountLockout,
+} = require('../middleware/authLimiter');
 
 // Public routes
-router.post('/register', registerUser);
-router.post('/login', loginUser);
+router.post('/register', signupLimiter, registerUser);
+router.post('/login', loginLimiter, accountLockout, loginUser);
 router.post('/refresh', refreshToken);
 
 // Is this email/phone already taken?
 router.post('/check-identifier', checkIdentifier);
 
 // Email verification / phone OTP
-router.post('/verification/send', sendCode);
+router.post('/verification/send', verifyLimiter, sendCode);
 router.post('/verification/check', checkCode);
 
 // Password reset
-router.post('/forgot-password', forgotPassword);
-router.post('/reset-password', resetPassword);
+router.post('/forgot-password', resetLimiter, forgotPassword);
+router.post('/reset-password', resetLimiter, resetPassword);
 
 // Sign in with Google (authorization-code flow, browser + poll)
 router.get('/google/url', googleAuthUrl);

@@ -425,3 +425,25 @@ TEST A 'How do I reset my password?' -> log: 'Support agent replied to ticket CG
 TEST B 'group chat disappeared, I want a refund' -> no auto-reply, escalated to the owner by email
 Health OK; existing endpoints unchanged.
 
+
+---
+
+## Backend hardening: rate limits + account lockout (2026-10-20)
+
+- server/src/middleware/authLimiter.js:
+  - per-IP express-rate-limit on login (15/15min), register (8/hr), verification send (20/hr), forgot/reset (8/hr). 429 with Retry-After and code RATE_LIMITED.
+  - per-account lockout: 5 consecutive failures locks that identifier for 15 minutes, answering 429 with code ACCOUNT_LOCKED and retryAfter. Implemented by wrapping res.json so the auth controllers stay untouched. Successful login clears the counter; other accounts are unaffected.
+- Wired into authRoutes for login, register, verification/send, forgot-password, reset-password.
+
+### Verified live
+Failed logins 1-5 -> 401 Invalid credentials; attempt 6 -> 429 ACCOUNT_LOCKED retryAfter=900.
+A different account still returns 401 (not locked). Support login -> 200. /api/config 200, /health 200.
+
+### Incident
+The first deploy crashed the API because express-rate-limit was installed locally but not on the VM (MODULE_NOT_FOUND). Fixed by running npm install express-rate-limit --omit=dev on the server, then restarting with a health gate. Lesson: install dependencies on the VM before deploying code that requires them.
+
+### Still to do
+- Dedicated hashed single-use reset tokens (15 min) replacing reuse of verification codes.
+- TOTP 2FA.
+- Playwright suite (blocked on a non-production backend).
+
