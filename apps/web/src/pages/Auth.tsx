@@ -85,7 +85,8 @@ function AuthShell({ children }: { children: React.ReactNode }) {
   const [langOpen, setLangOpen] = useState(false);
 
   return (
-    <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4 py-4">
+    <div className="relative h-full overflow-y-auto overscroll-contain">
+      <div className="flex min-h-full flex-col items-center justify-center px-4 py-6">
       <div className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-brand-500/20 blur-3xl" />
         <div className="absolute -bottom-32 -right-16 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" />
@@ -162,6 +163,7 @@ function AuthShell({ children }: { children: React.ReactNode }) {
             <span>{t('version')} {APP_VERSION}</span>
           </div>
         </footer>
+        </div>
       </div>
     </div>
   );
