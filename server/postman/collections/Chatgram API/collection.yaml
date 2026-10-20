@@ -1,0 +1,25 @@
+$kind: collection
+name: Chatgram API
+description: Reference collection generated from the Express implementation in src. Protected requests inherit bearer authentication.
+variables:
+  - key: baseUrl
+    value: 'http://localhost:5001'
+  - key: accessToken
+    value: ''
+  - key: refreshToken
+    value: ''
+  - key: userId
+    value: ''
+  - key: participantId
+    value: ''
+  - key: chatId
+    value: ''
+  - key: messageId
+    value: ''
+  - key: statusId
+    value: ''
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{accessToken}}'

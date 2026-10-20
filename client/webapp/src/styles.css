@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-ink-50 text-ink-800 dark:bg-ink-900 dark:text-ink-100;
+    font-feature-settings: 'cv02','cv03','cv04','cv11';
+  }
+  ::selection { @apply bg-brand-600/30; }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
+           transition-all duration-150 active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary { @apply btn bg-brand-600 text-white hover:bg-brand-700 shadow-sm; }
+  .btn-ghost   { @apply btn text-ink-600 dark:text-ink-300 hover:bg-ink-200/60 dark:hover:bg-white/5; }
+  .btn-soft    { @apply btn bg-brand-600/10 text-brand-700 dark:text-brand-300 hover:bg-brand-600/20; }
+
+  .field {
+    @apply w-full rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm outline-none
+           placeholder:text-ink-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20
+           dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-ink-400;
+  }
+  .card {
+    @apply rounded-2xl border border-ink-200 bg-white shadow-sm
+           dark:border-white/10 dark:bg-white/[.04];
+  }
+  .label { @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400; }
+}
+
+/* Slim scrollbars that match the theme */
+* { scrollbar-width: thin; scrollbar-color: rgba(134,150,160,.4) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: rgba(134,150,160,.35); border-radius: 999px; }
+*::-webkit-scrollbar-track { background: transparent; }

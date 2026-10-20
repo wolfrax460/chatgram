@@ -1,0 +1,43 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "Chatgram backend server",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "node test/e2e.smoke.js",
+    "test:e2e": "node test/e2e.smoke.js",
+    "seed": "node test/seed.js",
+    "reseed": "node test/seed.js --force",
+    "db:reset": "node test/reset.js"
+  },
+  "keywords": [
+    "chat",
+    "messaging",
+    "socket.io",
+    "mongodb"
+  ],
+  "author": "Chatgram Developer",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.2",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.10.1",
+    "multer": "^2.4.0",
+    "socket.io": "^4.8.3"
+  },
+  "optionalDependencies": {
+    "cloudinary": "^2.5.1",
+    "nodemailer": "^6.10.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14",
+    "socket.io-client": "^4.8.3"
+  }
+}

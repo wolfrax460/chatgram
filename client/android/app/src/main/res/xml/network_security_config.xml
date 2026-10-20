@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEVELOPMENT configuration.
+
+  The backend runs over plain HTTP (http://10.0.2.2:5001 on the Android
+  emulator, or http://<your-lan-ip>:5001 from a physical device) and Android 9+
+  blocks cleartext traffic by default.
+
+  This permits cleartext for development. Before shipping to production, set
+  `cleartextTrafficPermitted="false"` and serve the API over HTTPS.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

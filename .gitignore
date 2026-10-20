@@ -1,0 +1,52 @@
+# =============================================================================
+# Chatgram — repository ignores
+# =============================================================================
+# Rule of thumb: anything that contains a secret, is generated, or is large
+# belongs here. If you are about to `git add -f` one of these, stop and think.
+# =============================================================================
+
+# ---- secrets ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+# DuckDNS token file created by scripts/duckdns-update.sh on the server
+duckdns.env
+
+# ---- dependencies ----------------------------------------------------------
+node_modules/
+.pnp/
+.pnp.js
+.pub-cache/
+.pub/
+.dart_tool/
+.flutter-plugins-dependencies
+
+# ---- build output ----------------------------------------------------------
+build/
+dist/
+coverage/
+client/build/
+client/android/.gradle/
+client/android/local.properties
+client/android/key.properties
+client/windows/flutter/ephemeral/
+**/flutter/ephemeral/
+
+# ---- runtime data ----------------------------------------------------------
+uploads/
+server/uploads/
+logs/
+*.log
+
+# ---- OS / editor -----------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

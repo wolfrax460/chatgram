@@ -1,0 +1,22 @@
+$kind: http-request
+name: Refresh Token
+order: 3000
+url: '{{baseUrl}}/api/auth/refresh'
+method: POST
+auth:
+  type: noauth
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "token": "{{refreshToken}}"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Refresh succeeds", () => pm.expect(pm.response.code).to.eql(200));
+      if (pm.response.code === 200) pm.collectionVariables.set("accessToken", pm.response.json().accessToken);

@@ -1,0 +1,105 @@
+﻿00:00 +0: loading F:/projects/chatgram/client/test/models_test.dart
+00:00 +0: F:/projects/chatgram/client/test/models_test.dart: ServerConfig.resolveMedia returns empty string for null/empty
+00:00 +1: F:/projects/chatgram/client/test/models_test.dart: ServerConfig.resolveMedia prefixes server-relative paths with the API base URL
+00:00 +2: F:/projects/chatgram/client/test/models_test.dart: ServerConfig.resolveMedia leaves absolute and data URLs untouched
+00:00 +3: F:/projects/chatgram/client/test/models_test.dart: UserModel parses a fully populated user
+00:00 +4: F:/projects/chatgram/client/test/models_test.dart: UserModel falls back safely when fields are missing
+00:00 +5: F:/projects/chatgram/client/test/models_test.dart: UserModel initials never throw on a blank name
+00:00 +6: F:/projects/chatgram/client/test/models_test.dart: MessageModel parses a populated senderId object
+00:00 +7: F:/projects/chatgram/client/test/models_test.dart: MessageModel statusFor reports read only when another participant read it
+00:00 +8: F:/projects/chatgram/client/test/models_test.dart: MessageModel an optimistic message reports "sending"
+00:00 +9: F:/projects/chatgram/client/test/models_test.dart: MessageModel a failed message reports "failed" regardless of receipts
+00:00 +10: F:/projects/chatgram/client/test/models_test.dart: MessageModel resolves relative media URLs
+00:00 +11: F:/projects/chatgram/client/test/models_test.dart: ChatModel direct chat title is the other participant
+00:00 +12: F:/projects/chatgram/client/test/models_test.dart: ChatModel group chat title uses groupName and counts members
+00:00 +13: F:/projects/chatgram/client/test/models_test.dart: ChatModel reads unreadCount and the populated lastMessage
+00:00 +14: F:/projects/chatgram/client/test/models_test.dart: ChatModel handles un-populated participant id strings
+00:00 +15: F:/projects/chatgram/client/test/widget_test.dart: MessageTicks shows a single tick for "sent"
+00:02 +16: F:/projects/chatgram/client/test/widget_test.dart: MessageTicks shows a double tick for "delivered"
+00:02 +17: F:/projects/chatgram/client/test/widget_test.dart: MessageTicks shows a double tick for "read"
+00:02 +18: F:/projects/chatgram/client/test/widget_test.dart: MessageTicks shows an error icon when the send failed
+00:02 +19: F:/projects/chatgram/client/test/widget_test.dart: UserAvatar renders initials when there is no image
+00:03 +20: F:/projects/chatgram/client/test/widget_test.dart: UserAvatar falls back to "?" for an empty initial
+00:03 +21: F:/projects/chatgram/client/test/widget_test.dart: MessageBubble renders the text and a timestamp
+00:03 +22: F:/projects/chatgram/client/test/widget_test.dart: MessageBubble shows ticks only for my own messages
+00:03 +23: F:/projects/chatgram/client/test/widget_test.dart: MessageBubble renders the sender name in a group chat
+00:03 +24: F:/projects/chatgram/client/test/widget_test.dart: MessageBubble shows a Retry affordance for a failed message
+00:04 +25: F:/projects/chatgram/client/test/widget_test.dart: LoginScreen renders the sign-in form
+══╡ EXCEPTION CAUGHT BY RENDERING LIBRARY ╞═════════════════════════════════════════════════════════
+The following assertion was thrown during layout:
+A RenderFlex overflowed by 119 pixels on the right.
+
+The relevant error-causing widget was:
+  Row Row:file:///F:/projects/chatgram/client/lib/features/auth/screens/login_screen.dart:107:15
+
+The overflowing RenderFlex has an orientation of Axis.horizontal.
+The edge of the RenderFlex that is overflowing has been marked in the rendering with a yellow and
+black striped pattern. This is usually caused by the contents being too big for the RenderFlex.
+Consider applying a flex factor (e.g. using an Expanded widget) to force the children of the
+RenderFlex to fit within the available space instead of being sized to their natural size.
+This is considered an error condition because it indicates that there is content that cannot be
+seen. If the content is legitimately bigger than the available space, consider clipping it with a
+ClipRect widget before putting it in the flex, or using a scrollable container rather than a Flex,
+like a ListView.
+The specific RenderFlex in question is: RenderFlex#85bd3 relayoutBoundary=up24 OVERFLOWING:
+  creator: Row ← Column ← _FormScope ← WillPopScope ← Semantics ←
+    Form-[LabeledGlobalKey<FormState>#1662c] ← Column ← Padding ← Semantics ← DefaultTextStyle ←
+    AnimatedDefaultTextStyle ← _InkFeatures-[GlobalKey#ca67c ink renderer] ← ⋯
+  parentData: offset=Offset(0.0, 204.0); flex=null; fit=null (can use size)
+  constraints: BoxConstraints(w=360.0, 0.0<=h<=Infinity)
+  size: Size(360.0, 48.0)
+  direction: horizontal
+  mainAxisAlignment: center
+  mainAxisSize: max
+  crossAxisAlignment: center
+  textDirection: ltr
+  verticalDirection: down
+  spacing: 0.0
+◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:05 +25 -1: F:/projects/chatgram/client/test/widget_test.dart: LoginScreen renders the sign-in form [E]
+  Test failed. See exception logs above.
+  The test description was: renders the sign-in form
+  
+00:05 +25 -1: F:/projects/chatgram/client/test/widget_test.dart: LoginScreen validates before hitting the network
+══╡ EXCEPTION CAUGHT BY RENDERING LIBRARY ╞═════════════════════════════════════════════════════════
+The following assertion was thrown during layout:
+A RenderFlex overflowed by 119 pixels on the right.
+
+The relevant error-causing widget was:
+  Row Row:file:///F:/projects/chatgram/client/lib/features/auth/screens/login_screen.dart:107:15
+
+The overflowing RenderFlex has an orientation of Axis.horizontal.
+The edge of the RenderFlex that is overflowing has been marked in the rendering with a yellow and
+black striped pattern. This is usually caused by the contents being too big for the RenderFlex.
+Consider applying a flex factor (e.g. using an Expanded widget) to force the children of the
+RenderFlex to fit within the available space instead of being sized to their natural size.
+This is considered an error condition because it indicates that there is content that cannot be
+seen. If the content is legitimately bigger than the available space, consider clipping it with a
+ClipRect widget before putting it in the flex, or using a scrollable container rather than a Flex,
+like a ListView.
+The specific RenderFlex in question is: RenderFlex#1ed07 relayoutBoundary=up24 OVERFLOWING:
+  creator: Row ← Column ← _FormScope ← WillPopScope ← Semantics ←
+    Form-[LabeledGlobalKey<FormState>#bf48c] ← Column ← Padding ← Semantics ← DefaultTextStyle ←
+    AnimatedDefaultTextStyle ← _InkFeatures-[GlobalKey#dc511 ink renderer] ← ⋯
+  parentData: offset=Offset(0.0, 244.0); flex=null; fit=null (can use size)
+  constraints: BoxConstraints(w=360.0, 0.0<=h<=Infinity)
+  size: Size(360.0, 48.0)
+  direction: horizontal
+  mainAxisAlignment: center
+  mainAxisSize: max
+  crossAxisAlignment: center
+  textDirection: ltr
+  verticalDirection: down
+  spacing: 0.0
+◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:06 +25 -2: F:/projects/chatgram/client/test/widget_test.dart: LoginScreen validates before hitting the network [E]
+  Test failed. See exception logs above.
+  The test description was: validates before hitting the network
+  
+00:06 +25 -2: Some tests failed.
+
+Failing tests:
+  F:/projects/chatgram/client/test/widget_test.dart: LoginScreen renders the sign-in form
+  F:/projects/chatgram/client/test/widget_test.dart: LoginScreen validates before hitting the network

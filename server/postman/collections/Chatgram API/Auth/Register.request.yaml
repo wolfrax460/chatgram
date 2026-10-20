@@ -1,0 +1,29 @@
+$kind: http-request
+name: Register
+order: 1000
+url: '{{baseUrl}}/api/auth/register'
+method: POST
+auth:
+  type: noauth
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "displayName": "Postman User",
+      "email": "postman.user@example.com",
+      "password": "TestPass123!"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Registration succeeds", () => pm.expect(pm.response.code).to.eql(201));
+      if (pm.response.code === 201) {
+        const data = pm.response.json();
+        pm.collectionVariables.set("accessToken", data.accessToken);
+        pm.collectionVariables.set("refreshToken", data.refreshToken);
+        pm.collectionVariables.set("userId", data._id);
+      }

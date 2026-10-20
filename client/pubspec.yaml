@@ -1,0 +1,51 @@
+name: chatgram
+description: "Chatgram — a WhatsApp-style messaging app for Android, Windows and the web."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+
+  # State management
+  provider: ^6.0.5
+
+  # Networking
+  # \http\ is imported directly by the API client, so it must be a declared
+  # dependency (it used to be pulled in only transitively, which is fragile).
+  http: ^1.2.0
+  socket_io_client: ^2.0.3
+
+  # Local storage
+  shared_preferences: ^2.2.0
+
+  # Media handling
+  image_picker: ^1.0.0
+  url_launcher: ^6.2.0
+  # v5 pins record_linux 0.7.x, which no longer satisfies
+  # record_platform_interface 1.6 and breaks the Windows/desktop build.
+  record: ^6.0.0
+  audioplayers: ^6.0.0
+  path_provider: ^2.1.0
+  # In-app video playback (Android / iOS / web). Desktop falls back to
+  # opening the file in the system player.
+  video_player: ^2.9.0
+
+  # UI
+  # FontAwesome icon set — used everywhere instead of Material Icons so the
+  # app has one consistent, visually richer icon language.
+  font_awesome_flutter: ^11.0.0
+  cached_network_image: ^3.3.0
+  intl: ^0.18.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.3
+
+flutter:
+  uses-material-design: true
