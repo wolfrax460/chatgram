@@ -75,7 +75,8 @@ const en: Dict = {
   errGeneric: 'Something went wrong. Please try again.',
   errPhoneSignupSoon:
     'Phone sign-up is still in development. Please create your account with an email address for now — we will email you a verification code.',
-  infoResetSent: 'If that account exists, a reset code is on its way.',
+  infoResetSent: 'A reset code is on its way.',
+  errNoAccount: 'That email is not registered. Check the spelling, or create an account.',
   infoResetDone: 'Password changed. You can sign in now.',
   infoVerify: 'Check your email or phone for the verification code.',
   infoCodeSent: 'We sent a 6-digit code to your email. Enter it below to finish.',

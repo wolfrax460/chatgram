@@ -574,3 +574,14 @@ In-app escalations called SupportTicket.create with transcript roles of user, bu
 - Ticket transcript labels: user turns now labelled User instead of Assistant.
 - Default AI remains Groq openai-compatible openai/gpt-oss-20b.
 
+
+---
+
+## Forgot-password existence check + full-width layout (2026-10-20)
+
+- forgotPassword now returns exists (boolean) so the UI can say whether the address is registered. Verified: unknown email -> exists:false; known email -> exists:true with delivery smtp. NOTE: this intentionally reveals whether an account exists (user asked for it); it weakens the previous anti-enumeration behaviour.
+- Forgot-password banner shows 'That email is not registered. Check the spelling, or create an account.' when exists is false, otherwise 'A reset code is on its way.'
+- Layout: the chat/settings content column widened from 860px to 1400px so pages fill the screen, and the scroll container uses .no-scrollbar so the vertical scrollbar line is gone.
+- Windows installer rebuilt (78 MB) and republished to /downloads/chatgram-windows-setup.exe (79M, 200).
+- Android: apps/mobile scaffolded with Capacitor 6.2.2, android platform added, web assets synced. Gradle build blocked by a network timeout downloading gradle-8.2.1-all from services.gradle.org; the local ~/.gradle cache has 8.2.1 but the wrapper still tried to fetch. Not resolved.
+

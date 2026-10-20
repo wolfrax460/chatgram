@@ -720,6 +720,7 @@ function Forgot({ onGo, onSent }: { onGo: (s: Screen) => void; onSent: (identifi
   const [country, setCountry] = useState<Country>(DEFAULT_COUNTRY);
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
+  const [accountExists, setAccountExists] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const showPhone = looksLikePhone(identifier);
 
@@ -733,7 +734,8 @@ function Forgot({ onGo, onSent }: { onGo: (s: Screen) => void; onSent: (identifi
     setBusy(true);
     setError('');
     try {
-      await api.forgotPassword(resolved.value);
+      const result = await api.forgotPassword(resolved.value);
+      setAccountExists(typeof result?.exists === 'boolean' ? result.exists : null);
     } catch {
       // Never reveal whether the account exists.
     } finally {
@@ -753,7 +755,7 @@ function Forgot({ onGo, onSent }: { onGo: (s: Screen) => void; onSent: (identifi
       {sent ? (
         <div role="status" className="flex items-start gap-2 rounded-xl border border-emerald-300/50 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{t('infoResetSent')}</span>
+          <span>{accountExists === false ? t('errNoAccount') : t('infoResetSent')}</span>
         </div>
       ) : null}
 

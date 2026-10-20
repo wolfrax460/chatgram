@@ -1,0 +1,12 @@
+{
+  "appId": "com.chatgram.app",
+  "appName": "Chatgram",
+  "webDir": "../web/dist",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

@@ -333,7 +333,7 @@ const forgotPassword = async (req, res) => {
       target: parsed.target,
     };
 
-    if (!user) return res.json(genericReply);
+    if (!user) return res.json({ ...genericReply, exists: false });
 
     const issued = resetStore.issue(parsed.channel, parsed.target);
     if (!issued.ok) {
@@ -358,6 +358,7 @@ const forgotPassword = async (req, res) => {
 
     const payload = {
       ...genericReply,
+      exists: true,
       expiresInSeconds: issued.expiresInSeconds,
       delivered: delivery.delivered,
       provider: delivery.provider,

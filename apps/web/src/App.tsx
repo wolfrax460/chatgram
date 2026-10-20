@@ -324,8 +324,8 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
         </div>
       ) : null}
 
-      <div ref={scrollRef} onScroll={onScroll} className="relative flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-[860px] flex-col px-4 py-4">
+      <div ref={scrollRef} onScroll={onScroll} className="no-scrollbar relative flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-[1400px] flex-col px-4 py-4">
           {messages.isLoading ? <p className="text-sm text-ink-600 dark:text-ink-300">Loading messages…</p> : null}
           {filtered.length === 0 && !messages.isLoading ? (
             <p className="text-sm text-ink-600 dark:text-ink-300">
@@ -388,7 +388,7 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
         ) : null}
       </div>
 
-      <div className="mx-auto w-full max-w-[860px]">
+      <div className="mx-auto w-full max-w-[1400px]">
         <Composer
           chatId={chat.id}
           draft={draft}

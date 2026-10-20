@@ -317,7 +317,14 @@ export class ApiClient {
   }
 
   forgotPassword(identifier: string) {
-    return this.request('/api/auth/forgot-password', {
+    return this.request<{
+      message?: string;
+      exists?: boolean;
+      channel?: string;
+      target?: string;
+      expiresInSeconds?: number;
+      retryAfterSeconds?: number;
+    }>('/api/auth/forgot-password', {
       method: 'POST',
       body: { identifier },
       anonymous: true,
