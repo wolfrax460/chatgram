@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Moon, Sun, Monitor, MessageCircle, LogOut, Send, Wifi, WifiOff } from 'lucide-react';
+import {
+  Moon, Sun, Monitor, MessageCircle, LogOut, Send, Wifi, WifiOff, Users, BookUser, ChevronLeft,
+} from 'lucide-react';
 import {
   chatPartner,
   chatTitle,
@@ -12,6 +14,10 @@ import {
 } from '@chatgram/core';
 import { api, realtime } from './lib/api';
 import { useRealtimeBridge } from './lib/useRealtime';
+import Groups from './pages/Groups';
+import Contacts from './pages/Contacts';
+
+type Tab = 'chats' | 'groups' | 'contacts';
 
 /* ------------------------------------------------------------------- login */
 
@@ -92,11 +98,12 @@ function ThemeButton() {
 
 /* --------------------------------------------------------------- composer */
 
-function Composer({ chatId, disabled }: { chatId: string; disabled?: boolean }) {
+function Composer({ chatId }: { chatId: string }) {
   const [text, setText] = useState('');
   const typingTimer = useRef<number | null>(null);
   const queryClient = useQueryClient();
   const me = useSession((s) => s.user);
+  const connected = useRealtime((s) => s.connected);
 
   const stopTyping = useCallback(() => {
     if (typingTimer.current) {
@@ -122,7 +129,7 @@ function Composer({ chatId, disabled }: { chatId: string; disabled?: boolean }) 
   async function send(e: React.FormEvent) {
     e.preventDefault();
     const value = text.trim();
-    if (!value || disabled || !me) return;
+    if (!value || !me) return;
 
     const clientId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimistic: Message = {
@@ -137,7 +144,6 @@ function Composer({ chatId, disabled }: { chatId: string; disabled?: boolean }) 
       readBy: [],
     };
 
-    // Optimistic append; the socket echo reconciles by clientId.
     queryClient.setQueryData<Message[]>(['messages', chatId], (prev) => [...(prev ?? []), optimistic]);
     setText('');
     stopTyping();
@@ -162,12 +168,11 @@ function Composer({ chatId, disabled }: { chatId: string; disabled?: boolean }) 
     <form onSubmit={send} className="flex items-center gap-2 border-t border-ink-200 p-3 dark:border-white/10">
       <input
         className="field flex-1"
-        placeholder="Type a message"
+        placeholder={connected ? 'Type a message' : 'Reconnecting…'}
         value={text}
         onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
       />
-      <button type="submit" className="btn-primary !px-3" disabled={disabled || !text.trim()}>
+      <button type="submit" className="btn-primary !px-3" disabled={!text.trim()}>
         <Send className="h-4 w-4" />
       </button>
     </form>
@@ -176,7 +181,7 @@ function Composer({ chatId, disabled }: { chatId: string; disabled?: boolean }) 
 
 /* -------------------------------------------------------------------- chat */
 
-function ChatWindow({ chat, meId }: { chat: Chat; meId: string }) {
+function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: () => void }) {
   const typing = useRealtime((s) => s.typing[chat.id] ?? null);
   const online = useRealtime((s) => s.online);
   const connected = useRealtime((s) => s.connected);
@@ -187,13 +192,11 @@ function ChatWindow({ chat, meId }: { chat: Chat; meId: string }) {
     queryFn: () => api.messages(chat.id),
   });
 
-  // Join the room so the server routes this chat's events to us.
   useEffect(() => {
     realtime.joinChat(chat.id);
     return () => realtime.leaveChat(chat.id);
   }, [chat.id]);
 
-  // Clear unread on the server once the conversation is open.
   useEffect(() => {
     api.markChatRead(chat.id).catch(() => {});
     void queryClient.invalidateQueries({ queryKey: ['chats'] });
@@ -205,6 +208,9 @@ function ChatWindow({ chat, meId }: { chat: Chat; meId: string }) {
   return (
     <section className="flex min-w-0 flex-1 flex-col">
       <header className="flex items-center gap-3 border-b border-ink-200 px-4 py-3 dark:border-white/10">
+        <button type="button" className="btn-ghost !px-2 lg:hidden" onClick={onBack} title="Back">
+          <ChevronLeft className="h-5 w-5" />
+        </button>
         <div className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
           {chatTitle(chat, meId).slice(0, 2).toUpperCase()}
         </div>
@@ -214,19 +220,14 @@ function ChatWindow({ chat, meId }: { chat: Chat; meId: string }) {
             {typing ? 'typing…' : chat.type === 'group' ? `${chat.participants.length} members` : isOnline ? 'online' : 'offline'}
           </p>
         </div>
-        <span
-          title={connected ? 'Realtime connected' : 'Reconnecting…'}
-          className={connected ? 'text-brand-600' : 'text-amber-500'}
-        >
+        <span className={connected ? 'text-brand-600' : 'text-amber-500'} title={connected ? 'Realtime connected' : 'Reconnecting…'}>
           {connected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
         </span>
       </header>
 
       <div className="flex-1 space-y-2 overflow-y-auto p-4">
         {messages.isLoading ? <p className="text-sm text-ink-500">Loading messages…</p> : null}
-        {messages.data?.length === 0 ? (
-          <p className="text-sm text-ink-500">No messages yet — say hello.</p>
-        ) : null}
+        {messages.data?.length === 0 ? <p className="text-sm text-ink-500">No messages yet — say hello.</p> : null}
         {messages.data?.map((m) => {
           const mine = m.senderId === meId;
           const pending = m.id.startsWith('tmp-');
@@ -249,18 +250,79 @@ function ChatWindow({ chat, meId }: { chat: Chat; meId: string }) {
         })}
       </div>
 
-      <Composer chatId={chat.id} disabled={!connected} />
+      <Composer chatId={chat.id} />
     </section>
   );
 }
 
-/* -------------------------------------------------------------------- list */
+/* -------------------------------------------------------------- chat list */
 
-function Chats() {
+function ChatList({
+  meId,
+  selectedId,
+  onSelect,
+}: {
+  meId: string;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const online = useRealtime((s) => s.online);
+  const chats = useQuery({ queryKey: ['chats'], queryFn: () => api.chats() });
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      {chats.isLoading ? <p className="p-4 text-sm text-ink-500">Loading…</p> : null}
+      {chats.data?.length === 0 ? <p className="p-4 text-sm text-ink-500">No conversations yet.</p> : null}
+      {chats.data?.map((chat) => {
+        const partner = chatPartner(chat, meId);
+        const isOnline = partner ? (online[partner.id] ?? partner.isOnline ?? false) : false;
+        const unread = chat.unreadCount ?? 0;
+        return (
+          <button
+            key={chat.id}
+            type="button"
+            onClick={() => onSelect(chat.id)}
+            className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${
+              chat.id === selectedId ? 'bg-brand-600/10 dark:bg-white/[.07]' : 'hover:bg-ink-100/70 dark:hover:bg-white/[.04]'
+            }`}
+          >
+            <div className="relative">
+              <div className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
+                {chatTitle(chat, meId).slice(0, 2).toUpperCase()}
+              </div>
+              {isOnline ? (
+                <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-ink-900" />
+              ) : null}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-semibold">{chatTitle(chat, meId)}</p>
+              <p className="truncate text-xs text-ink-500 dark:text-ink-400">{chat.lastMessage?.content ?? 'No messages yet'}</p>
+            </div>
+            {unread > 0 ? (
+              <span className="grid h-5 min-w-[20px] place-items-center rounded-full bg-brand-600 px-1.5 text-[11px] font-bold text-white">
+                {unread > 99 ? '99+' : unread}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------- shell */
+
+const NAV: { key: Tab; label: string; Icon: typeof MessageCircle }[] = [
+  { key: 'chats', label: 'Chats', Icon: MessageCircle },
+  { key: 'groups', label: 'Groups', Icon: Users },
+  { key: 'contacts', label: 'Contacts', Icon: BookUser },
+];
+
+function Shell() {
   const user = useSession((s) => s.user);
   const setUser = useSession((s) => s.setUser);
   const connected = useRealtime((s) => s.connected);
-  const online = useRealtime((s) => s.online);
+  const [tab, setTab] = useState<Tab>('chats');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useRealtimeBridge();
@@ -273,84 +335,79 @@ function Chats() {
 
   const meId = user?.id ?? '';
 
+  const openChat = useCallback((chatId: string) => {
+    setTab('chats');
+    setSelectedId(chatId);
+  }, []);
+
   if (!user) return null;
 
   return (
     <div className="flex h-full">
-      <aside className="flex w-[340px] shrink-0 flex-col border-r border-ink-200 dark:border-white/10">
-        <header className="flex items-center gap-2 border-b border-ink-200 px-4 py-3 dark:border-white/10">
-          <MessageCircle className="h-5 w-5 text-brand-600" />
-          <span className="font-bold">Chatgram</span>
-          <span className="flex-1" />
-          <span className={connected ? 'text-brand-600' : 'text-amber-500'} title={connected ? 'Connected' : 'Reconnecting…'}>
-            {connected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-          </span>
-          <ThemeButton />
+      {/* rail */}
+      <nav className="hidden w-[76px] shrink-0 flex-col items-center gap-1 border-r border-ink-200 py-4 dark:border-white/10 sm:flex">
+        {NAV.map(({ key, label, Icon }) => (
           <button
+            key={key}
             type="button"
-            className="btn-ghost !px-2"
-            title="Sign out"
-            onClick={async () => {
-              await api.logout().catch(() => {});
-              setUser(null);
-            }}
+            onClick={() => setTab(key)}
+            title={label}
+            className={`flex w-14 flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-semibold transition ${
+              tab === key
+                ? 'bg-brand-600/10 text-brand-700 dark:text-brand-300'
+                : 'text-ink-500 hover:bg-ink-100 dark:hover:bg-white/5'
+            }`}
           >
-            <LogOut className="h-4 w-4" />
+            <Icon className="h-5 w-5" />
+            {label}
           </button>
-        </header>
+        ))}
+        <span className="flex-1" />
+        <ThemeButton />
+        <button
+          type="button"
+          className="btn-ghost !px-2"
+          title="Sign out"
+          onClick={async () => {
+            await api.logout().catch(() => {});
+            setUser(null);
+          }}
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+      </nav>
 
-        <div className="flex-1 overflow-y-auto">
-          {chats.isLoading ? <p className="p-4 text-sm text-ink-500">Loading…</p> : null}
-          {chats.isError ? <p className="p-4 text-sm text-rose-500">Failed to load chats.</p> : null}
-          {chats.data?.length === 0 ? <p className="p-4 text-sm text-ink-500">No conversations yet.</p> : null}
-          {chats.data?.map((chat) => {
-            const partner = chatPartner(chat, meId);
-            const isOnline = partner ? (online[partner.id] ?? partner.isOnline ?? false) : false;
-            const unread = chat.unreadCount ?? 0;
-            return (
-              <button
-                key={chat.id}
-                type="button"
-                onClick={() => setSelectedId(chat.id)}
-                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${
-                  chat.id === selectedId ? 'bg-brand-600/10 dark:bg-white/[.07]' : 'hover:bg-ink-100/70 dark:hover:bg-white/[.04]'
-                }`}
-              >
-                <div className="relative">
-                  <div className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
-                    {chatTitle(chat, meId).slice(0, 2).toUpperCase()}
-                  </div>
-                  {isOnline ? (
-                    <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-ink-900" />
-                  ) : null}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold">{chatTitle(chat, meId)}</p>
-                  <p className="truncate text-xs text-ink-500 dark:text-ink-400">
-                    {chat.lastMessage?.content ?? 'No messages yet'}
-                  </p>
-                </div>
-                {unread > 0 ? (
-                  <span className="grid h-5 min-w-[20px] place-items-center rounded-full bg-brand-600 px-1.5 text-[11px] font-bold text-white">
-                    {unread > 99 ? '99+' : unread}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      </aside>
+      {/* content */}
+      {tab === 'chats' ? (
+        <>
+          <aside className="flex w-full shrink-0 flex-col border-r border-ink-200 dark:border-white/10 sm:w-[320px]">
+            <header className="flex items-center gap-2 border-b border-ink-200 px-4 py-3 dark:border-white/10">
+              <MessageCircle className="h-5 w-5 text-brand-600" />
+              <span className="font-bold">Chats</span>
+              <span className="flex-1" />
+              <span className={connected ? 'text-brand-600' : 'text-amber-500'}>
+                {connected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+              </span>
+            </header>
+            <ChatList meId={meId} selectedId={selectedId} onSelect={setSelectedId} />
+          </aside>
 
-      {selected ? (
-        <ChatWindow chat={selected} meId={meId} />
+          {selected ? (
+            <ChatWindow chat={selected} meId={meId} onBack={() => setSelectedId(null)} />
+          ) : (
+            <section className="hidden flex-1 place-items-center px-6 text-center sm:grid">
+              <div>
+                <MessageCircle className="mx-auto h-12 w-12 text-ink-300 dark:text-ink-600" />
+                <h2 className="mt-4 text-lg font-bold">Select a conversation</h2>
+                <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Pick a chat on the left, or start a new one.</p>
+              </div>
+            </section>
+          )}
+        </>
+      ) : tab === 'groups' ? (
+        <Groups onOpenChat={openChat} />
       ) : (
-        <section className="grid flex-1 place-items-center px-6 text-center">
-          <div>
-            <MessageCircle className="mx-auto h-12 w-12 text-ink-300 dark:text-ink-600" />
-            <h2 className="mt-4 text-lg font-bold">Select a conversation</h2>
-            <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Pick a chat on the left, or start a new one.</p>
-          </div>
-        </section>
+        <Contacts onOpenChat={openChat} />
       )}
     </div>
   );
@@ -385,5 +442,5 @@ export default function App() {
     };
   }, [setUser, setReady]);
 
-  return user ? <Chats /> : <Login />;
+  return user ? <Shell /> : <Login />;
 }

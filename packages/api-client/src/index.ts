@@ -388,6 +388,30 @@ export class ApiClient {
     );
   }
 
+  /* -------------------------------------------------------------- groups */
+
+  renameGroup(chatId: string, groupName: string) {
+    return this.request(`/api/chats/${chatId}`, { method: 'PATCH', body: { groupName } });
+  }
+
+  addParticipants(chatId: string, participantIds: string[]) {
+    return this.request(`/api/chats/${chatId}/participants`, {
+      method: 'POST',
+      body: { participantIds },
+    });
+  }
+
+  removeParticipant(chatId: string, userId: string) {
+    return this.request(`/api/chats/${chatId}/participants/${userId}`, { method: 'DELETE' });
+  }
+
+  setGroupAdmin(chatId: string, userId: string, isAdmin = true) {
+    return this.request(`/api/chats/${chatId}/admins`, {
+      method: 'POST',
+      body: { userId, isAdmin },
+    });
+  }
+
   /* ----------------------------------------------------------- messages */
 
   async messages(chatId: string): Promise<Message[]> {
