@@ -220,7 +220,15 @@ const createTicket = async (req, res) => {
       console.warn('Support desk delivery failed:', error.message);
     }
 
-    // Fan out to Telegram / WhatsApp / email (whichever is configured).
+    // Let the support agent try to answer from the knowledge base. When it is
+    // not confident it escalates to the owner instead of guessing.
+    try {
+      await require('../support/agentResponder').respondToTicket(ticket.ticketId);
+    } catch (agentError) {
+      console.warn('Support agent kick-off failed:', agentError.message);
+    }
+
+    // Fan out to Telegram / email (whichever is configured).
     try {
       await require('../support/notifier').notifyTicket(ticket);
     } catch (notifyError) {

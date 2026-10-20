@@ -409,3 +409,19 @@ Verified: build green, deployed bundle contains support-guest / ticket:reply / D
 
 Playwright suite NOT written - no non-production backend exists and testing production was explicitly forbidden.
 
+
+---
+
+## Support-agent responder (2026-10-20)
+
+- server/src/support/agentResponder.js: when a ticket is created the agent asks the configured model, using the knowledge base only, and requires a CONFIDENT or ESCALATE verdict as the first line of output.
+- CONFIDENT: the answer is posted into the ticket conversation AS the Chatgram Support account, which runs the existing path - ticket reply stored, guest socket push, user email.
+- ESCALATE: no auto-reply; the owner is notified on Telegram/email with the transcript and the ticket stays open.
+- Opt-in via SUPPORT_AGENT_ENABLED=true so the owner can read tickets himself.
+- aiProvider.askAssistant now accepts a per-call maxTokens override (500 for support replies).
+
+### Verified live
+TEST A 'How do I reset my password?' -> log: 'Support agent replied to ticket CG-0LXVR'
+TEST B 'group chat disappeared, I want a refund' -> no auto-reply, escalated to the owner by email
+Health OK; existing endpoints unchanged.
+

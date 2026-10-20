@@ -155,9 +155,10 @@ async function callGemini(cfg, system, messages) {
  * Ask the configured model. Resolves to a trimmed answer, or null when the
  * assistant is disabled or the request fails (callers fall back to the KB).
  */
-async function askAssistant({ system, messages }) {
+async function askAssistant({ system, messages, maxTokens }) {
   const cfg = resolveConfig();
   if (!cfg.enabled) return null;
+  if (maxTokens) cfg.maxTokens = Math.min(Number(maxTokens) || cfg.maxTokens, 2000);
 
   const trimmed = messages.slice(-12).map((m) => ({
     role: m.role === 'assistant' ? 'assistant' : 'user',
