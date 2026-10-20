@@ -11,6 +11,12 @@ const {
   updateAdminSettings,
   getAdminStats,
   testAi,
+  getKb,
+  updateKb,
+  resetKb,
+  listTickets,
+  getTicketDetail,
+  replyToTicketAdmin,
 } = require('../controllers/supportAdminController');
 
 /** Only the built-in support account may use the dashboard. */
@@ -41,6 +47,12 @@ router.get('/admin/settings', requireSupportAccount, getAdminSettings);
 router.put('/admin/settings', requireSupportAccount, updateAdminSettings);
 router.get('/admin/stats', requireSupportAccount, getAdminStats);
 router.post('/admin/test-ai', requireSupportAccount, testAi);
+router.get('/admin/kb', requireSupportAccount, getKb);
+router.put('/admin/kb', requireSupportAccount, updateKb);
+router.post('/admin/kb/reset', requireSupportAccount, resetKb);
+router.get('/admin/tickets', requireSupportAccount, listTickets);
+router.get('/admin/tickets/:ticketId', requireSupportAccount, getTicketDetail);
+router.post('/admin/tickets/:ticketId/reply', requireSupportAccount, replyToTicketAdmin);
 
 router.get('/', supportInfo);
 

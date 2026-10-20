@@ -107,8 +107,14 @@ const enableTwoFactor = async (req, res) => {
     }
 
     user.twoFactorEnabled = true;
+    const codes = newRecoveryCodes();
+    user.recoveryCodes = codes.map(hashCode);
     await user.save({ validateBeforeSave: false });
-    return res.json({ message: 'Two-factor authentication is on.', twoFactorEnabled: true });
+    return res.json({
+      message: 'Two-factor authentication is on. Save these backup codes — each works once.',
+      twoFactorEnabled: true,
+      recoveryCodes: codes,
+    });
   } catch (error) {
     console.error('2FA enable error:', error.message);
     return res.status(500).json({ message: 'Could not enable two-factor authentication.' });
@@ -149,11 +155,88 @@ const twoFactorStatus = async (req, res) => {
   return res.json({ twoFactorEnabled: Boolean(user?.twoFactorEnabled) });
 };
 
+
+/* ---------------------------------------------------------- recovery codes */
+
+const RECOVERY_COUNT = 10;
+
+function hashCode(code) {
+  return crypto.createHash('sha256').update(String(code).toUpperCase().replace(/[\s-]/g, '')).digest('hex');
+}
+
+/** Ten human-friendly single-use codes, e.g. "A1B2C-3D4E5". */
+function newRecoveryCodes() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const codes = [];
+  for (let i = 0; i < RECOVERY_COUNT; i += 1) {
+    let raw = '';
+    for (let j = 0; j < 10; j += 1) raw += alphabet[crypto.randomInt(0, alphabet.length)];
+    codes.push(`${raw.slice(0, 5)}-${raw.slice(5)}`);
+  }
+  return codes;
+}
+
+/**
+ * Check a recovery code against the stored hashes. A match consumes it.
+ * @returns {Promise<boolean>}
+ */
+async function consumeRecoveryCode(userId, code) {
+  const user = await User.findById(userId).select('+recoveryCodes');
+  if (!user || !Array.isArray(user.recoveryCodes) || user.recoveryCodes.length === 0) return false;
+  const hash = hashCode(code);
+  const index = user.recoveryCodes.indexOf(hash);
+  if (index === -1) return false;
+  user.recoveryCodes.splice(index, 1);
+  await user.save({ validateBeforeSave: false });
+  return true;
+}
+
+// @desc    Regenerate backup codes (requires a current TOTP code)
+// @route   POST /api/auth/2fa/recovery-codes
+// @access  Private
+const regenerateRecoveryCodes = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('+twoFactorSecret +recoveryCodes');
+    if (!user) return res.status(404).json({ message: 'Account not found' });
+    if (!user.twoFactorEnabled) {
+      return res.status(400).json({ message: 'Turn on two-factor authentication first.' });
+    }
+    if (!verifyCode(decrypt(user.twoFactorSecret), req.body?.token)) {
+      return res.status(400).json({ message: 'Enter a current authenticator code to regenerate backup codes.' });
+    }
+
+    const codes = newRecoveryCodes();
+    user.recoveryCodes = codes.map(hashCode);
+    await user.save({ validateBeforeSave: false });
+
+    return res.json({
+      codes,
+      message: 'Store these somewhere safe. Each code works once and will not be shown again.',
+    });
+  } catch (error) {
+    console.error('Recovery code regeneration error:', error.message);
+    return res.status(500).json({ message: 'Could not generate backup codes.' });
+  }
+};
+
+// @desc    How many backup codes are left
+// @route   GET /api/auth/2fa/recovery-codes/count
+// @access  Private
+const recoveryCodeCount = async (req, res) => {
+  const user = await User.findById(req.user._id).select('+recoveryCodes');
+  return res.json({ remaining: user?.recoveryCodes?.length ?? 0 });
+};
+
 module.exports = {
   setupTwoFactor,
   enableTwoFactor,
   disableTwoFactor,
   twoFactorStatus,
+  regenerateRecoveryCodes,
+  recoveryCodeCount,
+  consumeRecoveryCode,
+  newRecoveryCodes,
+  hashCode,
   verifyCode,
   encrypt,
   decrypt,

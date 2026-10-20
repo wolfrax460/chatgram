@@ -35,6 +35,22 @@ const supportSettingsSchema = new mongoose.Schema(
     welcomeMessage: { type: String, default: null },
     escalationMessage: { type: String, default: null },
 
+    // Editable knowledge base. Empty array = fall back to knowledge-base.json.
+    kb: {
+      type: [
+        new mongoose.Schema(
+          {
+            id: { type: String, required: true },
+            title: { type: String, required: true },
+            keywords: { type: [String], default: [] },
+            answer: { type: String, required: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+
     updatedBy: { type: String, default: '' },
   },
   { timestamps: true }

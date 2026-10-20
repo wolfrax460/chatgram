@@ -1,6 +1,6 @@
 // Public AI assistant endpoint used by the help widget.
 // The API key never leaves the server; callers only see the answer.
-const knowledgeBase = require('../support/knowledge-base.json');
+const kbStore = require('../support/kbStore');
 const ai = require('../support/aiProvider');
 const { stripHtml, rateLimit } = require('./supportTicketController');
 
@@ -9,27 +9,12 @@ const MAX_INPUT = 1200;
 
 /** Compact knowledge-base dump included in the system prompt. */
 function kbForPrompt() {
-  return knowledgeBase.entries
-    .map((entry) => `### ${entry.title}\n${entry.answer}`)
-    .join('\n\n');
+  return kbStore.promptBlock();
 }
 
 /** Keyword match used when AI is off or fails. */
 function kbFallback(text) {
-  const lower = String(text || '').toLowerCase();
-  let best = null;
-  let bestScore = 0;
-  for (const entry of knowledgeBase.entries) {
-    let score = 0;
-    for (const keyword of entry.keywords) {
-      if (lower.includes(String(keyword).toLowerCase())) score += keyword.length;
-    }
-    if (score > bestScore) {
-      bestScore = score;
-      best = entry;
-    }
-  }
-  return best ? best.answer : knowledgeBase.fallback;
+  return kbStore.keywordAnswer(text);
 }
 
 // @desc    Ask the Chatgram help assistant
@@ -64,7 +49,7 @@ const askSupportAssistant = async (req, res) => {
     if (!lastGuest) return res.status(400).json({ message: 'A message is required' });
 
     const system = [
-      knowledgeBase.systemPrompt,
+      kbStore.systemPrompt(),
       '',
       'KNOWLEDGE BASE — you may only use this:',
       kbForPrompt(),

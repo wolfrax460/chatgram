@@ -17,7 +17,7 @@ const User = require('../models/User');
 const SupportTicket = require('../models/SupportTicket');
 const ai = require('./aiProvider');
 const notifier = require('./notifier');
-const knowledgeBase = require('./knowledge-base.json');
+const kbStore = require('./kbStore');
 
 const DESK_EMAIL = 'support-desk@chatgram.local';
 
@@ -30,7 +30,7 @@ async function supportUserId() {
 }
 
 function systemPrompt(userName) {
-  const kb = knowledgeBase.entries.map((e) => `### ${e.title}\n${e.answer}`).join('\n\n');
+  const kb = kbStore.promptBlock();
   return [
     'You are Chatgram Support replying inside the app chat.',
     `The person you are talking to is called ${userName}.`,

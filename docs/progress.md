@@ -531,3 +531,18 @@ The Settings UI for enrolling a device is not built - the API is complete but a 
 
 Verified: build green; deployed bundle contains 2fa/status, 2fa/setup, 2fa/enable, 'Set up two-factor', 'Authenticator code', 'Turn off two-factor'. /, /web/, /web/admin all 200.
 
+
+---
+
+## 2FA recovery codes + KB/inbox admin APIs (2026-10-20)
+
+- User.recoveryCodes (hashed, select:false). Enabling 2FA now returns 10 single-use codes formatted AAAAA-BBBBB. Login accepts a recovery code when the TOTP code is wrong and consumes it, so a replay fails. POST /api/auth/2fa/recovery-codes regenerates them (requires a current TOTP code); GET /2fa/recovery-codes/count reports how many are left.
+- support/kbStore.js: knowledge base now lives in SupportSettings.kb with knowledge-base.json as seed/fallback, so it can be edited without a deploy. assistantController, agentResponder and supportAgentReply all read through kbStore.
+- Admin APIs: GET/PUT /admin/kb, POST /admin/kb/reset, GET /admin/tickets (filter status/q), GET /admin/tickets/:id, POST /admin/tickets/:id/reply (posts as Support, mirrors to the ticket, pushes to the guest socket, emails the user).
+
+### Verified live
+Recovery codes: 10 generated (format 4DE2Y-6BDLR); login with no code -> 401 TOTP_REQUIRED; with a recovery code -> 200; replay -> 401 TOTP_INVALID. Admin routes mounted (401 without auth). /api/config 200.
+
+### Not done
+The /web/admin UI for the KB editor and ticket inbox is NOT built - the APIs work but there are no screens yet.
+

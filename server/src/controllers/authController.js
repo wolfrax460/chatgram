@@ -118,11 +118,17 @@ const registerUser = async (req, res) => {
         });
       }
       const withSecret = await User.findById(user._id).select('+twoFactorSecret');
-      if (!verifyCode(decrypt(withSecret?.twoFactorSecret), provided)) {
-        return res.status(401).json({
-          message: 'That code is not correct.',
-          code: 'TOTP_INVALID',
-        });
+      const totpOk = verifyCode(decrypt(withSecret?.twoFactorSecret), provided);
+      if (!totpOk) {
+        // A backup code works exactly once, then it is consumed.
+        const { consumeRecoveryCode } = require('./twoFactorController');
+        const recoveryOk = await consumeRecoveryCode(user._id, provided);
+        if (!recoveryOk) {
+          return res.status(401).json({
+            message: 'That code is not correct.',
+            code: 'TOTP_INVALID',
+          });
+        }
       }
     }
 
@@ -184,11 +190,17 @@ const loginUser = async (req, res) => {
         });
       }
       const withSecret = await User.findById(user._id).select('+twoFactorSecret');
-      if (!verifyCode(decrypt(withSecret?.twoFactorSecret), provided)) {
-        return res.status(401).json({
-          message: 'That code is not correct.',
-          code: 'TOTP_INVALID',
-        });
+      const totpOk = verifyCode(decrypt(withSecret?.twoFactorSecret), provided);
+      if (!totpOk) {
+        // A backup code works exactly once, then it is consumed.
+        const { consumeRecoveryCode } = require('./twoFactorController');
+        const recoveryOk = await consumeRecoveryCode(user._id, provided);
+        if (!recoveryOk) {
+          return res.status(401).json({
+            message: 'That code is not correct.',
+            code: 'TOTP_INVALID',
+          });
+        }
       }
     }
 

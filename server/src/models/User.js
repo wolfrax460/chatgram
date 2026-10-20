@@ -41,6 +41,8 @@ const userSchema = new mongoose.Schema({
   // hidden from normal queries.
   twoFactorEnabled: { type: Boolean, default: false },
   twoFactorSecret: { type: String, select: false },
+  // Hashed single-use backup codes for 2FA lockout recovery.
+  recoveryCodes: { type: [String], select: false, default: [] },
 
   isSupportAccount: {
     type: Boolean,

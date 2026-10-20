@@ -23,6 +23,8 @@ const {
   enableTwoFactor,
   disableTwoFactor,
   twoFactorStatus,
+  regenerateRecoveryCodes,
+  recoveryCodeCount,
 } = require('../controllers/twoFactorController');
 const {
   loginLimiter,
@@ -62,5 +64,7 @@ router.get('/2fa/status', protect, twoFactorStatus);
 router.post('/2fa/setup', protect, setupTwoFactor);
 router.post('/2fa/enable', protect, enableTwoFactor);
 router.post('/2fa/disable', protect, disableTwoFactor);
+router.post('/2fa/recovery-codes', protect, regenerateRecoveryCodes);
+router.get('/2fa/recovery-codes/count', protect, recoveryCodeCount);
 
 module.exports = router;

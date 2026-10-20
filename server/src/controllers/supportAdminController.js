@@ -117,4 +117,166 @@ const testAi = async (req, res) => {
   }
 };
 
-module.exports = { getAdminSettings, updateAdminSettings, getAdminStats, testAi, PROVIDER_PRESETS };
+
+/* -------------------------------------------------------- knowledge base */
+
+const kbStore = require('../support/kbStore');
+
+// @desc    Read the knowledge base
+// @route   GET /api/support/admin/kb
+const getKb = async (req, res) => {
+  try {
+    const entries = await kbStore.load();
+    return res.json({ entries, fallback: kbStore.fallbackText(), systemPrompt: kbStore.systemPrompt() });
+  } catch (error) {
+    return res.status(500).json({ message: 'Could not load the knowledge base.' });
+  }
+};
+
+// @desc    Replace the knowledge base
+// @route   PUT /api/support/admin/kb
+const updateKb = async (req, res) => {
+  try {
+    const entries = Array.isArray(req.body?.entries) ? req.body.entries : null;
+    if (!entries) return res.status(400).json({ message: 'entries[] is required' });
+    if (entries.length > 80) return res.status(400).json({ message: 'Too many entries (max 80).' });
+    for (const e of entries) {
+      if (!String(e.title || '').trim() || !String(e.answer || '').trim()) {
+        return res.status(400).json({ message: 'Every entry needs a title and an answer.' });
+      }
+    }
+    const saved = await kbStore.save(entries, req.user?.email || 'admin');
+    return res.json({ entries: saved, message: `Knowledge base saved (${saved.length} entries).` });
+  } catch (error) {
+    console.error('KB update error:', error.message);
+    return res.status(500).json({ message: 'Could not save the knowledge base.' });
+  }
+};
+
+// @desc    Restore the bundled knowledge base
+// @route   POST /api/support/admin/kb/reset
+const resetKb = async (req, res) => {
+  try {
+    const entries = await kbStore.resetToSeed(req.user?.email || 'admin');
+    return res.json({ entries, message: 'Restored the bundled knowledge base.' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Could not reset the knowledge base.' });
+  }
+};
+
+/* ----------------------------------------------------------- ticket inbox */
+
+// @desc    Ticket list with optional status filter
+// @route   GET /api/support/admin/tickets?status=open&q=text
+const listTickets = async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.status && ['open', 'answered', 'closed'].includes(req.query.status)) {
+      filter.status = req.query.status;
+    }
+    if (req.query.q) {
+      const rx = new RegExp(String(req.query.q).slice(0, 60).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [{ ticketId: rx }, { contact: rx }, { summary: rx }];
+    }
+    const tickets = await SupportTicket.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .select('ticketId status contact contactType summary createdAt replies chatId');
+    return res.json({
+      tickets: tickets.map((t) => ({
+        ticketId: t.ticketId,
+        status: t.status,
+        contact: t.contact,
+        contactType: t.contactType,
+        summary: String(t.summary || '').slice(0, 200),
+        createdAt: t.createdAt,
+        replyCount: t.replies?.length ?? 0,
+        lastReply: t.replies?.length ? t.replies[t.replies.length - 1].text : '',
+        hasChat: Boolean(t.chatId),
+      })),
+    });
+  } catch (error) {
+    console.error('Ticket list error:', error.message);
+    return res.status(500).json({ message: 'Could not load tickets.' });
+  }
+};
+
+// @desc    One ticket with its transcript and replies
+// @route   GET /api/support/admin/tickets/:ticketId
+const getTicketDetail = async (req, res) => {
+  try {
+    const ticket = await SupportTicket.findOne({ ticketId: req.params.ticketId.toUpperCase() });
+    if (!ticket) return res.status(404).json({ message: 'Ticket not found.' });
+    return res.json({
+      ticket: {
+        ticketId: ticket.ticketId,
+        status: ticket.status,
+        contact: ticket.contact,
+        contactType: ticket.contactType,
+        summary: ticket.summary,
+        createdAt: ticket.createdAt,
+        hasChat: Boolean(ticket.chatId),
+        transcript: (ticket.transcript || []).map((x) => ({ role: x.role, text: x.text, at: x.at })),
+        replies: (ticket.replies || []).map((r) => ({ text: r.text, at: r.at })),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Could not load the ticket.' });
+  }
+};
+
+// @desc    Reply to a ticket from the dashboard
+// @route   POST /api/support/admin/tickets/:ticketId/reply
+const replyToTicketAdmin = async (req, res) => {
+  try {
+    const text = String(req.body?.text || '').trim();
+    if (!text) return res.status(400).json({ message: 'A reply is required.' });
+
+    const ticket = await SupportTicket.findOne({ ticketId: req.params.ticketId.toUpperCase() });
+    if (!ticket) return res.status(404).json({ message: 'Ticket not found.' });
+    if (!ticket.chatId) {
+      return res.status(400).json({ message: 'This ticket has no conversation attached (contact only).' });
+    }
+
+    const Message = require('../models/Message');
+    const User = require('../models/User');
+    const supportUser = await User.findOne({ isSupportAccount: true }).select('_id');
+    if (!supportUser) return res.status(500).json({ message: 'No support account found.' });
+
+    const created = await Message.create({
+      chatId: ticket.chatId,
+      senderId: supportUser._id,
+      type: 'text',
+      content: text.slice(0, 4000),
+      sentAt: new Date(),
+      deliveredTo: [],
+      readBy: [],
+    });
+
+    const populated = await Message.findById(created._id).populate('senderId', '_id displayName avatarUrl');
+    const realtime = require('../utils/realtime');
+    realtime.getIo()?.to(realtime.roomForChat(ticket.chatId)).emit('message:new', populated);
+
+    // Mirrors to the ticket, pushes to the guest socket and emails the user.
+    await require('../support/replyHook').propagateSupportReply(created, realtime.getIo());
+
+    return res.json({ message: 'Reply sent.', ticketId: ticket.ticketId });
+  } catch (error) {
+    console.error('Admin ticket reply error:', error.message);
+    return res.status(500).json({ message: 'Could not send the reply.' });
+  }
+};
+
+module.exports = {
+  getAdminSettings,
+  updateAdminSettings,
+  getAdminStats,
+  testAi,
+  getKb,
+  updateKb,
+  resetKb,
+  listTickets,
+  getTicketDetail,
+  replyToTicketAdmin,
+  PROVIDER_PRESETS,
+};
