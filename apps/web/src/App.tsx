@@ -1,10 +1,20 @@
-import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Moon, Sun, Monitor, MessageCircle, LogOut, Send } from 'lucide-react';
-import { chatTitle, useSession, useTheme, type Chat, type Message } from '@chatgram/core';
-import { api } from './lib/api';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Moon, Sun, Monitor, MessageCircle, LogOut, Send, Wifi, WifiOff } from 'lucide-react';
+import {
+  chatPartner,
+  chatTitle,
+  useRealtime,
+  useSession,
+  useTheme,
+  type Chat,
+  type Message,
+} from '@chatgram/core';
+import { api, realtime } from './lib/api';
+import { useRealtimeBridge } from './lib/useRealtime';
 
-/** Auth screen: sign in, then everything else is behind the session store. */
+/* ------------------------------------------------------------------- login */
+
 function Login() {
   const setUser = useSession((s) => s.setUser);
   const [identifier, setIdentifier] = useState('');
@@ -69,21 +79,197 @@ function Login() {
   );
 }
 
-/** Chat list + conversation (Phase 2 slices 4 and 5). */
+/* ------------------------------------------------------------------- theme */
+
+function ThemeButton() {
+  const { mode, cycle } = useTheme();
+  return (
+    <button type="button" onClick={cycle} className="btn-ghost !px-2" title={`Theme: ${mode}`}>
+      {mode === 'dark' ? <Moon className="h-4 w-4" /> : mode === 'light' ? <Sun className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
+    </button>
+  );
+}
+
+/* --------------------------------------------------------------- composer */
+
+function Composer({ chatId, disabled }: { chatId: string; disabled?: boolean }) {
+  const [text, setText] = useState('');
+  const typingTimer = useRef<number | null>(null);
+  const queryClient = useQueryClient();
+  const me = useSession((s) => s.user);
+
+  const stopTyping = useCallback(() => {
+    if (typingTimer.current) {
+      window.clearTimeout(typingTimer.current);
+      typingTimer.current = null;
+    }
+    realtime.typingStop(chatId);
+  }, [chatId]);
+
+  useEffect(() => () => stopTyping(), [stopTyping]);
+
+  function onChange(value: string) {
+    setText(value);
+    if (!value.trim()) return;
+    realtime.typingStart(chatId);
+    if (typingTimer.current) window.clearTimeout(typingTimer.current);
+    typingTimer.current = window.setTimeout(() => {
+      realtime.typingStop(chatId);
+      typingTimer.current = null;
+    }, 1500);
+  }
+
+  async function send(e: React.FormEvent) {
+    e.preventDefault();
+    const value = text.trim();
+    if (!value || disabled || !me) return;
+
+    const clientId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const optimistic: Message = {
+      id: clientId,
+      clientId,
+      chatId,
+      senderId: me.id,
+      type: 'text',
+      content: value,
+      sentAt: new Date().toISOString(),
+      deliveredTo: [],
+      readBy: [],
+    };
+
+    // Optimistic append; the socket echo reconciles by clientId.
+    queryClient.setQueryData<Message[]>(['messages', chatId], (prev) => [...(prev ?? []), optimistic]);
+    setText('');
+    stopTyping();
+
+    if (realtime.connected) {
+      realtime.sendMessage({ chatId, type: 'text', content: value, clientId });
+    } else {
+      try {
+        const saved = await api.sendMessage({ chatId, type: 'text', content: value, clientId });
+        queryClient.setQueryData<Message[]>(['messages', chatId], (prev) =>
+          (prev ?? []).map((m) => (m.clientId === clientId ? saved : m)),
+        );
+      } catch {
+        queryClient.setQueryData<Message[]>(['messages', chatId], (prev) =>
+          (prev ?? []).map((m) => (m.clientId === clientId ? { ...m, failed: true } : m)),
+        );
+      }
+    }
+  }
+
+  return (
+    <form onSubmit={send} className="flex items-center gap-2 border-t border-ink-200 p-3 dark:border-white/10">
+      <input
+        className="field flex-1"
+        placeholder="Type a message"
+        value={text}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+      />
+      <button type="submit" className="btn-primary !px-3" disabled={disabled || !text.trim()}>
+        <Send className="h-4 w-4" />
+      </button>
+    </form>
+  );
+}
+
+/* -------------------------------------------------------------------- chat */
+
+function ChatWindow({ chat, meId }: { chat: Chat; meId: string }) {
+  const typing = useRealtime((s) => s.typing[chat.id] ?? null);
+  const online = useRealtime((s) => s.online);
+  const connected = useRealtime((s) => s.connected);
+  const queryClient = useQueryClient();
+
+  const messages = useQuery<Message[]>({
+    queryKey: ['messages', chat.id],
+    queryFn: () => api.messages(chat.id),
+  });
+
+  // Join the room so the server routes this chat's events to us.
+  useEffect(() => {
+    realtime.joinChat(chat.id);
+    return () => realtime.leaveChat(chat.id);
+  }, [chat.id]);
+
+  // Clear unread on the server once the conversation is open.
+  useEffect(() => {
+    api.markChatRead(chat.id).catch(() => {});
+    void queryClient.invalidateQueries({ queryKey: ['chats'] });
+  }, [chat.id, queryClient]);
+
+  const partner = chatPartner(chat, meId);
+  const isOnline = partner ? (online[partner.id] ?? partner.isOnline ?? false) : false;
+
+  return (
+    <section className="flex min-w-0 flex-1 flex-col">
+      <header className="flex items-center gap-3 border-b border-ink-200 px-4 py-3 dark:border-white/10">
+        <div className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
+          {chatTitle(chat, meId).slice(0, 2).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold">{chatTitle(chat, meId)}</p>
+          <p className="truncate text-xs text-ink-500 dark:text-ink-400">
+            {typing ? 'typing…' : chat.type === 'group' ? `${chat.participants.length} members` : isOnline ? 'online' : 'offline'}
+          </p>
+        </div>
+        <span
+          title={connected ? 'Realtime connected' : 'Reconnecting…'}
+          className={connected ? 'text-brand-600' : 'text-amber-500'}
+        >
+          {connected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+        </span>
+      </header>
+
+      <div className="flex-1 space-y-2 overflow-y-auto p-4">
+        {messages.isLoading ? <p className="text-sm text-ink-500">Loading messages…</p> : null}
+        {messages.data?.length === 0 ? (
+          <p className="text-sm text-ink-500">No messages yet — say hello.</p>
+        ) : null}
+        {messages.data?.map((m) => {
+          const mine = m.senderId === meId;
+          const pending = m.id.startsWith('tmp-');
+          return (
+            <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+              <div
+                className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm ${
+                  mine
+                    ? 'rounded-br-md bg-brand-600 text-white'
+                    : 'rounded-bl-md bg-white text-ink-800 dark:bg-ink-700 dark:text-ink-100'
+                } ${m.failed ? 'opacity-60' : ''}`}
+              >
+                <span className="whitespace-pre-wrap break-words">{m.content}</span>
+                <span className={`ml-2 align-bottom text-[10px] ${mine ? 'text-white/70' : 'text-ink-400'}`}>
+                  {pending ? '…' : m.failed ? 'failed' : new Date(m.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <Composer chatId={chat.id} disabled={!connected} />
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------- list */
+
 function Chats() {
   const user = useSession((s) => s.user);
   const setUser = useSession((s) => s.setUser);
-  const { mode, cycle } = useTheme();
+  const connected = useRealtime((s) => s.connected);
+  const online = useRealtime((s) => s.online);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const chats = useQuery({ queryKey: ['chats'], queryFn: () => api.chats() });
-  const selected = chats.data?.find((c) => c.id === selectedId) ?? null;
+  useRealtimeBridge();
 
-  const messages = useQuery<Message[]>({
-    queryKey: ['messages', selectedId],
-    queryFn: () => api.messages(selectedId!),
-    enabled: Boolean(selectedId),
-  });
+  const chats = useQuery({ queryKey: ['chats'], queryFn: () => api.chats() });
+  const selected = useMemo(
+    () => chats.data?.find((c) => c.id === selectedId) ?? null,
+    [chats.data, selectedId],
+  );
 
   const meId = user?.id ?? '';
 
@@ -96,9 +282,10 @@ function Chats() {
           <MessageCircle className="h-5 w-5 text-brand-600" />
           <span className="font-bold">Chatgram</span>
           <span className="flex-1" />
-          <button type="button" onClick={cycle} className="btn-ghost !px-2" title={`Theme: ${mode}`}>
-            {mode === 'dark' ? <Moon className="h-4 w-4" /> : mode === 'light' ? <Sun className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
-          </button>
+          <span className={connected ? 'text-brand-600' : 'text-amber-500'} title={connected ? 'Connected' : 'Reconnecting…'}>
+            {connected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+          </span>
+          <ThemeButton />
           <button
             type="button"
             className="btn-ghost !px-2"
@@ -115,87 +302,67 @@ function Chats() {
         <div className="flex-1 overflow-y-auto">
           {chats.isLoading ? <p className="p-4 text-sm text-ink-500">Loading…</p> : null}
           {chats.isError ? <p className="p-4 text-sm text-rose-500">Failed to load chats.</p> : null}
-          {chats.data?.length === 0 ? (
-            <p className="p-4 text-sm text-ink-500">No conversations yet.</p>
-          ) : null}
-          {chats.data?.map((chat: Chat) => (
-            <button
-              key={chat.id}
-              type="button"
-              onClick={() => setSelectedId(chat.id)}
-              className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${
-                chat.id === selectedId
-                  ? 'bg-brand-600/10 dark:bg-white/[.07]'
-                  : 'hover:bg-ink-100/70 dark:hover:bg-white/[.04]'
-              }`}
-            >
-              <div className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
-                {chatTitle(chat, meId).slice(0, 2).toUpperCase()}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold">{chatTitle(chat, meId)}</p>
-                <p className="truncate text-xs text-ink-500 dark:text-ink-400">
-                  {chat.lastMessage?.content ?? 'No messages yet'}
-                </p>
-              </div>
-            </button>
-          ))}
+          {chats.data?.length === 0 ? <p className="p-4 text-sm text-ink-500">No conversations yet.</p> : null}
+          {chats.data?.map((chat) => {
+            const partner = chatPartner(chat, meId);
+            const isOnline = partner ? (online[partner.id] ?? partner.isOnline ?? false) : false;
+            const unread = chat.unreadCount ?? 0;
+            return (
+              <button
+                key={chat.id}
+                type="button"
+                onClick={() => setSelectedId(chat.id)}
+                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${
+                  chat.id === selectedId ? 'bg-brand-600/10 dark:bg-white/[.07]' : 'hover:bg-ink-100/70 dark:hover:bg-white/[.04]'
+                }`}
+              >
+                <div className="relative">
+                  <div className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
+                    {chatTitle(chat, meId).slice(0, 2).toUpperCase()}
+                  </div>
+                  {isOnline ? (
+                    <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-ink-900" />
+                  ) : null}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{chatTitle(chat, meId)}</p>
+                  <p className="truncate text-xs text-ink-500 dark:text-ink-400">
+                    {chat.lastMessage?.content ?? 'No messages yet'}
+                  </p>
+                </div>
+                {unread > 0 ? (
+                  <span className="grid h-5 min-w-[20px] place-items-center rounded-full bg-brand-600 px-1.5 text-[11px] font-bold text-white">
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col">
-        {!selected ? (
-          <div className="grid h-full place-items-center px-6 text-center">
-            <div>
-              <MessageCircle className="mx-auto h-12 w-12 text-ink-300 dark:text-ink-600" />
-              <h2 className="mt-4 text-lg font-bold">Select a conversation</h2>
-              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">
-                Pick a chat on the left, or start a new one.
-              </p>
-            </div>
+      {selected ? (
+        <ChatWindow chat={selected} meId={meId} />
+      ) : (
+        <section className="grid flex-1 place-items-center px-6 text-center">
+          <div>
+            <MessageCircle className="mx-auto h-12 w-12 text-ink-300 dark:text-ink-600" />
+            <h2 className="mt-4 text-lg font-bold">Select a conversation</h2>
+            <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Pick a chat on the left, or start a new one.</p>
           </div>
-        ) : (
-          <>
-            <header className="border-b border-ink-200 px-4 py-3 dark:border-white/10">
-              <p className="font-semibold">{chatTitle(selected, meId)}</p>
-            </header>
-            <div className="flex-1 space-y-2 overflow-y-auto p-4">
-              {messages.data?.map((m) => {
-                const mine = m.senderId === meId;
-                return (
-                  <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                    <div
-                      className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm ${
-                        mine
-                          ? 'rounded-br-md bg-brand-600 text-white'
-                          : 'rounded-bl-md bg-white text-ink-800 dark:bg-ink-700 dark:text-ink-100'
-                      }`}
-                    >
-                      {m.content}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-2 border-t border-ink-200 p-3 dark:border-white/10">
-              <input className="field flex-1" placeholder="Type a message" disabled />
-              <button type="button" className="btn-primary !px-3" disabled>
-                <Send className="h-4 w-4" />
-              </button>
-            </div>
-          </>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   );
 }
+
+/* --------------------------------------------------------------------- app */
 
 export default function App() {
   const user = useSession((s) => s.user);
   const setUser = useSession((s) => s.setUser);
   const setReady = useSession((s) => s.setReady);
 
-  // Restore the session on first load.
   useEffect(() => {
     let cancelled = false;
     (async () => {
