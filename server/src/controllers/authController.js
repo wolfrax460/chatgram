@@ -106,6 +106,26 @@ const registerUser = async (req, res) => {
       lastSeen: new Date(),
     });
 
+    // Two-factor gate: the password was correct, now a TOTP code is required.
+    if (user.twoFactorEnabled) {
+      const { verifyCode } = require('./twoFactorController');
+      const { decrypt } = require('./twoFactorController');
+      const provided = req.body.totp || req.body.token2fa || req.body.code2fa;
+      if (!provided) {
+        return res.status(401).json({
+          message: 'Enter the 6-digit code from your authenticator app.',
+          code: 'TOTP_REQUIRED',
+        });
+      }
+      const withSecret = await User.findById(user._id).select('+twoFactorSecret');
+      if (!verifyCode(decrypt(withSecret?.twoFactorSecret), provided)) {
+        return res.status(401).json({
+          message: 'That code is not correct.',
+          code: 'TOTP_INVALID',
+        });
+      }
+    }
+
     const accessToken = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
@@ -150,6 +170,26 @@ const loginUser = async (req, res) => {
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // Two-factor gate: the password was correct, now a TOTP code is required.
+    if (user.twoFactorEnabled) {
+      const { verifyCode } = require('./twoFactorController');
+      const { decrypt } = require('./twoFactorController');
+      const provided = req.body.totp || req.body.token2fa || req.body.code2fa;
+      if (!provided) {
+        return res.status(401).json({
+          message: 'Enter the 6-digit code from your authenticator app.',
+          code: 'TOTP_REQUIRED',
+        });
+      }
+      const withSecret = await User.findById(user._id).select('+twoFactorSecret');
+      if (!verifyCode(decrypt(withSecret?.twoFactorSecret), provided)) {
+        return res.status(401).json({
+          message: 'That code is not correct.',
+          code: 'TOTP_INVALID',
+        });
+      }
     }
 
     const accessToken = generateToken(user._id);

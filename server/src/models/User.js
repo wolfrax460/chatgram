@@ -37,6 +37,11 @@ const userSchema = new mongoose.Schema({
     default: 'user'
   },
   // Marks the single account users are routed to for help & feedback.
+  // TOTP two-factor auth. The secret is AES-256-GCM encrypted at rest and
+  // hidden from normal queries.
+  twoFactorEnabled: { type: Boolean, default: false },
+  twoFactorSecret: { type: String, select: false },
+
   isSupportAccount: {
     type: Boolean,
     default: false

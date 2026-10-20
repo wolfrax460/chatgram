@@ -19,6 +19,12 @@ const {
 } = require('../controllers/googleAuthController');
 const { protect } = require('../middleware/auth');
 const {
+  setupTwoFactor,
+  enableTwoFactor,
+  disableTwoFactor,
+  twoFactorStatus,
+} = require('../controllers/twoFactorController');
+const {
   loginLimiter,
   signupLimiter,
   resetLimiter,
@@ -50,5 +56,11 @@ router.get('/google/poll', googlePoll);
 // Protected routes (need auth middleware)
 router.get('/me', protect, getUserProfile);
 router.post('/logout', protect, logoutUser);
+
+// Two-factor authentication
+router.get('/2fa/status', protect, twoFactorStatus);
+router.post('/2fa/setup', protect, setupTwoFactor);
+router.post('/2fa/enable', protect, enableTwoFactor);
+router.post('/2fa/disable', protect, disableTwoFactor);
 
 module.exports = router;

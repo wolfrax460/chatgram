@@ -502,3 +502,20 @@ TELEGRAM_WEBHOOK_SECRET (generated, stored on the server only).
 ### Verified live
 GET admin settings without auth -> 401. With the support token: settings return status (AI enabled, openai-compatible/gpt-oss-20b, telegram+email connected) plus presets; stats return open/answered/closed/total and recent tickets (8 open, 9 total). /api/config 200.
 
+
+---
+
+## TOTP 2FA (2026-10-20)
+
+- models/User: twoFactorEnabled + twoFactorSecret (select:false, AES-256-GCM encrypted at rest with a key derived from TOTP_ENCRYPTION_KEY or JWT_SECRET).
+- controllers/twoFactorController.js: setup (secret + otpauth URI + QR data URL), enable (verify then turn on), disable (requires a current code), status. Codes verified with a one-step window for clock drift.
+- loginUser now requires a TOTP code when 2FA is enabled: 401 TOTP_REQUIRED without one, 401 TOTP_INVALID when wrong, 200 with a valid code.
+- Routes: GET /api/auth/2fa/status, POST /api/auth/2fa/setup|enable|disable (all protected).
+- otplib pinned to v12 on the server: v13 removed the classiconic authenticator API in favour of TOTP/generate/verifySync.
+
+### Verified live
+encrypt/decrypt roundtrip true; valid code accepted; wrong code rejected; login without code -> 401 TOTP_REQUIRED; login with code -> 200; login bad code -> 401 TOTP_INVALID. Support login still 200, /api/config 200. Test account deleted.
+
+### Not done
+The Settings UI for enrolling a device is not built - the API is complete but a user must call it directly. The login screen also does not yet prompt for the code when TOTP_REQUIRED is returned.
+
