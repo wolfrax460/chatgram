@@ -110,25 +110,34 @@ export default function SupportWidget() {
     );
   }
 
-  function sendFreeText(e: React.FormEvent) {
+  async function sendFreeText(e: React.FormEvent) {
     e.preventDefault();
     const raw = input.trim();
-    if (!raw) return;
+    if (!raw || busy) return;
     const text = maskSecrets(raw);
     setInput('');
-    push({ role: 'guest', text });
-    const lower = text.toLowerCase();
-    const hit =
-      CHIPS.find((c) => answersMatch(lower, c.id)) ??
-      (lower.includes('human') || lower.includes('agent') || lower.includes('support')
-        ? { id: 'other' }
-        : undefined);
-    if (hit) push({ role: 'assistant', text: ANSWERS[hit.id] ?? ANSWERS.other ?? '' });
-    else
+    const next: Msg[] = [...messages, { role: 'guest', text }];
+    setMessages(next);
+    setBusy(true);
+    try {
+      // Server-side assistant: uses the configured AI provider, or the
+      // knowledge base when AI is disabled/unavailable.
+      const result = await api.askSupportAssistant({
+        guestId: guestId(),
+        messages: next.slice(-12),
+      });
+      push({ role: 'assistant', text: result.answer });
+    } catch {
+      // Offline or rate limited: answer locally from the same knowledge base.
+      const lower = text.toLowerCase();
+      const hit = CHIPS.find((c) => answersMatch(lower, c.id));
       push({
         role: 'assistant',
-        text: "I don't have that in my knowledge base. I can send your report to Chatgram Support so a person can help.",
+        text: (hit ? ANSWERS[hit.id] : ANSWERS.other) ?? ANSWERS.other ?? '',
       });
+    } finally {
+      setBusy(false);
+    }
   }
 
   function answersMatch(text: string, id: string): boolean {

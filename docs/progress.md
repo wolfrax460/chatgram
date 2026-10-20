@@ -326,3 +326,35 @@ delete-my-ticket, Turnstile, Playwright suite.
 Guest socket namespace for live support replies, AI proxy
 (POST /api/support/assistant), support-reply propagation, admin ticket badges,
 delete-my-ticket, Turnstile, Playwright suite, backend hardening.
+
+---
+
+## Support assistant: multi-provider AI proxy (2026-10-20)
+
+- **server/src/support/aiProvider.js** — one adapter, five backends:
+  nthropic (Messages API), openai, gemini (generateContent),
+  openai-compatible (any OpenAI-schema endpoint: Groq, OpenRouter, Together,
+  DeepSeek, Mistral, Fireworks, Ollama, LM Studio, vLLM), and 
+one.
+  Chosen with AI_PROVIDER; legacy ANTHROPIC_API_KEY / OPENAI_API_KEY /
+  GEMINI_API_KEY alone still auto-select a provider. Model comes from
+  SUPPORT_AI_MODEL (per-provider default), output capped by AI_MAX_TOKENS,
+  request timeout by AI_TIMEOUT_MS.
+- **POST /api/support/assistant** (public): rate limited 30/hour per guest and
+  200/day per IP, max 12 messages x 1200 chars in, injects the knowledge base
+  into the system prompt, and **always answers** — when AI is disabled or the
+  provider fails it returns a keyword-matched KB answer with source: "kb".
+- **Widget** now calls the assistant endpoint instead of answering locally;
+  the local KB remains as an offline fallback.
+
+### Verified live
+ssistantInfo() → {"enabled":false,"provider":"none"} (AI off by default).
+POST /api/support/assistant with "I forgot my password" returned
+{"source":"kb","aiEnabled":false,"answer":"Passwords must be at least 8 characters…"}
+— note it matched the password-rules entry, which is the expected keyword
+behaviour until AI is enabled. Health OK, /api/config 200, /api/chats 401.
+
+### Still to build
+Guest socket namespace + signed guest tokens (live support replies),
+support-reply propagation, admin ticket badges, delete-my-ticket, Turnstile,
+Playwright suite, backend hardening.

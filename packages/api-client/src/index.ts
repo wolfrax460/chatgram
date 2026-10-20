@@ -502,6 +502,14 @@ export class ApiClient {
 
   /* ------------------------------------------------------------ support */
 
+  /** Public: ask the help assistant (server-side AI, KB fallback). */
+  askSupportAssistant(input: { guestId: string; messages: { role: 'guest' | 'assistant'; text: string }[] }) {
+    return this.request<{ answer: string; source: string; aiEnabled?: boolean; provider?: string }>(
+      '/api/support/assistant',
+      { method: 'POST', body: input, anonymous: true },
+    );
+  }
+
   /** Public: create a support ticket from the help widget. */
   createSupportTicket(input: {
     guestId: string;
