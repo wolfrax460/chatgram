@@ -114,7 +114,7 @@ function Nav({ mode, setMode }) {
         </nav>
         <div className="nav-spacer" />
         <ThemeSwitch mode={mode} setMode={setMode} />
-        <a className="btn btn-primary nav-cta" href="/app/">
+        <a className="btn btn-primary nav-cta" href="/web/">
           Open Chatgram
         </a>
         <button
@@ -154,7 +154,7 @@ function Hero({ sizes }) {
             photos, groups and status updates, on Android, Windows or right in your browser.
           </p>
           <div className="hero-actions">
-            <a className="btn btn-primary btn-lg" href="/app/">
+            <a className="btn btn-primary btn-lg" href="/web/">
               Open in browser
             </a>
             <a className="btn btn-light btn-lg" href="#download">
@@ -192,7 +192,7 @@ function Footer() {
             <a href="#features">Features</a>
             <a href="#preview">Preview</a>
             <a href="#download">Download</a>
-            <a href="/app/">Open web app</a>
+            <a href="/web/">Open web app</a>
           </div>
           <div>
             <h4>Help</h4>

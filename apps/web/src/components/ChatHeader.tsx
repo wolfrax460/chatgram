@@ -7,6 +7,7 @@ import { avatarGradient, initialsFor, lastSeenLabel, type TimeFormat } from '../
 export interface HeaderMenuActions {
   onContactInfo: () => void;
   onMute: () => void;
+  onForward?: () => void;
   onClearChat: () => void;
   onBlock: () => void;
 }

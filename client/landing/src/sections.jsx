@@ -298,7 +298,7 @@ export function Security() {
 export const DOWNLOADS = {
   android: 'https://chatgram.duckdns.org/downloads/chatgram.apk',
   windows: 'https://chatgram.duckdns.org/downloads/chatgram-windows.zip',
-  web: '/app/',
+  web: '/web/',
 };
 
 const PLATFORMS = [

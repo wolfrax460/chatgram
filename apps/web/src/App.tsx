@@ -313,10 +313,11 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
           setSearchOpen((v) => !v);
           setInChatSearch('');
         }}
-        onCall={() => setNotice('Voice calls are not available yet.')}
+        onCall={() => setNotice('Voice calls are still being deployed — coming soon.')}
         menu={{
-          onContactInfo: () => setNotice('Contact info panel is coming soon.'),
-          onMute: () => setNotice('Chat muted locally.'),
+          onContactInfo: () => setNotice('Contact info is still being deployed — coming soon.'),
+          onMute: () => setNotice('Mute is still being deployed — coming soon.'),
+          onForward: () => setNotice('Forwarding is still being deployed — coming soon.'),
           onClearChat: async () => {
             try {
               await api.clearChat(chat.id);
@@ -327,7 +328,7 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
               setNotice(err instanceof Error ? err.message : 'Could not clear chat');
             }
           },
-          onBlock: () => setNotice('Blocking needs a backend endpoint — not available yet.'),
+          onBlock: () => setNotice('Blocking is still being deployed — coming soon.'),
         }}
         onBack={onBack}
       />
