@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTheme } from './theme.js';
+import PhoneDemo from './PhoneDemo.jsx';
+import { Reveal } from './reveal.jsx';
 import {
   Icon,
   Section,
@@ -166,9 +168,7 @@ function Hero({ sizes }) {
           </div>
         </div>
         <div className="hero-art">
-          <div className="phone">
-            <img src="/assets/android-app.png" alt="Chatgram running on Android" />
-          </div>
+          <PhoneDemo />
         </div>
       </div>
     </section>

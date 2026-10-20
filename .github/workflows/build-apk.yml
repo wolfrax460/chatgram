@@ -1,0 +1,90 @@
+name: Build Android APK
+
+# Builds a release APK on every push to main and on demand, so you never have to
+# depend on a local machine to produce a shippable binary.
+#
+# The APK is attached to the run as a downloadable artifact, and — when a tag
+# like v1.0.1 is pushed — attached to a GitHub Release.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'client/landing/**'
+      - 'client/webapp/**'
+  workflow_dispatch:
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Build release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show toolchain versions
+        run: |
+          flutter --version
+          java -version
+
+      - name: Resolve packages
+        working-directory: client
+        run: flutter pub get
+
+      - name: Analyse
+        working-directory: client
+        run: flutter analyze
+
+      - name: Run tests
+        working-directory: client
+        run: flutter test --reporter expanded
+
+      - name: Build APK
+        working-directory: client
+        run: |
+          flutter build apk --release \
+            --dart-define=API_URL=https://chatgram.duckdns.org \
+            --dart-define=WS_URL=wss://chatgram.duckdns.org \
+            --dart-define=APP_VERSION="${GITHUB_REF_NAME}"
+
+      - name: Verify the APK exists
+        working-directory: client
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          test -f "$APK" || { echo "APK missing"; exit 1; }
+          ls -lh "$APK"
+          echo "size_bytes=$(stat -c%s "$APK")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatgram-apk-${{ github.sha }}
+          path: client/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: client/build/app/outputs/flutter-apk/app-release.apk
+          generate_release_notes: true

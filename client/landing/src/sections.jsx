@@ -1,3 +1,4 @@
+import { Reveal } from './reveal.jsx';
 import { useState } from 'react';
 
 /* ------------------------------------------------------------------ icons */
@@ -137,13 +138,13 @@ export function Section({ id, eyebrow, title, lead, children, alt = false }) {
     <section id={id} className={alt ? 'section section-alt' : 'section'}>
       <div className="wrap">
         {(eyebrow || title) && (
-          <div className="section-head">
+          <Reveal className="section-head">
             {eyebrow && <span className="eyebrow">{eyebrow}</span>}
             {title && <h2>{title}</h2>}
             {lead && <p>{lead}</p>}
-          </div>
+          </Reveal>
         )}
-        {children}
+        <Reveal delay={90}>{children}</Reveal>
       </div>
     </section>
   );
