@@ -502,6 +502,36 @@ export class ApiClient {
 
   /* ------------------------------------------------------------ support */
 
+  /** Public: create a support ticket from the help widget. */
+  createSupportTicket(input: {
+    guestId: string;
+    contact: string;
+    summary: string;
+    transcript: { role: 'guest' | 'assistant'; text: string }[];
+    page?: string;
+    userAgent?: string;
+    appVersion?: string;
+  }) {
+    return this.request<{ ticketId: string; status: string; message: string }>(
+      '/api/support/tickets',
+      { method: 'POST', body: input, anonymous: true },
+    );
+  }
+
+  /** Public: look up a ticket by ID + the contact used when reporting. */
+  getSupportTicket(ticketId: string, contact: string) {
+    return this.request<{
+      ticketId: string;
+      status: string;
+      createdAt: string;
+      summary: string;
+      replies: { text: string; at: string }[];
+    }>(`/api/support/tickets/${encodeURIComponent(ticketId)}`, {
+      query: { contact },
+      anonymous: true,
+    });
+  }
+
   support() {
     return this.request<{ enabled: boolean; displayName: string }>('/api/support');
   }

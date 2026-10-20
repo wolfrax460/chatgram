@@ -24,6 +24,7 @@ import Contacts from './pages/Contacts';
 import Status from './pages/Status';
 import SettingsPage from './pages/Settings';
 import Auth from './pages/Auth';
+import SupportWidget from './components/SupportWidget';
 import { dateSeparatorLabel, sameDay, statusOf } from './lib/ui';
 
 type Tab = 'chats' | 'status' | 'groups' | 'contacts' | 'settings';
@@ -557,5 +558,10 @@ export default function App() {
     };
   }, [setUser, setReady]);
 
-  return user ? <Shell /> : <Auth />;
+  return (
+    <>
+      {user ? <Shell /> : <Auth />}
+      <SupportWidget />
+    </>
+  );
 }

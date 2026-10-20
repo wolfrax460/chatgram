@@ -300,3 +300,29 @@ delete-my-ticket, Turnstile, Playwright suite.
 - Auth footer and register Terms/Privacy links now point at \/docs/#terms\ and
   \/docs/#privacy\ (real anchors on a real page, so the browser scrolls to the
   section itself).
+
+---
+
+## Support widget UI (2026-10-20)
+
+- components/SupportWidget.tsx: floating launcher (bottom-right, 56px) on every
+  screen including sign-in/register/forgot/reset; panel is full-height on mobile
+  and a 380x560 card on desktop. Title + AI notice, transcript with aria-live,
+  5 quick-reply chips backed by the knowledge base, free-text input that masks
+  anything matching "password is ..." / "code is ..." before it is stored,
+  report form (contact + optional technical details), ticket ID confirmation and
+  a "Check ticket status" form.
+- api-client: createSupportTicket + getSupportTicket (public, anonymous).
+- Mounted in App.tsx so it is available signed in and signed out.
+
+### Also this turn
+- Google sign-up button added (same popup+poll flow as sign-in).
+- The visible scrollbar on the auth pages is hidden via a .no-scrollbar utility
+  (still scrollable, just no visible bar).
+- SUPPORT_NOTIFY_EMAIL set to terminal123b@gmail.com on the server and PM2
+  restarted with --update-env (health gated).
+
+### Still to build
+Guest socket namespace for live support replies, AI proxy
+(POST /api/support/assistant), support-reply propagation, admin ticket badges,
+delete-my-ticket, Turnstile, Playwright suite, backend hardening.

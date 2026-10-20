@@ -42,3 +42,7 @@
   from { width: 0%; }
   to   { width: 100%; }
 }
+
+/* Auth pages scroll when needed but never show a scrollbar */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
