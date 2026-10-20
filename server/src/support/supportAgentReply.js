@@ -44,6 +44,9 @@ function systemPrompt(userName) {
     'If CONFIDENT: the following lines are your reply to the user.',
     'If ESCALATE: nothing after the first line.',
     '',
+    'Greetings and small talk (hi, hello, muraho, how are you) must be answered',
+    'warmly in one short line and then offer help — never ESCALATE for those.',
+    '',
     'Use ESCALATE when the knowledge base does not cover it, the user needs an',
     'account action, reports a bug, asks about payments/refunds, or you are unsure.',
     '',
@@ -91,7 +94,11 @@ async function escalateToOwner(senderName, text, history, ctx = {}) {
       contactType: 'email',
       status: 'open',
       summary: String(text || '').slice(0, 1500) || `Message from ${senderName}`,
-      transcript: history.slice(-12),
+      // Schema roles are guest|assistant; history uses user|assistant.
+      transcript: history.slice(-12).map((h) => ({
+        role: h.role === 'user' ? 'guest' : 'assistant',
+        text: String(h.text || '').slice(0, 4000),
+      })),
       meta: { page: 'in-app chat', userAgent: '', appVersion: '' },
       chatId: ctx.chatId || null,
     });

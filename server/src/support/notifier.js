@@ -58,6 +58,8 @@ async function sendTelegram(text) {
 /* ------------------------------------------------------------------- email */
 
 function emailConfigured() {
+  // EMAIL_ENABLED=false turns email reporting off entirely (dashboard only).
+  if (String(process.env.EMAIL_ENABLED || '').toLowerCase() === 'false') return false;
   return Boolean(
     process.env.SMTP_HOST &&
       process.env.SMTP_USER &&
@@ -104,7 +106,7 @@ function formatTicket(ticket) {
   if (Array.isArray(ticket.transcript) && ticket.transcript.length) {
     lines.push('', 'Conversation:');
     for (const entry of ticket.transcript.slice(-12)) {
-      lines.push(`${entry.role === 'guest' ? 'User' : 'Assistant'}: ${entry.text}`);
+      lines.push(`${entry.role === 'guest' || entry.role === 'user' ? 'User' : 'Assistant'}: ${entry.text}`);
     }
   }
   return lines.join('\n');

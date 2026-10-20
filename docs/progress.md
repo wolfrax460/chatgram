@@ -559,3 +559,18 @@ The /web/admin UI for the KB editor and ticket inbox is NOT built - the APIs wor
 
 Verified: build green; deployed bundle contains Knowledge base, admin/tickets, Send reply, Add entry, Save knowledge base, Save these backup codes, admin/kb. /, /web/, /web/admin all 200.
 
+
+---
+
+## Email off, greetings, escalation ticket fix (2026-10-20)
+
+### The dashboard bug (root cause)
+In-app escalations called SupportTicket.create with transcript roles of user, but the schema enum is guest|assistant. Validation failed, the code fell back to ticketId in-app, so the alert reached Telegram but no ticket row existed - which is why nothing appeared in the dashboard Tickets tab. Fixed by mapping user to guest when writing the transcript. Verified: an unanswerable in-app message now produces CG-W2SY7 (status open, transcript role guest) and notifies via Telegram.
+
+### Other changes
+- EMAIL_ENABLED=false now actually disables email (notifier.emailConfigured checks the flag). channelStatus reports telegram true, email false. Alerts go to Telegram plus the dashboard only.
+- Greetings and small talk are answered instead of escalated: added a greeting knowledge-base entry (hi, hello, muraho, amakuru, bonjour, habari, how are you) and both agent prompts now allow one warm line without ESCALATE.
+- Verified: hi how are you doing -> warm English answer; muraho amakuru -> Kinyarwanda answer; in-app muraho amakuru -> Kinyarwanda answer, no escalation.
+- Ticket transcript labels: user turns now labelled User instead of Assistant.
+- Default AI remains Groq openai-compatible openai/gpt-oss-20b.
+
