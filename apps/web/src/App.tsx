@@ -212,6 +212,7 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
       sentAt: new Date().toISOString(),
       deliveredTo: [],
       readBy: [],
+      reactions: [],
     };
     queryClient.setQueryData<Message[]>(['messages', chat.id], (prev) => [...(prev ?? []), optimistic]);
     setDraft('');
@@ -267,11 +268,29 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
     });
   }
 
-  function removeMessage(message: Message) {
+  async function removeMessage(message: Message, scope: 'me' | 'everyone') {
+    const before = queryClient.getQueryData<Message[]>(['messages', chat.id]) ?? [];
     queryClient.setQueryData<Message[]>(['messages', chat.id], (prev) =>
       (prev ?? []).filter((m) => m.id !== message.id),
     );
-    setNotice('Deleted for you (local only — no backend delete endpoint yet).');
+    try {
+      await api.deleteMessage(message.id, scope);
+      void queryClient.invalidateQueries({ queryKey: ['chats'] });
+    } catch (err) {
+      queryClient.setQueryData<Message[]>(['messages', chat.id], before);
+      setNotice(err instanceof Error ? err.message : 'Could not delete');
+    }
+  }
+
+  async function reactTo(message: Message, emoji: string) {
+    try {
+      const result = await api.reactToMessage(message.id, emoji);
+      queryClient.setQueryData<Message[]>(['messages', chat.id], (prev) =>
+        (prev ?? []).map((m) => (m.id === result.messageId ? { ...m, reactions: result.reactions } : m)),
+      );
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not react');
+    }
   }
 
   function emitTyping(isTyping: boolean) {
@@ -298,7 +317,16 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
         menu={{
           onContactInfo: () => setNotice('Contact info panel is coming soon.'),
           onMute: () => setNotice('Chat muted locally.'),
-          onClearChat: () => setNotice('Clear chat needs a backend endpoint — not available yet.'),
+          onClearChat: async () => {
+            try {
+              await api.clearChat(chat.id);
+              queryClient.setQueryData<Message[]>(['messages', chat.id], []);
+              void queryClient.invalidateQueries({ queryKey: ['chats'] });
+              setNotice('Chat cleared for you.');
+            } catch (err) {
+              setNotice(err instanceof Error ? err.message : 'Could not clear chat');
+            }
+          },
           onBlock: () => setNotice('Blocking needs a backend endpoint — not available yet.'),
         }}
         onBack={onBack}
@@ -361,7 +389,7 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
                   timeFormat={timeFormat}
                   firstInGroup={firstInGroup}
                   lastInGroup={lastInGroup}
-                  actions={{ onReply: reply, onDelete: removeMessage }}
+                  actions={{ onReply: reply, onDelete: removeMessage, onReact: reactTo }}
                 />
               </div>
             );

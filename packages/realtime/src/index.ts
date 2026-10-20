@@ -36,6 +36,12 @@ export interface RealtimeHandlers {
   onChatUpdated?: (chat: Chat) => void;
   onChatRemoved?: (chatId: string) => void;
   onUserUpdated?: (user: User) => void;
+  onMessageReaction?: (payload: {
+    messageId: string;
+    chatId: string;
+    reactions: { userId: string; emoji: string }[];
+  }) => void;
+  onMessageDeleted?: (payload: { messageId: string; chatId: string; scope: string }) => void;
 }
 
 export interface RealtimeOptions {
@@ -121,6 +127,13 @@ export class RealtimeClient {
     socket.on('chat:removed', (data: { chatId: string }) => h.onChatRemoved?.(data.chatId));
 
     socket.on('user:updated', (data: unknown) => h.onUserUpdated?.(userFromJson(data)));
+
+    socket.on('message:reaction', (data: { messageId: string; chatId: string; reactions: { userId: string; emoji: string }[] }) =>
+      h.onMessageReaction?.(data),
+    );
+    socket.on('message:deleted', (data: { messageId: string; chatId: string; scope: string }) =>
+      h.onMessageDeleted?.(data),
+    );
   }
 
   get connected(): boolean {

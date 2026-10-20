@@ -25,6 +25,11 @@ export interface User {
   role?: 'user' | 'admin';
 }
 
+export interface MessageReaction {
+  userId: string;
+  emoji: string;
+}
+
 export interface Message {
   id: string;
   clientId?: string;
@@ -36,6 +41,8 @@ export interface Message {
   sentAt: string;
   deliveredTo: string[];
   readBy: string[];
+  reactions: MessageReaction[];
+  isDeleted?: boolean;
   failed?: boolean;
 }
 
@@ -109,6 +116,13 @@ export function messageFromJson(json: unknown): Message {
     sentAt: String(j.sentAt ?? new Date().toISOString()),
     deliveredTo: asStringArray(j.deliveredTo),
     readBy: asStringArray(j.readBy),
+    reactions: Array.isArray(j.reactions)
+      ? (j.reactions as Record<string, unknown>[]).map((r) => ({
+          userId: idOf(r.userId),
+          emoji: String(r.emoji ?? ''),
+        }))
+      : [],
+    isDeleted: j.isDeleted === true,
     failed: j.failed === true,
   };
 }

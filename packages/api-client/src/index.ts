@@ -432,6 +432,24 @@ export class ApiClient {
     return messageFromJson(await this.request('/api/messages', { method: 'POST', body: input }));
   }
 
+  /** Delete a message for me, or for everyone if I am the sender. */
+  deleteMessage(messageId: string, scope: 'me' | 'everyone' = 'me') {
+    return this.request(`/api/messages/${messageId}?scope=${scope}`, { method: 'DELETE' });
+  }
+
+  /** Toggle an emoji reaction (one per user; same emoji removes it). */
+  reactToMessage(messageId: string, emoji: string) {
+    return this.request<{ messageId: string; chatId: string; reactions: { userId: string; emoji: string }[] }>(
+      `/api/messages/${messageId}/reactions`,
+      { method: 'POST', body: { emoji } },
+    );
+  }
+
+  /** Clear the whole chat for me only. */
+  clearChat(chatId: string) {
+    return this.request(`/api/chats/${chatId}/messages`, { method: 'DELETE' });
+  }
+
   markChatRead(chatId: string) {
     return this.request(`/api/messages/chat/${chatId}/read`, { method: 'POST' });
   }
