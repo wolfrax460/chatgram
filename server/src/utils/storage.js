@@ -80,11 +80,25 @@ async function persistUpload(req, subdir) {
   }
 
   // ---- Cloudinary -------------------------------------------------------
+  // multer decides its storage engine once, at module load. If the process
+  // environment changed afterwards (a plain `pm2 restart` without
+  // `--update-env`), the file can arrive on disk even though Cloudinary is now
+  // enabled. Read it back and push it up instead of failing the upload.
   if (!file.buffer) {
-    throw new Error(
-      'Cloudinary storage is enabled but multer used disk storage. ' +
-        'Check that CLOUDINARY_* was set BEFORE the server started.'
-    );
+    if (file.path) {
+      const fs = require('fs');
+      file.buffer = await fs.promises.readFile(file.path);
+      file.size = file.buffer.length;
+      try {
+        await fs.promises.unlink(file.path);
+      } catch {
+        /* temp file already gone - fine */
+      }
+    } else {
+      throw new Error(
+        'Cloudinary storage is enabled but the upload had neither a buffer nor a path.'
+      );
+    }
   }
 
   const cloudinary = sdk();
