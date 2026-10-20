@@ -290,38 +290,183 @@ class _HomeShellState extends State<HomeShell> {
   }
 }
 
-class _NoConversationSelected extends StatelessWidget {
+class _NoConversationSelected extends StatefulWidget {
   const _NoConversationSelected();
 
   @override
+  State<_NoConversationSelected> createState() => _NoConversationSelectedState();
+}
+
+class _NoConversationSelectedState extends State<_NoConversationSelected> {
+  static const _highlights = [
+    (icon: 'chat', title: 'Private conversations', subtitle: 'Only people you add can reach you'),
+    (icon: 'status', title: 'Status updates', subtitle: 'Share moments that vanish after 24h'),
+    (icon: 'mic', title: 'Voice notes & media', subtitle: 'Photos, files and recordings in one place'),
+  ];
+
+  @override
   Widget build(BuildContext context) {
+    final isDark = context.isDark;
+
     return Container(
-      color: context.isDark ? const Color(0xFF222E35) : const Color(0xFFF0F2F5),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? const [Color(0xFF131F26), Color(0xFF0B141A)]
+              : const [Color(0xFFFFFFFF), Color(0xFFEEF5F2)],
+        ),
+      ),
       child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const FaIcon(AppIcons.chats, size: 110, color: Color(0xFF8696A0)),
-              const SizedBox(height: 20),
-              Text(
-                'Chatgram for Desktop',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 430),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 560),
+              curve: Curves.easeOutCubic,
+              builder: (context, t, child) => Opacity(
+                opacity: t.clamp(0.0, 1.0),
+                child: Transform.translate(
+                  offset: Offset(0, (1 - t) * 18),
+                  child: child,
+                ),
               ),
-              const SizedBox(height: 10),
-              Text(
-                'Select a conversation on the left to start messaging.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: const Color(0xFF8696A0)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Soft glow behind the mark.
+                  Container(
+                    width: 108,
+                    height: 108,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF25D366), AppColors.brand600],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.brand600.withValues(alpha: 0.28),
+                          blurRadius: 34,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: FaIcon(AppIcons.chats, size: 46, color: Colors.white),
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+                  Text(
+                    'Chatgram for Desktop',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.6,
+                      color: isDark ? Colors.white : AppColors.ink800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Pick a conversation on the left, or start a new one to begin messaging.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      height: 1.45,
+                      color: isDark ? AppColors.ink400 : AppColors.ink500,
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  for (final h in _highlights)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _HighlightRow(
+                        icon: h.icon,
+                        title: h.title,
+                        subtitle: h.subtitle,
+                      ),
+                    ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Small feature row used by the empty state.
+class _HighlightRow extends StatelessWidget {
+  const _HighlightRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final String icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.isDark;
+    final iconData = switch (icon) {
+      'status' => AppIcons.statusRing,
+      'mic' => AppIcons.mic,
+      _ => AppIcons.chat,
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A262D) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: context.hairline),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.brand600.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Center(
+              child: FaIcon(iconData, size: 16, color: AppColors.brand600),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : AppColors.ink800,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: isDark ? AppColors.ink400 : AppColors.ink500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
