@@ -284,3 +284,19 @@ no user-table pollution, and still live via the socket.
 Widget UI, guest socket namespace + signed guest tokens, AI proxy
 (POST /api/support/assistant), support-reply propagation, admin ticket badges,
 delete-my-ticket, Turnstile, Playwright suite.
+
+---
+
+## Auth overflow + /docs fix (2026-10-20)
+
+- **Removed the stray horizontal scrollbar/line** on the auth pages:
+  \overflow-x-hidden\ on the scroll container and the decorative blur layer is
+  now clipped by \overflow-hidden\.
+- **/docs is now a standalone static page** (\client/landing/public/docs/index.html\,
+  7.4 KB, inline CSS, no JavaScript). The previous SPA-routed version returned
+  200 but the Terms/Privacy content did not render reliably. Verified live:
+  "Terms of Service", "Privacy Policy", \id="privacy"\ and
+  "not end-to-end encrypted" are all present in the served HTML.
+- Auth footer and register Terms/Privacy links now point at \/docs/#terms\ and
+  \/docs/#privacy\ (real anchors on a real page, so the browser scrolls to the
+  section itself).

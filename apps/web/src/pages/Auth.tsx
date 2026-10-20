@@ -85,9 +85,9 @@ function AuthShell({ children }: { children: React.ReactNode }) {
   const [langOpen, setLangOpen] = useState(false);
 
   return (
-    <div className="relative h-full overflow-y-auto overscroll-contain">
+    <div className="relative h-full overflow-y-auto overflow-x-hidden overscroll-contain">
       <div className="flex min-h-full flex-col items-center justify-center px-4 py-6">
-      <div className="pointer-events-none absolute inset-0 -z-10">
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
         <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-brand-500/20 blur-3xl" />
         <div className="absolute -bottom-32 -right-16 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" />
       </div>
@@ -111,9 +111,9 @@ function AuthShell({ children }: { children: React.ReactNode }) {
 
         <footer className="mt-4 space-y-1.5 text-center text-[11.5px] text-ink-600 dark:text-ink-300">
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-            <a href="/docs#privacy" className="hover:underline">{t('privacy')}</a>
+            <a href="/docs/#privacy" className="hover:underline">{t('privacy')}</a>
             <span aria-hidden>·</span>
-            <a href="/docs#terms" className="hover:underline">{t('terms')}</a>
+            <a href="/docs/#terms" className="hover:underline">{t('terms')}</a>
             <span aria-hidden>·</span>
             <a href="mailto:support@chatgram.local" className="hover:underline">{t('help')}</a>
           </div>
@@ -564,9 +564,9 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
             <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-600" />
             <span>
               {t('agreeTerms')}{' '}
-              <a href="/docs#terms" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('terms')}</a>{' '}
+              <a href="/docs/#terms" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('terms')}</a>{' '}
               /{' '}
-              <a href="/docs#privacy" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('privacy')}</a>
+              <a href="/docs/#privacy" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('privacy')}</a>
             </span>
           </label>
           <p role="alert" aria-live="polite" className="min-h-[14px] text-[12px] font-medium text-rose-600 dark:text-rose-400">{errors.agree ?? ''}</p>
