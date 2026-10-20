@@ -519,3 +519,15 @@ encrypt/decrypt roundtrip true; valid code accepted; wrong code rejected; login 
 ### Not done
 The Settings UI for enrolling a device is not built - the API is complete but a user must call it directly. The login screen also does not yet prompt for the code when TOTP_REQUIRED is returned.
 
+
+---
+
+## 2FA enrollment UI + sign-in prompt (2026-10-20)
+
+- components/TwoFactorSettings.tsx mounted under a new Security section in Settings: shows on/off state, 'Set up two-factor' -> QR image + optional setup key + 6-digit confirm, and 'Turn off two-factor' requiring a current code.
+- api-client: login() accepts an optional totp; added twoFactorStatus/setup/enable/disable.
+- Auth sign-in detects ApiError.code TOTP_REQUIRED / TOTP_INVALID, shows a 6-digit Authenticator code field and re-submits with the code.
+- i18n keys errTotpRequired, errTotpInvalid, totpCode, totpHint.
+
+Verified: build green; deployed bundle contains 2fa/status, 2fa/setup, 2fa/enable, 'Set up two-factor', 'Authenticator code', 'Turn off two-factor'. /, /web/, /web/admin all 200.
+

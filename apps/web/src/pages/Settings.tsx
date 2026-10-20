@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import TwoFactorSettings from '../components/TwoFactorSettings';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Settings as SettingsIcon, Sun, Moon, Monitor, Bell, Volume2, Eye, MessageCircle,
@@ -231,6 +232,10 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
       ) : null}
 
       {/* appearance */}
+      <Section title="Security">
+        <TwoFactorSettings />
+      </Section>
+
       <Section title="Appearance">
         <div className="flex gap-2 px-4 py-3">
           {([

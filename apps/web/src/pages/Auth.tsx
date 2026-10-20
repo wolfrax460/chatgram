@@ -181,6 +181,8 @@ function SignIn({ onGo }: { onGo: (screen: Screen) => void }) {
   const [showPassword, setShowPassword] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const [keepSignedIn, setKeepSignedIn] = useState(true);
+  const [totpRequired, setTotpRequired] = useState(false);
+  const [totp, setTotp] = useState('');
 
   const [fieldErrors, setFieldErrors] = useState<{ identifier?: string; password?: string }>({});
   const [formError, setFormError] = useState('');
@@ -271,9 +273,19 @@ function SignIn({ onGo }: { onGo: (screen: Screen) => void }) {
     setBusy(true);
     api.setPersistent(keepSignedIn);
     try {
-      const result = await api.login(resolved.value, password);
+      const result = await api.login(resolved.value, password, totp.trim() || undefined);
       setUser(result.user);
     } catch (error) {
+      const code = (error as { code?: string })?.code;
+      if (code === 'TOTP_REQUIRED') {
+        setTotpRequired(true);
+        setFormError(t('errTotpRequired'));
+        return;
+      }
+      if (code === 'TOTP_INVALID') {
+        setFormError(t('errTotpInvalid'));
+        return;
+      }
       const mapped = errorKey(error);
       setFormError(t(mapped.key, mapped.retryAfter ? { seconds: mapped.retryAfter } : undefined));
       if (mapped.retryAfter) setRetryAfter(mapped.retryAfter);
@@ -368,6 +380,22 @@ function SignIn({ onGo }: { onGo: (screen: Screen) => void }) {
           {t('forgotPassword')}
         </button>
       </div>
+
+      {totpRequired ? (
+        <Field id="signin-totp" label={t('totpCode')} hint={t('totpHint')}>
+          <input
+            id="signin-totp"
+            className="field h-11 text-center text-lg tracking-[.4em]"
+            inputMode="numeric"
+            maxLength={6}
+            autoFocus
+            value={totp}
+            onChange={(e) => setTotp(e.target.value.replace(/\D/g, ''))}
+            placeholder="000000"
+            autoComplete="one-time-code"
+          />
+        </Field>
+      ) : null}
 
       <button type="submit" className="btn-primary h-11 w-full" disabled={busy || retryAfter !== null}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
@@ -608,7 +636,8 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
           </label>
           <p role="alert" aria-live="polite" className="min-h-[14px] text-[12px] font-medium text-rose-600 dark:text-rose-400">{errors.agree ?? ''}</p>
 
-          <button type="submit" className="btn-primary h-11 w-full" disabled={busy}>
+
+      <button type="submit" className="btn-primary h-11 w-full" disabled={busy}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
             {busy ? t('sendCode') + '…' : t('sendCode')}
           </button>

@@ -86,6 +86,10 @@ const en: Dict = {
   or: 'or',
   continueWithGoogle: 'Continue with Google',
   errGoogleTimeout: 'Google sign-in timed out. Please try again.',
+  errTotpRequired: 'Enter the 6-digit code from your authenticator app.',
+  errTotpInvalid: 'That code is not correct. Try again.',
+  totpCode: 'Authenticator code',
+  totpHint: 'The 6-digit number in your authenticator app.',
 };
 
 const rw: Dict = {

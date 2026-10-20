@@ -238,10 +238,36 @@ export class ApiClient {
 
   /* --------------------------------------------------------------- auth */
 
-  async login(identifier: string, password: string) {
+  /** TOTP two-factor authentication. */
+  twoFactorStatus() {
+    return this.request<{ twoFactorEnabled: boolean }>('/api/auth/2fa/status');
+  }
+
+  setupTwoFactor() {
+    return this.request<{ secret: string; otpauth: string; qr: string; instructions: string }>(
+      '/api/auth/2fa/setup',
+      { method: 'POST' },
+    );
+  }
+
+  enableTwoFactor(token: string) {
+    return this.request<{ message: string; twoFactorEnabled: boolean }>('/api/auth/2fa/enable', {
+      method: 'POST',
+      body: { token },
+    });
+  }
+
+  disableTwoFactor(token: string) {
+    return this.request<{ message: string; twoFactorEnabled: boolean }>('/api/auth/2fa/disable', {
+      method: 'POST',
+      body: { token },
+    });
+  }
+
+  async login(identifier: string, password: string, totp?: string) {
     const data = await this.request<{ accessToken: string; refreshToken?: string; user: unknown }>(
       '/api/auth/login',
-      { method: 'POST', body: { identifier, password }, anonymous: true },
+      { method: 'POST', body: totp ? { identifier, password, totp } : { identifier, password }, anonymous: true },
     );
     this.setTokens(data);
     return { ...data, user: userFromJson(data.user) as User };
