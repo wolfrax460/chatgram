@@ -489,3 +489,16 @@ Webhook registered with Telegram (setWebhook ok). /help and /tickets simulated -
 ### Env added
 TELEGRAM_WEBHOOK_SECRET (generated, stored on the server only).
 
+
+---
+
+## Support control dashboard (2026-10-20)
+
+- SupportSettings model + support/settings.js: a singleton document holding AI provider/model/base URL/key, agent toggle, Telegram/email channels and copy overrides. Values are written into process.env on save so existing modules pick them up instantly; they are loaded from Mongo at boot so they survive restarts. Env vars remain the fallback when a field is blank.
+- Admin API (support account only): GET/PUT /api/support/admin/settings, GET /api/support/admin/stats, POST /api/support/admin/test-ai. Non-support users get 403.
+- apps/web /web/admin: live status, provider preset picker (Groq, DeepSeek, NVIDIA, Ollama, OpenAI, Anthropic, Gemini), editable model/base URL/key, AI + agent toggles, Test AI button, Telegram chat id and notify email, save button, recent tickets.
+- Support replies now carry the ticket ref in the emitted payload (ref field) and SUPPORT_SHOW_TICKET_REF controls whether the stored reply text is prefixed.
+
+### Verified live
+GET admin settings without auth -> 401. With the support token: settings return status (AI enabled, openai-compatible/gpt-oss-20b, telegram+email connected) plus presets; stats return open/answered/closed/total and recent tickets (8 open, 9 total). /api/config 200.
+

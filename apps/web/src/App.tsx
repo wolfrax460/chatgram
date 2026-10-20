@@ -25,6 +25,7 @@ import Status from './pages/Status';
 import SettingsPage from './pages/Settings';
 import Auth from './pages/Auth';
 import SupportWidget from './components/SupportWidget';
+import Admin from './pages/Admin';
 import { dateSeparatorLabel, sameDay, statusOf } from './lib/ui';
 
 type Tab = 'chats' | 'status' | 'groups' | 'contacts' | 'settings';
@@ -591,6 +592,11 @@ export default function App() {
       cancelled = true;
     };
   }, [setUser, setReady]);
+
+  // Tiny path route: /web/admin opens the support control dashboard.
+  if (typeof window !== 'undefined' && /\/admin\/?$/.test(window.location.pathname)) {
+    return <Admin />;
+  }
 
   return (
     <>

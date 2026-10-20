@@ -6,6 +6,20 @@ const { openSupportChat, supportInfo } = require('../controllers/supportControll
 const { createTicket, getTicket, deleteTicket, getTicketByChat, closeTicket } = require('../controllers/supportTicketController');
 const { askSupportAssistant } = require('../controllers/supportAssistantController');
 const { webhookHandler: telegramWebhook } = require('../support/telegramBot');
+const {
+  getAdminSettings,
+  updateAdminSettings,
+  getAdminStats,
+  testAi,
+} = require('../controllers/supportAdminController');
+
+/** Only the built-in support account may use the dashboard. */
+const requireSupportAccount = (req, res, next) => {
+  if (!req.user?.isSupportAccount) {
+    return res.status(403).json({ message: 'Support account required.' });
+  }
+  return next();
+};
 
 // --- public help-widget endpoints (no auth) ---
 router.post('/assistant', askSupportAssistant);
@@ -21,6 +35,12 @@ router.use(protect);
 // Support-account ticket badge + close (auth required, declared after protect)
 router.get('/tickets/by-chat/:chatId', getTicketByChat);
 router.post('/tickets/:ticketId/close', closeTicket);
+
+// Admin dashboard (support account only)
+router.get('/admin/settings', requireSupportAccount, getAdminSettings);
+router.put('/admin/settings', requireSupportAccount, updateAdminSettings);
+router.get('/admin/stats', requireSupportAccount, getAdminStats);
+router.post('/admin/test-ai', requireSupportAccount, testAi);
 
 router.get('/', supportInfo);
 

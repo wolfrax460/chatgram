@@ -41,7 +41,11 @@ async function propagateSupportReply(message, io) {
     const text = String(message.content || '').trim();
     if (!text) return;
 
-    ticket.replies.push({ text: text.slice(0, 4000), at: new Date() });
+    // Prefix the ref so the owner can reply with /reply CG-XXXXX from Telegram.
+    const showRef = process.env.SUPPORT_SHOW_TICKET_REF !== 'false';
+    const withRef = showRef ? `[${ticket.ticketId}] ${text}` : text;
+
+    ticket.replies.push({ text: withRef.slice(0, 4000), at: new Date() });
     ticket.status = 'answered';
     ticket.lastReplyAt = new Date();
     await ticket.save();
@@ -49,6 +53,7 @@ async function propagateSupportReply(message, io) {
     // Live push to the guest who owns this ticket.
     const { emitToTicket } = require('../sockets/supportGuestSocket');
     emitToTicket(io, ticket.ticketId, 'ticket:reply', {
+      ref: ticket.ticketId,
       ticketId: ticket.ticketId,
       status: ticket.status,
       replies: ticket.replies.map((r) => ({ text: r.text, at: r.at })),
