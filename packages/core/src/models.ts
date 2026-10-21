@@ -58,11 +58,17 @@ export interface Chat {
   updatedAt?: string;
 }
 
+export type StatusMediaType = 'image' | 'video' | 'audio';
+
 export interface StatusItem {
   id: string;
   userId: User;
   text?: string;
   mediaUrl?: string;
+  /** Older rows have a mediaUrl and no type; they are images. */
+  mediaType?: StatusMediaType;
+  thumbnailUrl?: string;
+  durationSeconds?: number;
   createdAt: string;
   viewedBy: User[];
 }
@@ -146,11 +152,16 @@ export function chatFromJson(json: unknown): Chat {
 
 export function statusFromJson(json: unknown): StatusItem {
   const j = (json ?? {}) as Record<string, unknown>;
+  const kind = j.mediaType ? String(j.mediaType) : j.mediaUrl ? 'image' : undefined;
   return {
     id: idOf(j),
     userId: userFromJson(j.userId),
     text: j.text ? String(j.text) : undefined,
     mediaUrl: j.mediaUrl ? String(j.mediaUrl) : undefined,
+    mediaType:
+      kind === 'image' || kind === 'video' || kind === 'audio' ? kind : undefined,
+    thumbnailUrl: j.thumbnailUrl ? String(j.thumbnailUrl) : undefined,
+    durationSeconds: typeof j.durationSeconds === 'number' ? j.durationSeconds : undefined,
     createdAt: String(j.createdAt ?? new Date().toISOString()),
     viewedBy: Array.isArray(j.viewedBy) ? j.viewedBy.map(userFromJson) : [],
   };

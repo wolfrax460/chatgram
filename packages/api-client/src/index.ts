@@ -562,15 +562,140 @@ export class ApiClient {
     return data.file;
   }
 
+  /**
+   * Upload with progress + cancellation.
+   *
+   * fetch() cannot report upload progress, so this uses XMLHttpRequest. Used by
+   * the status composer (photos, videos, voice notes) where a 50 MB video needs
+   * a real progress bar and a cancel button.
+   */
+  uploadFileWithProgress<T>(
+    path: string,
+    file: File,
+    options: {
+      field?: string;
+      fields?: Record<string, string | number>;
+      onProgress?: (percent: number, loaded: number, total: number) => void;
+      signal?: AbortSignal;
+    } = {},
+  ): Promise<T> {
+    const { field = 'file', fields = {}, onProgress, signal } = options;
+
+    return new Promise<T>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', this.buildUrl(path));
+      xhr.setRequestHeader('Accept', 'application/json');
+      const token = this.accessToken;
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+      const fail = (message: string, status: number, code?: string) =>
+        reject(new ApiError(message, status, code));
+
+      const onAbort = () => xhr.abort();
+      if (signal) {
+        if (signal.aborted) {
+          fail('Upload cancelled.', 0, 'UPLOAD_ABORTED');
+          return;
+        }
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable || !onProgress) return;
+        const percent = Math.round((event.loaded / event.total) * 100);
+        onProgress(Math.min(99, percent), event.loaded, event.total);
+      };
+
+      xhr.onerror = () => fail('Cannot reach the server. Check your connection.', 0);
+      xhr.onabort = () => fail('Upload cancelled.', 0, 'UPLOAD_ABORTED');
+      xhr.ontimeout = () => fail('The upload timed out. Try again.', 0, 'UPLOAD_TIMEOUT');
+
+      xhr.onload = () => {
+        let data: unknown = null;
+        try {
+          data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+        } catch {
+          data = xhr.responseText;
+        }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          onProgress?.(100, 0, 0);
+          resolve(data as T);
+          return;
+        }
+        const payload = (data ?? {}) as Record<string, unknown>;
+        fail(
+          typeof payload.message === 'string' ? payload.message : `Upload failed (${xhr.status})`,
+          xhr.status,
+          typeof payload.code === 'string' ? payload.code : undefined,
+        );
+      };
+
+      const form = new FormData();
+      // Extra fields go FIRST so the server has them while it handles the file.
+      for (const [key, value] of Object.entries(fields)) form.append(key, String(value));
+      form.append(field, file);
+
+      try {
+        xhr.send(form);
+      } catch {
+        fail('Could not start the upload.', 0);
+      }
+    });
+  }
+
+  /* ------------------------------------------------------------- status */
+
+  /** Server-side media rules for statuses (image 10 MB, video 50 MB/60 s, audio 20 MB). */
+  statusLimits() {
+    return this.request<{
+      limits: Record<
+        'image' | 'video' | 'audio',
+        { maxBytes: number; maxDurationSeconds?: number; mimetypes: string[] }
+      >;
+    }>('/api/status/limits');
+  }
+
+  /** Upload a photo/video/voice note for a status, with progress + cancel. */
+  uploadStatusMedia(
+    file: File,
+    options: { durationSeconds?: number; onProgress?: (percent: number) => void; signal?: AbortSignal } = {},
+  ) {
+    return this.uploadFileWithProgress<{
+      file: {
+        url: string;
+        mimetype: string;
+        size: number;
+        mediaType: 'image' | 'video' | 'audio';
+        provider?: string;
+        publicId?: string | null;
+        originalname?: string;
+      };
+    }>('/api/status/media', file, {
+      onProgress: (percent) => options.onProgress?.(percent),
+      signal: options.signal,
+      fields: options.durationSeconds != null ? { durationSeconds: options.durationSeconds } : {},
+    });
+  }
+
+  createStatus(input: {
+    text?: string;
+    mediaUrl?: string;
+    mediaType?: 'image' | 'video' | 'audio';
+    mimetype?: string;
+    mediaSize?: number;
+    mediaPublicId?: string | null;
+    mediaProvider?: string;
+    thumbnailUrl?: string;
+    durationSeconds?: number;
+  }) {
+    return this.request('/api/status', { method: 'POST', body: input });
+  }
+
   /* ------------------------------------------------------------- status */
 
   async statuses(): Promise<StatusItem[]> {
     const data = await this.request<unknown[]>('/api/status');
     return (data ?? []).map(statusFromJson);
-  }
-
-  createStatus(input: { text?: string; mediaUrl?: string }) {
-    return this.request('/api/status', { method: 'POST', body: input });
   }
 
   deleteStatus(id: string) {

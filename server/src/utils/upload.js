@@ -108,7 +108,31 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
+/* ------------------------------------------------------------ status media
+ *
+ * Statuses accept video up to 50 MB, so they need their own multer instance:
+ * the limit is bigger than the chat limit, while the per-type size is still
+ * enforced after the upload (an image over 10 MB is rejected and the stored
+ * copy is deleted).
+ */
+const statusMedia = require('./statusMedia');
+
+const statusUpload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (statusMedia.kindFor(file.mimetype)) return cb(null, true);
+    const err = new Error(
+      'That file type cannot be used in a status. Use an image (jpg, png, webp, gif), a video (mp4, webm, mov) or audio (mp3, m4a, ogg, wav).'
+    );
+    err.status = 415;
+    err.code = 'UNSUPPORTED_MEDIA_TYPE';
+    return cb(err, false);
+  },
+  limits: { fileSize: 50 * 1024 * 1024 }, // hard cap; per-type checked after
+});
+
 module.exports = upload;
 module.exports.UPLOAD_ROOT = UPLOAD_ROOT;
 module.exports.resolveSubdir = resolveSubdir;
 module.exports.usingCloudinary = USE_CLOUDINARY;
+module.exports.statusUpload = statusUpload;

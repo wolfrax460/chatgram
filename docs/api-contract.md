@@ -208,3 +208,21 @@ The Flutter client (**`client/lib/shared/services/socket_service.dart`**):
 | Push notification tokens | **No push in the Flutter app at all** (no `firebase_messaging`). Endpoint must be built from scratch. |
 | Refresh tokens | Implemented (`/api/auth/refresh`) with rotation. |
 | Uploads via `FormData` | Verified working from the React client (media + avatar). |
+
+---
+
+## Session 2 additions (2026-10-21) — all additive
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/api/auth/change-password` | yes | `{ currentPassword, newPassword, confirmPassword? }`. 400 `CURRENT_PASSWORD_INVALID`, `WEAK_PASSWORD` (+`problems[]`), `PASSWORD_MISMATCH`, `PASSWORD_UNCHANGED`, `PASSWORD_NOT_SET` (Google-only account). 429 `RATE_LIMITED` after repeated wrong current passwords. Success returns a fresh `accessToken` + `refreshToken` (this device stays signed in) and 401 `SESSION_REVOKED` for every other token: every JWT now carries a `tv` claim compared with `User.tokenVersion`. A password reset bumps the same counter. |
+| POST | `/api/status/media` | yes | Multipart `file`, optional `durationSeconds`. Types: jpg/png/webp/gif, mp4/webm/mov, mp3/m4a/ogg/wav(/webm/aac). Limits: image 10 MB, video 50 MB + 60 s, audio 20 MB. 415 `UNSUPPORTED_MEDIA_TYPE`, 413 `MEDIA_TOO_LARGE`, 400 `MEDIA_TOO_LONG`, `DURATION_REQUIRED`. Returns `{ file: { url, mediaType, mimetype, size, provider, publicId } }`. Stored copy is removed when validation fails. |
+| GET | `/api/status/limits` | yes | `{ limits: { image, video, audio } }` with `maxBytes`, `maxDurationSeconds` and allowed `mimetypes`. |
+| POST | `/api/status` | yes | Extended body: `{ text, mediaUrl, mediaType, mimetype, mediaSize, mediaPublicId, mediaProvider, thumbnailUrl, durationSeconds }`. `text` is the caption for every media type. Old clients that only send `mediaUrl` are still accepted (treated as an image). |
+| DELETE | `/api/status/:id` | yes | Now also deletes the stored file (Cloudinary public id or local `/uploads` path) and a video poster. |
+
+`GET /api/status` additionally returns `mediaType`, `thumbnailUrl` and `durationSeconds`. Rows created before this change get `mediaType: "image"` in the response when they have a `mediaUrl`.
+
+### Status expiry
+
+`Status.createdAt` no longer carries a TTL index. A scheduled job (`server/src/utils/statusCleanup.js`, started after MongoDB connects, every 10 minutes) deletes statuses older than 24 h **and their stored files**; `expiresAt` carries a 25 h TTL index as a safety net only. The legacy `createdAt` TTL index is dropped once on boot (safe to re-run). `DELETE /api/status/:id` deletes the file immediately.

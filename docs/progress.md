@@ -2,9 +2,80 @@
 
 Running log. Updated as phases complete.
 
-Last updated: 2026-10-20
+Last updated: 2026-10-21 (session 2)
 
 ---
+
+## SESSION 2 — NEXT SESSION STARTS HERE
+
+**Read this first. Then `docs/decisions.md`, then the ledger below.**
+
+Branch: `master`. Last known commit at session start: `a5a325a`.
+Deploy policy: `no-prod-deploy` — nothing below has been deployed.
+
+Working commands:
+
+```powershell
+npm run build -w @chatgram/web      # tsc --noEmit + vite build (the real quality gate)
+npm run typecheck                   # all workspaces (packages/ currently have no tsconfig — see FIX)
+node server/test/e2e.smoke.js       # backend smoke tests against the local stack
+```
+
+Local stack (see `docs/local-staging.md`): MongoDB on 127.0.0.1:27017,
+API on :5000 (`server/.env.local`), web on :5174 (`VITE_API_URL=http://localhost:5000`).
+
+---
+
+## LEDGER (session 2, copied 2026-10-21)
+
+Legend: ✅ done and verified in the last session | 🟡 partial | ❌ not done | ❓ unknown, verify by auditing the code first
+
+**Urgent bug list (A to F)**
+- ✅ A1 to A3: status photo upload crash fixed and verified
+- ✅ A4: automated upload test for image, audio and video (2026-10-21, commit: task 2)
+  - `server/test/integration/statusMedia.test.js` — 45 assertions: real PNG + real WAV + real video uploads, limits, wrong types, file-on-disk checks, file deletion on status delete.
+  - `tests/e2e/status.spec.js` — 9 Playwright tests with real fixtures (PNG, WebM video/audio recorded via Chromium MediaRecorder in `tests/e2e/fixtures/generate-fixtures.js`).
+- ✅ B1: status media no longer cropped (composer preview and viewer use contain + letterbox, 240px preview cap)
+- ✅ B2: video and audio status types (mp4/webm/mov, mp3/m4a/ogg/wav), client and server validation, limits (2026-10-21)
+  - `POST /api/status/media`, `GET /api/status/limits`; image 10 MB, video 50 MB/60 s, audio 20 MB. 415/413/400 codes; client validates before upload with the limit in the message.
+- ✅ B3: video thumbnail + duration limit / trim; audio player with waveform and cover placeholder (2026-10-21)
+  - Poster frame captured on canvas and uploaded as `thumbnailUrl`. Over-60 s videos are **rejected** (spec allows reject or trim; no trim editor built). Audio preview/player has a real waveform (Web Audio decode) + gradient cover placeholder.
+- ✅ B4: viewer auto-advance (5s + progress bar), hold to pause, arrow keys / tap for next and previous (2026-10-21)
+  - Images and text statuses advance on a 5 s rAF clock with an accessible `role="progressbar"`; video/audio advance on `ended`; hold-to-pause with tap suppression; swipe left/right; arrow keys; Esc.
+- ✅ B5: upload progress bar, cancel and retry (2026-10-21)
+  - `api.uploadFileWithProgress` (XHR) drives a real percentage bar; AbortController cancels; the file stays selected so Post status = retry. Playwright verifies cancel + retry under throttled upload.
+- ✅ B6: caption for any media type (2026-10-21)
+  - `Status.text` is the caption; composer labels it "Caption (optional)" when a file is selected; rendered under every media type in the viewer.
+- ✅ B7: delete stored file when a status expires or is deleted (2026-10-21)
+  - 10-minute cleanup job deletes >24 h statuses + files/posters; legacy `createdAt` TTL index dropped; `expiresAt` 25 h TTL safety net; delete endpoint removes the file immediately. `statusCleanup.test.js` verifies (13 assertions).
+- ✅ C: change password (Settings > Account, endpoint, session invalidation, email notice, tests) (2026-10-21)
+  - `POST /api/auth/change-password` + Settings → Account → Change password UI (strength meter, confirm, show/hide). Session generation (`tokenVersion`/`tv`) signs out every other device, keeps this one signed in; email notice; per-IP + per-account throttling. 30 integration assertions pass.
+- ❌ D: profile panel (tap a person anywhere, GET /api/users/:id/profile, privacy rules, actions)
+- ✅ E: group members list and leave group (backend + UI)
+- ❌ E (rest): add/remove members and promote/demote verified with permission tests, live member updates verified, last-admin handoff verified, empty-group handling, three-user automated tests
+- ❌ F: Settings audit (every control in every section works and saves)
+
+**Already working in production (do not break)**
+Auth with 2FA + recovery codes, Google sign-in/up, support AI agent with Telegram two-way, dashboard inbox + reply, knowledge-base editor, group member roster and leave group, status photo upload and uncropped display, Settings/Contacts/Status full width, forgot-password reveal, Windows installer at `/downloads/chatgram-windows-setup.exe`, `/docs` Terms + Privacy.
+
+**Other open items**
+- ❌ Android APK: scaffolded, Gradle distribution download blocked (see Decisions)
+- ❌ Playwright / integration suite: needs the local staging stack (see Rules)
+- ❌ Google OAuth: add `https://chatgram.duckdns.org/api/auth/google/callback` as an authorized redirect URI in Google Cloud Console (I do this myself; without it Google sign-in fails with redirect_uri_mismatch)
+- ❌ Rotate the Groq, DeepSeek, NVIDIA and Ollama keys and the Telegram bot token (I do this myself)
+
+**Features requested but not confirmed built (audit each, then mark ✅/🟡/❌)** — audit result 2026-10-21:
+- 🟡 Help-center widget upgrade: a 1-tab widget exists (`components/SupportWidget.tsx`, ticket + guest socket + assistant); the 3-tab Home/Messages/Help spec, Article/Collection models and `/api/help/*` do not exist (section W below).
+- 🟡 Provider-agnostic AI layer: `server/src/support/aiProvider.js` already supports 5 backends with KB fallback; there is no `server/ai/` interface, no encrypted admin-saved keys, no fallback chain/circuit breaker/budget/redaction/SSRF (section P below).
+- ❌ Chatgram Assistant avatar: files `public/assistant-avatar.svg`, `assistant-512-circle.png` are NOT in `apps/web/public/`; create an original one.
+- 🟡 Chat basics: delivery/read ticks ✅, date separators ✅, unread divider ✅, typing ✅, drafts ✅, emoji picker ✅, search in chat ✅, reply ✅ (text-prefix), edit ❌, forward ❌, delete (me/everyone) ✅, reactions ✅, unread divider ✅. Missing: edit, forward, star, pin message, link previews.
+- 🟡 Chat list: unread badges ✅, previews ✅, pin ❌, archive ❌, mute ❌, search ✅, new chat ✅/new group ✅, sorted by recent ✅.
+- ❌ Calls (WebRTC voice/video with TURN) — nothing server-side or client-side.
+- 🟡 Notifications: desktop notifications ✅, tab title + favicon unread ✅, taskbar badge via desktop bridge (unverified) 🟡, Android push ❌, mention notifications ❌, DND ❌.
+- ❌ Security review (authorization on every endpoint and socket event, rate limits, upload checks) — not done systematically.
+
+---
+
 
 ## Phase 0 — Audit ✅ 5/6
 
@@ -659,3 +730,52 @@ The composer preview used object-cover, which cropped whichever dimension overfl
 ### Not done in B
 Video and audio status types, thumbnail generation, duration limits, viewer auto-advance and hold-to-pause, upload progress/cancel/retry, caption for media, and deleting the stored file on expiry. These are still outstanding.
 
+
+---
+
+## Session 2 log (2026-10-21)
+
+### C. Change password - DONE (commit fadbb29)
+- `POST /api/auth/change-password` (authenticated, per-IP + per-account throttled).
+  Wrong current password -> 400 `CURRENT_PASSWORD_INVALID`; weak -> 400
+  `WEAK_PASSWORD` + `problems[]`; mismatch -> `PASSWORD_MISMATCH`; reuse ->
+  `PASSWORD_UNCHANGED`; Google-only account -> `PASSWORD_NOT_SET` (use reset flow).
+- Session generation: every JWT carries `tv`; `User.tokenVersion` is compared in the
+  auth middleware and on refresh. Password change/reset bumps it -> all other access
+  and refresh tokens get 401 `SESSION_REVOKED`; the caller receives a fresh token pair
+  and stays signed in. Tokens from before the feature (no `tv`) count as version 0.
+- Email notice (`notifier.notifyPasswordChanged`, no secrets in it).
+- UI: Settings -> Account -> Change password: current/new/confirm, show/hide, live
+  strength meter, server-rule validation, success/notice banner.
+- Verified: `server/test/integration/changePassword.test.js` 30/30 assertions pass on
+  the local staging stack (wrong current, weak, no-digit, mismatch, unchanged,
+  unauthenticated, success, old tokens 401 SESSION_REVOKED, other device refresh 401,
+  new access works, refresh rotates, old password cannot sign in, new one can,
+  throttle 429 + retryAfter).
+- Note: SMTP delivery of the notice was NOT tested locally (EMAIL_ENABLED=false by
+  policy); the code path ran and reported `notified.email: false`.
+
+### B (rest). Status photo / video / voice note - DONE
+(see ledger above; decisions D14). Files:
+- server: `utils/statusMedia.js`, `utils/statusCleanup.js`, `utils/storage.js`
+  (`deleteStoredFile`), `utils/upload.js` (statusUpload), `models/Status.js` (media
+  fields + expiresAt), `controllers/statusController.js`, `routes/statusRoutes.js`,
+  `server.js` (start cleanup after Mongo connects).
+- web: `lib/statusMedia.ts` (limits/probes/waveform/poster), `lib/api.ts` unchanged,
+  `components/status/{StatusComposer,StatusViewer,AudioPlayer,Parts}.tsx`,
+  `pages/Status.tsx` rewritten.
+- api-client: `uploadFileWithProgress` (XHR progress/cancel), `uploadStatusMedia`,
+  `statusLimits`, extended `createStatus`.
+
+### Local staging + automated suite (start of task 6)
+- `scripts/start-staging.ps1`, `docs/local-staging.md` - local-only API on :5000
+  against `chatgram_staging` MongoDB with all real providers disabled.
+- `tests/e2e/playwright.config.js` + `helpers.js`; `npm run test:e2e`.
+- `tests/e2e/fixtures/generate-fixtures.js` records real PNG/WebM media with
+  Chromium MediaRecorder (no ffmpeg encoders available here).
+- Bug found+fixed while testing: the status progress bar never rendered because a
+  CSS width transition restarted on every rAF update; now plain width + aria-valuenow.
+- Bug found+fixed: text-only statuses never auto-advanced (treated as no media).
+- Bug found+fixed: multer wrote local status files to `uploads/status/` while the URL
+  said `uploads/videos/`, so local video/audio 404'd.
+- Also fixed: root `npm run typecheck` was broken (packages had no tsconfig.json).

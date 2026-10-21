@@ -72,8 +72,24 @@ async function persistUpload(req, subdir) {
 
   // ---- local disk -------------------------------------------------------
   if (!isEnabled()) {
+    // Trust where multer actually wrote the file instead of re-deriving the
+    // folder: the two used to disagree for status video/audio (multer wrote to
+    // /uploads/status, the URL said /uploads/videos, so every local file 404'd).
+    const nodePath = require('path');
+    const root = process.env.UPLOAD_DIR
+      ? nodePath.resolve(process.env.UPLOAD_DIR)
+      : nodePath.join(__dirname, '..', '..', 'uploads');
+    let folder = subdir;
+    if (file.destination) {
+      const relative = nodePath
+        .relative(nodePath.resolve(root), nodePath.resolve(file.destination))
+        .split(nodePath.sep)
+        .filter(Boolean)
+        .join('/');
+      if (relative && !relative.startsWith('..')) folder = relative;
+    }
     return {
-      url: `/uploads/${subdir}/${file.filename}`,
+      url: `/uploads/${folder}/${file.filename}`,
       provider: 'local',
       bytes: file.size,
     };
@@ -138,10 +154,44 @@ async function destroyUpload(publicId, mimetype) {
   }
 }
 
+/**
+ * Delete a stored file regardless of backend.
+ *
+ * `publicId` deletes from Cloudinary; a `/uploads/...` URL deletes from the
+ * local disk fallback (used by development and any deployment without
+ * Cloudinary). Safe to call twice / with a missing file — cleanup jobs run this
+ * over rows whose file may already be gone.
+ */
+async function deleteStoredFile({ url, publicId, mimetype } = {}) {
+  if (publicId && isEnabled()) {
+    return destroyUpload(publicId, mimetype || '');
+  }
+  if (!url || typeof url !== 'string') return false;
+  if (!url.startsWith('/uploads/')) return false; // remote URL, nothing to remove here
+
+  const fs = require('fs');
+  const path = require('path');
+  const root = process.env.UPLOAD_DIR
+    ? path.resolve(process.env.UPLOAD_DIR)
+    : path.join(__dirname, '..', '..', 'uploads');
+  const relative = url.replace(/^\/uploads\/+/, '');
+  const target = path.resolve(root, relative);
+  // Never delete outside the upload root, whatever the URL says.
+  if (!target.startsWith(root + path.sep)) return false;
+  try {
+    await fs.promises.unlink(target);
+    return true;
+  } catch (error) {
+    if (error.code !== 'ENOENT') console.warn('Local file delete failed:', error.message);
+    return false;
+  }
+}
+
 module.exports = {
   isEnabled,
   persistUpload,
   destroyUpload,
+  deleteStoredFile,
   resourceTypeFor,
   configuredCloudName: () => (isEnabled() ? CLOUD_NAME : null),
   rootFolder: ROOT_FOLDER,

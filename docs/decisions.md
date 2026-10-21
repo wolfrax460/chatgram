@@ -175,3 +175,77 @@ ormalizePhone\/\isValidPhone\ bodies with libphonenumber later; call sites uncha
 
 **Follow-up:** add real audio/video fixtures to the upload test - synthetic bytes are rejected by Cloudinary (400), which looks like a code failure but is not.
 
+
+---
+
+## D13 - Change password: session generation instead of a session table (2026-10-21)
+
+**Decision:** JWTs stay stateless. A numeric `tokenVersion` (`tv` claim) on the
+User document is compared on every authenticated request and on refresh. A
+password change / reset increments it, which invalidates **every** existing
+access and refresh token; the change-password response returns a fresh token pair
+so the device that made the change stays signed in.
+
+**Why:** there was no session store and no refresh-token table, so "log out other
+devices" was otherwise impossible without a schema migration of epic size. Tokens
+minted before this feature have no `tv` and are treated as version 0, so deploying
+it does not sign anybody out.
+
+**Consequences:** every request already loaded the user (middleware did
+`User.findById`), so the extra check is free. A password reset now also signs
+everyone out - intentional for a compromised account. Reversal: delete the claim
+check; old tokens keep working.
+
+**Password policy:** new passwords (change + reset) need 8-128 chars, at least one
+letter and one digit, and must not be a known-common password
+(`server/src/utils/passwordPolicy.js`). Sign-in is not re-validated, so accounts
+with older weaker passwords keep working until they rotate.
+
+**Email notice:** `notifier.notifyPasswordChanged` sends one (no password, no
+tokens). If email is disabled/unconfigured the password change still succeeds and
+the response says `notified.email: false`.
+
+## D14 - Status media: dedicated upload endpoint, client-reported duration, file-aware cleanup (2026-10-21)
+
+**Decision:** statuses have their own upload endpoint (`POST /api/status/media`)
+with a 50 MB hard cap, then per-type validation:
+
+| type | limit | duration |
+|---|---|---|
+| image | 10 MB | - |
+| video | 50 MB | required, <= 60 s |
+| audio | 20 MB | optional, <= 10 min |
+
+**Why a separate endpoint:** the shared chat upload is capped at 10 MB by multer,
+which would have made 50 MB videos impossible; raising it for chat would let a
+10 MB image become a 50 MB message attachment.
+
+**Duration is client-reported.** No encoder/ffprobe is available on the server, so
+`durationSeconds` comes from `video.duration` in the browser and is validated as a
+number in range. The file itself is not re-timed. Trim UI was not built: over-long
+videos are rejected with a message that states the 60 s limit (the spec allows
+"reject or trim").
+
+**Thumbnails:** the composer captures a poster frame on a `<canvas>` and uploads it
+as a normal image upload; `Status.thumbnailUrl` stores it. If the poster upload
+fails the video status still posts.
+
+**File deletion on expiry:** the old design put a Mongo TTL index on
+`Status.createdAt`, which deleted the document at 24 h and **orphaned the uploaded
+file forever**. Now:
+- `server/src/utils/statusCleanup.js` runs every 10 min (after Mongo connects) and
+  deletes statuses older than 24 h together with their files/poster,
+- the legacy `createdAt` TTL index is dropped once on boot,
+- `expiresAt` carries a 25 h TTL index as a safety net (later than the job, so the
+  job always gets to the file first),
+- `DELETE /api/status/:id` deletes the file immediately.
+
+**Local-disk URL bug fixed:** multer wrote status files to `uploads/status/` while
+`persistUpload` derived the URL folder from the media type (`videos/`), so every
+locally stored video/audio 404'd. `persistUpload` now derives the URL from where
+multer actually wrote the file.
+
+**Verified:** 45 server assertions (`test/integration/statusMedia.test.js`), 13 for
+expiry cleanup (`statusCleanup.test.js`), and 9 Playwright tests
+(`tests/e2e/status.spec.js`) with real PNG/WebM fixtures recorded through Chromium
+MediaRecorder (`tests/e2e/fixtures/generate-fixtures.js`).

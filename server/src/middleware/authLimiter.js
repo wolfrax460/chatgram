@@ -16,6 +16,17 @@ const rateLimit = require('express-rate-limit');
 
 /* ------------------------------------------------------------- per-IP limits */
 
+/**
+ * Test/staging escape hatch. ONLY honoured outside production, and it has to be
+ * switched on explicitly: the local Playwright suite creates a fresh account per
+ * test, which would otherwise trip the real signup limit.
+ */
+function limitsDisabled() {
+  return (
+    process.env.AUTH_RATE_LIMIT_DISABLED === 'true' && process.env.NODE_ENV !== 'production'
+  );
+}
+
 function limiter({ windowMs, max, message }) {
   return rateLimit({
     windowMs,
@@ -23,7 +34,7 @@ function limiter({ windowMs, max, message }) {
     standardHeaders: true,
     legacyHeaders: false,
     // Health checks and same-origin server calls should not be throttled.
-    skip: (req) => req.method === 'OPTIONS',
+    skip: (req) => req.method === 'OPTIONS' || limitsDisabled(),
     handler: (req, res) => {
       const retryAfter = Math.ceil(windowMs / 1000);
       res.set('Retry-After', String(retryAfter));

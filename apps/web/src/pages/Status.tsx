@@ -1,33 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, Image as ImageIcon, Send, CircleDashed, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { CircleDashed, FileVideo, Music, Plus, Image as ImageIcon } from 'lucide-react';
 import { useSession, type StatusItem, type User } from '@chatgram/core';
 import { api } from '../lib/api';
-
-const AUTO_ADVANCE_MS = 5200;
+import { Avatar, timeAgo } from '../components/status/Parts';
+import { StatusComposer } from '../components/status/StatusComposer';
+import { StatusViewer, type StatusGroup } from '../components/status/StatusViewer';
 
 /* --------------------------------------------------------------- helpers */
 
-interface Group {
-  userId: string;
-  displayName: string;
-  avatarUrl?: string;
-  items: StatusItem[];
-  latest: string;
-}
-
-function timeAgo(iso: string): string {
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hr ago`;
-  return `${Math.floor(hrs / 24)} d ago`;
-}
-
 /** One bucket per author, newest bucket first. */
-function groupByUser(statuses: StatusItem[]): Group[] {
-  const map = new Map<string, Group>();
+function groupByUser(statuses: StatusItem[]): StatusGroup[] {
+  const map = new Map<string, StatusGroup>();
   for (const status of statuses) {
     const author: User = status.userId;
     const existing = map.get(author.id);
@@ -51,239 +35,14 @@ function groupByUser(statuses: StatusItem[]): Group[] {
   return groups.sort((a, b) => new Date(b.latest).getTime() - new Date(a.latest).getTime());
 }
 
-function Avatar({ name, src, size = 44 }: { name: string; src?: string; size?: number }) {
+function mediaIcons(items: StatusItem[]) {
+  const kinds = new Set(items.map((item) => item.mediaType ?? (item.mediaUrl ? 'image' : 'text')));
   return (
-    <div
-      className="grid shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-brand-500 to-brand-700 font-bold text-white"
-      style={{ width: size, height: size, fontSize: size * 0.34 }}
-    >
-      {src ? <img src={src} alt={name} className="h-full w-full object-cover" /> : name.slice(0, 2).toUpperCase()}
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------- composer */
-
-function StatusComposer({ onClose }: { onClose: () => void }) {
-  const queryClient = useQueryClient();
-  const [text, setText] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [error, setError] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!file) {
-      setPreview(null);
-      return undefined;
-    }
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-
-  const create = useMutation({
-    mutationFn: async () => {
-      let mediaUrl: string | undefined;
-      if (file) {
-        const uploaded = await api.uploadMedia(file);
-        mediaUrl = uploaded.url;
-      }
-      return api.createStatus({ text: text.trim() || undefined, mediaUrl });
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['statuses'] });
-      onClose();
-    },
-    onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not post status'),
-  });
-
-  const canPost = (text.trim().length > 0 || Boolean(file)) && !create.isPending;
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 animate-fade-up" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-ink-800" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-bold">New status</h3>
-          <button type="button" className="btn-ghost !px-2" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {error ? (
-          <p className="mb-3 rounded-xl border border-rose-300/50 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
-            {error}
-          </p>
-        ) : null}
-
-        <textarea
-          rows={3}
-          className="field resize-none"
-          maxLength={700}
-          placeholder="What's on your mind? Disappears after 24 hours."
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => {
-            const picked = e.target.files?.[0];
-            e.target.value = '';
-            if (!picked) return;
-            if (picked.size > 10 * 1024 * 1024) {
-              setError('Image is larger than 10 MB.');
-              return;
-            }
-            setFile(picked);
-          }}
-        />
-
-        {preview ? (
-          <div className="relative mt-3">
-            <div className="grid max-h-[240px] place-items-center overflow-hidden rounded-xl bg-black">
-              <img
-                src={preview}
-                alt="Status preview"
-                className="max-h-[240px] w-auto max-w-full object-contain"
-              />
-            </div>
-            <button
-              type="button"
-              className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-black/60 text-white"
-              onClick={() => setFile(null)}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ) : null}
-
-        <div className="mt-4 flex items-center gap-2">
-          <button type="button" className="btn-ghost text-sm" onClick={() => inputRef.current?.click()}>
-            <ImageIcon className="h-4 w-4" /> Photo
-          </button>
-          <span className="flex-1" />
-          <button type="button" className="btn-primary" disabled={!canPost} onClick={() => create.mutate()}>
-            <Send className="h-4 w-4" /> {create.isPending ? 'Posting…' : 'Post status'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------- viewer */
-
-function StatusViewer({
-  group,
-  meId,
-  onClose,
-}: {
-  group: Group;
-  meId: string;
-  onClose: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const [index, setIndex] = useState(0);
-  const timer = useRef<number | null>(null);
-  const item = group.items[index];
-  const mine = group.userId === meId;
-
-  const next = useCallback(() => {
-    setIndex((i) => {
-      if (i + 1 < group.items.length) return i + 1;
-      onClose();
-      return i;
-    });
-  }, [group.items.length, onClose]);
-
-  const prev = useCallback(() => setIndex((i) => (i > 0 ? i - 1 : 0)), []);
-
-  // Mark viewed + auto-advance.
-  useEffect(() => {
-    if (!item) return undefined;
-    if (!mine) api.viewStatus(item.id).catch(() => {});
-    if (timer.current) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(next, AUTO_ADVANCE_MS);
-    return () => {
-      if (timer.current) window.clearTimeout(timer.current);
-    };
-  }, [item, mine, next]);
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-      if (e.key === 'ArrowRight') next();
-      if (e.key === 'ArrowLeft') prev();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [next, prev, onClose]);
-
-  async function remove() {
-    if (!item) return;
-    await api.deleteStatus(item.id).catch(() => {});
-    void queryClient.invalidateQueries({ queryKey: ['statuses'] });
-    next();
-  }
-
-  if (!item) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black/95 animate-fade-up">
-      <div className="flex gap-1 px-3 pt-3">
-        {group.items.map((s, i) => (
-          <div key={s.id} className="h-0.5 flex-1 overflow-hidden rounded-full bg-white/25">
-            <div
-              className={`h-full bg-white ${i < index ? 'w-full' : ''}`}
-              style={
-                i === index
-                  ? { animation: `status-progress ${AUTO_ADVANCE_MS}ms linear forwards` }
-                  : i > index
-                    ? { width: 0 }
-                    : undefined
-              }
-            />
-          </div>
-        ))}
-      </div>
-
-      <div className="flex items-center gap-3 px-3 py-3">
-        <Avatar name={group.displayName} src={group.avatarUrl} size={36} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-white">{group.displayName}</p>
-          <p className="text-[11px] text-white/60">{timeAgo(item.createdAt)}</p>
-        </div>
-        {mine ? (
-          <button type="button" className="text-white/80 hover:text-white" onClick={remove} title="Delete">
-            <Trash2 className="h-5 w-5" />
-          </button>
-        ) : null}
-        <button type="button" className="text-white/80 hover:text-white" onClick={onClose} title="Close">
-          <X className="h-6 w-6" />
-        </button>
-      </div>
-
-      <div className="relative flex flex-1 items-center justify-center px-4 pb-6">
-        <button type="button" className="absolute left-0 top-0 h-full w-1/3" onClick={prev} aria-label="Previous" />
-        <button type="button" className="absolute right-0 top-0 h-1/3 w-1/3" onClick={next} aria-label="Next" />
-        <div className="max-h-full w-full max-w-lg text-center">
-          {item.mediaUrl ? (
-            <img
-              src={item.mediaUrl}
-              alt=""
-              className="mx-auto max-h-[68vh] w-auto max-w-full rounded-xl bg-black object-contain"
-            />
-          ) : null}
-          {item.text ? (
-            <p className="mt-4 whitespace-pre-wrap break-words text-lg font-medium text-white">{item.text}</p>
-          ) : null}
-        </div>
-      </div>
-    </div>
+    <span className="flex items-center gap-1">
+      {kinds.has('image') ? <ImageIcon className="h-3 w-3" aria-label="contains photos" /> : null}
+      {kinds.has('video') ? <FileVideo className="h-3 w-3" aria-label="contains videos" /> : null}
+      {kinds.has('audio') ? <Music className="h-3 w-3" aria-label="contains voice notes" /> : null}
+    </span>
   );
 }
 
@@ -292,17 +51,17 @@ function StatusViewer({
 export default function Status() {
   const me = useSession((s) => s.user);
   const [composing, setComposing] = useState(false);
-  const [viewing, setViewing] = useState<Group | null>(null);
+  const [viewing, setViewing] = useState<StatusGroup | null>(null);
 
   const statuses = useQuery({ queryKey: ['statuses'], queryFn: () => api.statuses() });
   const meId = me?.id ?? '';
 
   const groups = useMemo(() => groupByUser(statuses.data ?? []), [statuses.data]);
-  const mine = groups.find((g) => g.userId === meId);
-  const others = groups.filter((g) => g.userId !== meId);
+  const mine = groups.find((group) => group.userId === meId);
+  const others = groups.filter((group) => group.userId !== meId);
 
-  const hasUnseen = (group: Group) =>
-    group.items.some((s) => !s.viewedBy.some((v) => v.id === meId));
+  const hasUnseen = (group: StatusGroup) =>
+    group.items.some((status) => !status.viewedBy.some((viewer) => viewer.id === meId));
 
   return (
     <div className="mx-auto flex h-full w-full flex-col">
@@ -335,9 +94,10 @@ export default function Status() {
             <p className="truncate text-xs text-ink-500 dark:text-ink-400">
               {mine
                 ? `${mine.items.length} update${mine.items.length === 1 ? '' : 's'} · ${timeAgo(mine.latest)}`
-                : 'Tap to add a status update'}
+                : 'Tap to add a photo, video or voice note'}
             </p>
           </div>
+          {mine ? <span className="text-ink-500 dark:text-ink-400">{mediaIcons(mine.items)}</span> : null}
         </button>
 
         <p className="px-4 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wider text-ink-500 dark:text-ink-400">
@@ -345,6 +105,11 @@ export default function Status() {
         </p>
 
         {statuses.isLoading ? <p className="p-4 text-sm text-ink-500">Loading…</p> : null}
+        {statuses.isError ? (
+          <p className="p-4 text-sm text-rose-600 dark:text-rose-400">
+            Could not load statuses. {statuses.error instanceof Error ? statuses.error.message : ''}
+          </p>
+        ) : null}
 
         {!statuses.isLoading && others.length === 0 ? (
           <div className="grid h-48 place-items-center px-6 text-center">
@@ -379,7 +144,8 @@ export default function Status() {
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate font-semibold">{group.displayName}</p>
-              <p className="text-xs text-ink-500 dark:text-ink-400">
+              <p className="flex items-center gap-1 text-xs text-ink-500 dark:text-ink-400">
+                {mediaIcons(group.items)}
                 {group.items.length} update{group.items.length === 1 ? '' : 's'} · {timeAgo(group.latest)}
               </p>
             </div>
@@ -387,7 +153,7 @@ export default function Status() {
         ))}
 
         <p className="px-4 py-6 text-center text-xs text-ink-400">
-          Status updates are deleted automatically after 24 hours.
+          Statuses are deleted automatically after 24 hours, including the stored photo, video or audio file.
         </p>
       </div>
 

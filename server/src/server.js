@@ -123,6 +123,14 @@ connectDB().then(() => {
   supportAccount
     .ensureSupportUser()
     .catch((error) => console.error('Support account setup failed:', error.message));
+
+  // Statuses expire after 24h; this removes the stored files too, which a Mongo
+  // TTL index alone cannot do.
+  try {
+    require('./utils/statusCleanup').startStatusCleanup();
+  } catch (error) {
+    console.warn('Status cleanup could not start:', error.message);
+  }
 });
 
 // ---------------------------------------------------------------- middleware
