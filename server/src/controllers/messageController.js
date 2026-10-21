@@ -251,7 +251,17 @@ const uploadMedia = async (req, res) => {
     // Cloudinary when configured, local disk otherwise. The returned URL is
     // absolute for Cloudinary and a server-relative /uploads/… path for disk,
     // and the Flutter client already handles both.
-    const subdir = require('../utils/upload').resolveSubdir(req);
+    // Derive the storage subfolder from the file itself. (This previously
+    // called require('../utils/upload').resolveSubdir, which does not exist,
+    // so every upload threw and surfaced as "Server error uploading file".)
+    const mimetype = String(req.file.mimetype || '');
+    const subdir = mimetype.startsWith('image/')
+      ? 'images'
+      : mimetype.startsWith('video/')
+        ? 'videos'
+        : mimetype.startsWith('audio/')
+          ? 'audio'
+          : 'files';
     const stored = await require('../utils/storage').persistUpload(req, subdir);
 
     res.status(201).json({

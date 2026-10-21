@@ -40,3 +40,20 @@ router.post('/:id/delivered', markAsDelivered);
 router.post('/:id/read', markAsRead);
 
 module.exports = router;
+
+// Translate multer errors into specific, user-facing messages.
+const uploadErrorHandler = (err, req, res, next) => {
+  if (!err) return next();
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    const bytes = err.limit || 0;
+    return res.status(413).json({ message: `File too large (max ${Math.round(bytes / (1024 * 1024))} MB)` });
+  }
+  if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+    return res.status(400).json({ message: 'Unexpected file field' });
+  }
+  if (/unsupported|mime|type/i.test(String(err.message || ''))) {
+    return res.status(415).json({ message: 'Unsupported file type' });
+  }
+  return res.status(500).json({ message: 'Storage unavailable, try again' });
+};
+module.exports.uploadErrorHandler = uploadErrorHandler;

@@ -585,3 +585,23 @@ In-app escalations called SupportTicket.create with transcript roles of user, bu
 - Windows installer rebuilt (78 MB) and republished to /downloads/chatgram-windows-setup.exe (79M, 200).
 - Android: apps/mobile scaffolded with Capacitor 6.2.2, android platform added, web assets synced. Gradle build blocked by a network timeout downloading gradle-8.2.1-all from services.gradle.org; the local ~/.gradle cache has 8.2.1 but the wrapper still tried to fetch. Not resolved.
 
+
+---
+
+## A. Status/chat upload crash - ROOT CAUSE AND FIX (2026-10-21)
+
+### Cause (reproduced from the production log, not guessed)
+messageController.uploadMedia called require('../utils/upload').resolveSubdir(req) at line 254. utils/upload.js exports no such function, so EVERY upload threw TypeError and was caught by the generic handler, returning 500 'Server error uploading file'.
+
+Evidence: ~/.pm2/logs/chatgram-api-error.log - 'Upload media error: TypeError: require(...).resolveSubdir is not a function at uploadMedia (src/controllers/messageController.js:254:47)'.
+
+This affected status media AND chat media, because both use the same /api/messages/media endpoint.
+
+### Fix
+- Derive the storage subfolder from the mimetype inline (images / videos / audio / files); the broken require is gone.
+- Added an upload error handler that maps multer and storage failures to specific messages (File too large (max X MB) / Unsupported file type / Storage unavailable, try again) instead of the generic one.
+
+### Verified
+POST /api/messages/media with a real PNG -> 201, URL https://res.cloudinary.com/vzz4kwby/image/upload/... (Cloudinary, durable).
+Audio/video attempts failed only because the test payloads were synthetic random bytes - Cloudinary correctly replied 400 'Unsupported video format or file'. resourceTypeFor already maps audio->video as Cloudinary requires. Not yet verified with real audio/video files.
+

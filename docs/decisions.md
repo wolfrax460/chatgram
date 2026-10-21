@@ -164,3 +164,14 @@ ormalizePhone\/\isValidPhone\ bodies with libphonenumber later; call sites uncha
   single \identifier\ string, so no API change was needed.
 - **Cold start**: a 4s timer switches on "Waking up the server..." while the
   first request is in flight.
+
+## D12. Upload storage + the resolveSubdir crash (2026-10-21)
+
+**Decision:** uploads stay on Cloudinary via utils/storage.js (durable object storage, already configured, no local-disk persistence problem on the VM).
+
+**Bug:** uploadMedia called a non-existent utils/upload.resolveSubdir, so all uploads 500'd. Fixed by deriving the subfolder from the mimetype.
+
+**Why it went unnoticed:** the catch block returned a generic message and the TypeError was only in the server log; the client showed one opaque string for every failure.
+
+**Follow-up:** add real audio/video fixtures to the upload test - synthetic bytes are rejected by Cloudinary (400), which looks like a code failure but is not.
+
