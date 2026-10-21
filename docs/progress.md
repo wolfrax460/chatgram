@@ -628,3 +628,20 @@ Routes mounted (401 without auth). Lifecycle: 3 members -> user3 leaves (2 left)
 ### Not done
 The web UI for the members panel / leave button is not built (API only). Admin add/remove/promote already existed server-side. Live socket refresh is emitted but untested against a real client.
 
+
+---
+
+## E. Group info panel: members list + leave (UI) (2026-10-21)
+
+- api-client: getGroupMembers(chatId) and leaveGroup(chatId).
+- GroupInfo now loads the roster from GET /:id/participants instead of reading chat.participants, which is usually just ids - that is why the member list looked empty. The admin flag now comes from the server (isAdmin), so admin controls appear correctly.
+- Added a Leave group footer with a confirmation step (Yes, leave / Cancel). On success it refreshes the group and chat lists and closes the panel.
+- Presence comes from the endpoint, which respects each member showOnlineStatus.
+
+### Bugs fixed while wiring
+- A blanket find/replace of the contacts-picker key also hit a User-typed list, breaking the build; reverted.
+- A blanket replace of the member count also hit the group list row; restored.
+
+### Verified
+Build green. Deployed bundle contains Leave group, Yes leave, /participants, /leave. /, /web/, /web/admin all 200.
+

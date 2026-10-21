@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Users, X, Check, Trash2, Shield, ShieldOff } from 'lucide-react';
+import { Plus, Users, X, Check, Trash2, Shield, ShieldOff, Loader2 } from 'lucide-react';
 import { chatTitle, useSession, type Chat, type User } from '@chatgram/core';
 import { api } from '../lib/api';
 
@@ -105,6 +105,33 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
     onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not remove member'),
   });
 
+  // Authoritative roster from the server (chat.participants is often just ids).
+  const membersQuery = useQuery({
+    queryKey: ['group-members', chat.id],
+    queryFn: () => api.getGroupMembers(chat.id),
+    retry: false,
+  });
+  type Member = { _id: string; displayName: string; isAdmin: boolean; isYou: boolean; isOnline?: boolean };
+  const members: Member[] =
+    membersQuery.data?.members ??
+    (chat.participants ?? []).map((p) => ({
+      _id: p.id,
+      displayName: p.displayName,
+      isAdmin: (chat.admins ?? []).includes(p.id),
+      isYou: p.id === meId,
+    }));
+  const iAmAdmin = members.find((m) => m.isYou)?.isAdmin ?? isAdmin;
+
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const leave = useMutation({
+    mutationFn: () => api.leaveGroup(chat.id),
+    onSuccess: () => {
+      refresh();
+      onClose();
+    },
+    onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not leave the group'),
+  });
+
   const toggleAdmin = useMutation({
     mutationFn: ({ userId, makeAdmin }: { userId: string; makeAdmin: boolean }) =>
       api.setGroupAdmin(chat.id, userId, makeAdmin),
@@ -125,13 +152,13 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
 
       <div className="flex-1 overflow-y-auto">
         <p className="px-4 pt-4 text-[11px] font-bold uppercase tracking-wider text-ink-500 dark:text-ink-400">
-          {chat.participants.length} members
+          {members.length} members
         </p>
-        {chat.participants.map((person) => {
-          const personIsAdmin = (chat.admins ?? []).includes(person.id);
-          const isMe = person.id === meId;
+        {members.map((person) => {
+          const personIsAdmin = person.isAdmin;
+          const isMe = person.isYou;
           return (
-            <div key={person.id} className="flex items-center gap-3 px-4 py-2.5">
+            <div key={person._id} className="flex items-center gap-3 px-4 py-2.5">
               <div className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[11px] font-bold text-white">
                 {person.displayName.slice(0, 2).toUpperCase()}
               </div>
@@ -144,13 +171,13 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
                   <p className="text-[11px] font-semibold text-brand-600 dark:text-brand-300">admin</p>
                 ) : null}
               </div>
-              {isAdmin && !isMe ? (
+              {iAmAdmin && !isMe ? (
                 <>
                   <button
                     type="button"
                     className="btn-ghost !px-1.5"
                     title={personIsAdmin ? 'Remove admin' : 'Make admin'}
-                    onClick={() => toggleAdmin.mutate({ userId: person.id, makeAdmin: !personIsAdmin })}
+                    onClick={() => toggleAdmin.mutate({ userId: person._id, makeAdmin: !personIsAdmin })}
                   >
                     {personIsAdmin ? <ShieldOff className="h-4 w-4" /> : <Shield className="h-4 w-4" />}
                   </button>
@@ -158,7 +185,7 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
                     type="button"
                     className="btn-ghost !px-1.5 text-rose-500"
                     title="Remove from group"
-                    onClick={() => remove.mutate(person.id)}
+                    onClick={() => remove.mutate(person._id)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -168,6 +195,38 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
           );
         })}
       </div>
+
+      {/* Leave group — with confirmation, since it cannot be undone */}
+      <footer className="border-t border-ink-200 p-3 dark:border-white/10">
+        {confirmLeave ? (
+          <div className="space-y-2">
+            <p className="text-[12.5px] font-semibold text-rose-600 dark:text-rose-400">
+              Leave “{chat.groupName ?? 'this group'}”? You will stop receiving its messages.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn h-9 flex-1 bg-rose-600 text-[13px] font-semibold text-white hover:bg-rose-700"
+                disabled={leave.isPending}
+                onClick={() => leave.mutate()}
+              >
+                {leave.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Yes, leave
+              </button>
+              <button type="button" className="btn-ghost h-9 flex-1 text-[13px]" onClick={() => setConfirmLeave(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirmLeave(true)}
+            className="btn-ghost h-9 w-full text-[13px] font-semibold text-rose-600"
+          >
+            Leave group
+          </button>
+        )}
+      </footer>
     </aside>
   );
 }

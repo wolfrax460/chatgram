@@ -429,6 +429,32 @@ export class ApiClient {
     );
   }
 
+  /** Group roster with admin flags and presence. */
+  getGroupMembers(chatId: string) {
+    return this.request<{
+      chatId: string;
+      memberCount: number;
+      members: {
+        _id: string;
+        displayName: string;
+        avatarUrl?: string;
+        about?: string;
+        isAdmin: boolean;
+        isYou: boolean;
+        isOnline?: boolean;
+        lastSeen?: string | null;
+      }[];
+    }>(`/api/chats/${chatId}/participants`);
+  }
+
+  /** Leave a group (self-removal). */
+  leaveGroup(chatId: string) {
+    return this.request<{ message: string; removed: boolean; promoted?: string | null }>(
+      `/api/chats/${chatId}/leave`,
+      { method: 'DELETE' },
+    );
+  }
+
   async createGroup(groupName: string, participantIds: string[]): Promise<Chat> {
     return chatFromJson(
       await this.request('/api/chats', {
