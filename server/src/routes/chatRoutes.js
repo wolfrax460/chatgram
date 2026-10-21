@@ -12,6 +12,8 @@ const {
   setGroupAdmin,
   addParticipants,
   removeParticipant,
+  getGroupMembers,
+  leaveGroup,
 } = require('../controllers/chatController');
 
 // All routes require authentication
@@ -28,6 +30,10 @@ router.get('/groups', getGroups);
 
 // Get chat by ID
 router.get('/:id', getChatById);
+
+// Group members + leave
+router.get('/:id/participants', getGroupMembers);
+router.delete('/:id/leave', leaveGroup);
 
 // Edit a group (admin)
 router.patch('/:id', updateGroup);

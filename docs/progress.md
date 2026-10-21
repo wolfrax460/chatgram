@@ -605,3 +605,26 @@ This affected status media AND chat media, because both use the same /api/messag
 POST /api/messages/media with a real PNG -> 201, URL https://res.cloudinary.com/vzz4kwby/image/upload/... (Cloudinary, durable).
 Audio/video attempts failed only because the test payloads were synthetic random bytes - Cloudinary correctly replied 400 'Unsupported video format or file'. resourceTypeFor already maps audio->video as Cloudinary requires. Not yet verified with real audio/video files.
 
+
+---
+
+## E. Groups: members list + leave group (2026-10-21)
+
+### Causes found
+1. Members list: there was NO GET /api/chats/:id/participants endpoint - only add (POST) and admin-remove (DELETE /participants/:userId). The UI had nothing to call.
+2. Leave group: no leave endpoint existed at all. DELETE /participants/:userId is admin-only removal of somebody else, so a member had no way out.
+
+### Fixed
+- GET /api/chats/:id/participants - member list with isAdmin, isYou, and presence that respects each member's showOnlineStatus privacy setting. Rejects non-members with 403.
+- DELETE /api/chats/:id/leave - self-removal. Creates a system message ('X left', plus 'Y is now an admin' when a promotion happens), emits message:new and group:members so other members refresh live, and emits chat:removed to the leaver. If the last admin leaves, the longest-standing member is promoted. If the last member leaves, the group and its messages are deleted.
+
+### Bugs found while testing
+- The controller used chat.admins; the schema field is chat.groupAdmins. Fixed.
+- The Chat schema validates that a group has at least one participant, so saving an empty group threw. The last-member path now deletes the chat instead.
+
+### Verified
+Routes mounted (401 without auth). Lifecycle: 3 members -> user3 leaves (2 left) -> admin leaves (1 left, auto-promote true) -> last member leaves (chat deleted, not in DB). Config 200, health OK.
+
+### Not done
+The web UI for the members panel / leave button is not built (API only). Admin add/remove/promote already existed server-side. Live socket refresh is emitted but untested against a real client.
+

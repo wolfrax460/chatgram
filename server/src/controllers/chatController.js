@@ -408,6 +408,122 @@ const removeParticipant = async (req, res) => {
   }
 };
 
+
+// @desc    Full member list for a group (with admin flags + online state)
+// @route   GET /api/chats/:id/participants
+// @access  Private (must be a member)
+const getGroupMembers = async (req, res) => {
+  try {
+    const chat = await Chat.findById(req.params.id).populate(
+      'participants',
+      'displayName avatarUrl about isOnline lastSeen showOnlineStatus'
+    );
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    if (chat.type !== 'group') {
+      return res.status(400).json({ message: 'This chat is not a group' });
+    }
+
+    const me = String(req.user._id);
+    const isMember = (chat.participants || []).some((p) => String(p._id) === me);
+    if (!isMember) return res.status(403).json({ message: 'You are not a member of this group' });
+
+    const adminIds = (chat.groupAdmins || []).map(String);
+    const members = (chat.participants || []).map((p) => ({
+      _id: p._id,
+      displayName: p.displayName,
+      avatarUrl: p.avatarUrl,
+      about: p.about,
+      isAdmin: adminIds.includes(String(p._id)),
+      isYou: String(p._id) === me,
+      // Respect the privacy setting: hide presence when the member opted out.
+      isOnline: p.showOnlineStatus === false ? false : Boolean(p.isOnline),
+      lastSeen: p.showOnlineStatus === false ? null : p.lastSeen,
+    }));
+
+    return res.json({ chatId: chat._id, members, memberCount: members.length });
+  } catch (error) {
+    console.error('Get group members error:', error.message);
+    return res.status(500).json({ message: 'Could not load the members' });
+  }
+};
+
+// @desc    Leave a group
+// @route   DELETE /api/chats/:id/leave
+// @access  Private (member)
+const leaveGroup = async (req, res) => {
+  try {
+    const chat = await Chat.findById(req.params.id);
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    if (chat.type !== 'group') {
+      return res.status(400).json({ message: 'You can only leave a group' });
+    }
+
+    const me = String(req.user._id);
+    if (!chat.participants.map(String).includes(me)) {
+      return res.status(400).json({ message: 'You are not a member of this group' });
+    }
+
+    const leaver = await User.findById(me).select('displayName');
+    const leaverName = leaver?.displayName || 'A member';
+
+    chat.participants = chat.participants.filter((p) => String(p) !== me);
+    chat.groupAdmins = (chat.groupAdmins || []).filter((a) => String(a) !== me);
+
+    let systemNote = `${leaverName} left`;
+
+    if (chat.participants.length === 0) {
+      // The group is empty. A group chat requires at least one participant, so
+      // it cannot be saved in that state - delete it (and its messages) instead.
+      try {
+        await Message.deleteMany({ chatId: chat._id });
+      } catch { /* history cleanup is best effort */ }
+      await Chat.deleteOne({ _id: chat._id });
+      try {
+        const realtime = require('../utils/realtime');
+        realtime.emitToUser(me, 'chat:removed', { chatId: chat._id });
+      } catch { /* sockets are best effort */ }
+      return res.json({ message: 'You left the group', removed: true, deleted: true });
+    }
+
+    // If the last admin left, promote the longest-standing member.
+    let promoted = null;
+    if (chat.groupAdmins.length === 0) {
+      promoted = chat.participants[0];
+      chat.groupAdmins = [promoted];
+      const promotedUser = await User.findById(promoted).select('displayName');
+      systemNote += `. ${promotedUser?.displayName || 'A member'} is now an admin`;
+    }
+
+    await chat.save();
+
+    // System message so the others see what happened.
+    try {
+      const message = await Message.create({
+        chatId: chat._id,
+        senderId: me,
+        type: 'text',
+        content: systemNote,
+        isSystem: true,
+        sentAt: new Date(),
+      });
+      const populated = await Message.findById(message._id).populate('senderId', '_id displayName avatarUrl');
+      const realtime = require('../utils/realtime');
+      const io = realtime.getIo();
+      io?.to(realtime.roomForChat(chat._id)).emit('message:new', populated);
+      // Live member-list refresh for everyone still in the group.
+      io?.to(realtime.roomForChat(chat._id)).emit('group:members', { chatId: chat._id, action: 'leave', userId: me });
+      realtime.emitToUser(me, 'chat:removed', { chatId: chat._id });
+    } catch (error) {
+      console.warn('Leave-group notification failed:', error.message);
+    }
+
+    return res.json({ message: 'You left the group', removed: true, promoted: promoted ? String(promoted) : null });
+  } catch (error) {
+    console.error('Leave group error:', error.message);
+    return res.status(500).json({ message: 'Could not leave the group' });
+  }
+};
+
 module.exports = {
   createChat,
   getChats,
@@ -417,4 +533,6 @@ module.exports = {
   setGroupAdmin,
   addParticipants,
   removeParticipant,
+  getGroupMembers,
+  leaveGroup,
 };
