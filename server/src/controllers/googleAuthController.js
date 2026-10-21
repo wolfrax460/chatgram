@@ -5,6 +5,7 @@ const {
   generateToken,
   generateRefreshToken,
   userPayload,
+  tokenVersionOf,
 } = require('./authController');
 
 /**
@@ -128,8 +129,8 @@ const googleCallback = async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     google.completeState(state, {
-      accessToken: generateToken(user._id),
-      refreshToken: generateRefreshToken(user._id),
+      accessToken: generateToken(user._id, tokenVersionOf(user)),
+      refreshToken: generateRefreshToken(user._id, tokenVersionOf(user)),
       user: userPayload(user, null, null).user,
       created,
       linked,

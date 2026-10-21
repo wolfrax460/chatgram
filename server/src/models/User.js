@@ -43,6 +43,12 @@ const userSchema = new mongoose.Schema({
   twoFactorSecret: { type: String, select: false },
   // Hashed single-use backup codes for 2FA lockout recovery.
   recoveryCodes: { type: [String], select: false, default: [] },
+  // Session generation. Every access/refresh token carries this value; when it
+  // is bumped (password change/reset, "log out other devices") every token
+  // minted before the bump stops being accepted. Old tokens without the claim
+  // are treated as version 0, so deploying this does not sign anybody out.
+  tokenVersion: { type: Number, default: 0 },
+  passwordChangedAt: { type: Date, default: null },
 
   isSupportAccount: {
     type: Boolean,

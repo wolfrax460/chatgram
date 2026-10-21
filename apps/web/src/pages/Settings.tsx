@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import TwoFactorSettings from '../components/TwoFactorSettings';
+import ChangePassword from '../components/ChangePassword';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Settings as SettingsIcon, Sun, Moon, Monitor, Bell, Volume2, Eye, MessageCircle,
@@ -72,6 +73,7 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
   const queryClient = useQueryClient();
 
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [about, setAbout] = useState(user?.about ?? '');
@@ -181,6 +183,19 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
         </p>
       ) : null}
 
+      {notice ? (
+        <p
+          role="status"
+          aria-live="polite"
+          className="mx-4 mt-3 flex items-start gap-2 rounded-xl border border-emerald-300/50 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+        >
+          <span className="flex-1">{notice}</span>
+          <button type="button" onClick={() => setNotice('')} aria-label="Dismiss message" className="shrink-0">
+            <X className="h-4 w-4" />
+          </button>
+        </p>
+      ) : null}
+
       {/* profile */}
       <div className="flex items-center gap-4 px-4 py-5">
         <div className="relative">
@@ -230,6 +245,27 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
           </div>
         </div>
       ) : null}
+
+      {/* account */}
+      <Section title="Account">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-600/10 text-brand-600 dark:text-brand-300">
+            <Lock className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">Sign-in details</span>
+            <span className="block truncate text-[13px] text-ink-500 dark:text-ink-400">
+              {user?.email || user?.phone || 'No email or phone on file'}
+            </span>
+          </span>
+        </div>
+        <ChangePassword
+          onDone={(message) => {
+            setError('');
+            setNotice(message);
+          }}
+        />
+      </Section>
 
       {/* appearance */}
       <Section title="Security">

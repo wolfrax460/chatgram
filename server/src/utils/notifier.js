@@ -123,6 +123,83 @@ const labels = {
   phone: 'phone',
 };
 
+/** EMAIL_ENABLED=false is an explicit kill switch (used in production today). */
+function emailEnabled() {
+  return String(process.env.EMAIL_ENABLED ?? 'true') !== 'false';
+}
+
+/**
+ * Generic transactional email. Unlike sendEmailCode this is not a code, so it
+ * uses its own subject/body. Returns { delivered, provider } and never throws
+ * for console mode.
+ */
+async function sendMail({ to, subject, text, html }) {
+  if (!to || !emailEnabled()) return { delivered: false, provider: 'disabled' };
+
+  if (emailProvider === 'smtp') {
+    const tx = getTransporter();
+    if (!tx) return { delivered: false, provider: 'console' };
+    await tx.sendMail({
+      from: process.env.MAIL_FROM || process.env.SMTP_USER,
+      to,
+      subject,
+      text,
+      html,
+    });
+    return { delivered: true, provider: 'smtp' };
+  }
+
+  if (emailProvider === 'resend') {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: process.env.MAIL_FROM || 'Chatgram <onboarding@resend.dev>',
+        to,
+        subject,
+        text,
+        html,
+      }),
+    });
+    if (!res.ok) throw new Error(`Resend error ${res.status}: ${await res.text()}`);
+    return { delivered: true, provider: 'resend' };
+  }
+
+  console.log(`\n[email] to ${to}: ${subject}\n`);
+  return { delivered: false, provider: 'console' };
+}
+
+/**
+ * Security notice sent after a password change. Deliberately does NOT contain
+ * the password, the old password, tokens, or any other secret.
+ */
+async function notifyPasswordChanged(user) {
+  const when = new Date().toUTCString();
+  const name = (user && user.displayName) || 'there';
+  const subject = 'Your Chatgram password was changed';
+  const text =
+    `Hi ${name},\n\n` +
+    `The password for your Chatgram account${user && user.email ? ` (${user.email})` : ''} ` +
+    `was changed on ${when}.\n\n` +
+    `If this was you, no action is needed. All other devices have been signed out.\n\n` +
+    `If you did not change it, reset your password immediately from the sign-in ` +
+    `screen ("Forgot password") and contact Chatgram support.\n`;
+
+  const target = user && user.email;
+  if (!target) return { email: false, channel: null };
+
+  try {
+    const result = await sendMail({ to: target, subject, text });
+    return { email: result.delivered, channel: result.provider };
+  } catch (error) {
+    console.error('Password-changed email failed:', error.message);
+    return { email: false, channel: null, error: true };
+  }
+}
+
 const reasonMessages = {
   missing: 'No code was requested for this address, or it already expired. Request a new one.',
   expired: 'That code has expired. Request a new one.',
@@ -133,6 +210,9 @@ const reasonMessages = {
 module.exports = {
   sendEmailCode,
   sendSmsCode,
+  sendMail,
+  notifyPasswordChanged,
+  emailEnabled,
   showCodes,
   labels,
   reasonMessages,

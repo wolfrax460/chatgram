@@ -34,6 +34,19 @@ const protect = async (req, res, next) => {
       // otherwise downstream controllers crash on `req.user._id`.
       return res.status(401).json({ message: 'Not authorized, user no longer exists' });
     }
+
+    // Session generation check: a password change / reset / "log out other
+    // devices" bumps user.tokenVersion, which invalidates every older token.
+    // Tokens minted before this feature have no `tv` and are version 0.
+    const tokenVersion = Number(decoded.tv) || 0;
+    const currentVersion = Number(user.tokenVersion) || 0;
+    if (tokenVersion !== currentVersion) {
+      return res.status(401).json({
+        message: 'This session was signed out. Please sign in again.',
+        code: 'SESSION_REVOKED',
+      });
+    }
+
     req.user = user;
     return next();
   } catch (error) {
@@ -42,4 +55,4 @@ const protect = async (req, res, next) => {
   }
 };
 
-module.exports = { protect };
+module.exports = { protect, tokenVersionOf: (user) => Number(user && user.tokenVersion) || 0 };

@@ -264,6 +264,28 @@ export class ApiClient {
     });
   }
 
+  /**
+   * Change the password of the signed-in account.
+   *
+   * The server keeps this session signed in by returning a new access/refresh
+   * pair (bumped session generation) and signs out every other device. The
+   * pair is stored automatically, so callers do not have to handle tokens.
+   */
+  async changePassword(currentPassword: string, newPassword: string, confirmPassword?: string) {
+    const data = await this.request<{
+      message: string;
+      accessToken: string;
+      refreshToken?: string;
+      tokenVersion?: number;
+      notified?: { email: boolean; channel: string | null };
+    }>('/api/auth/change-password', {
+      method: 'POST',
+      body: { currentPassword, newPassword, confirmPassword },
+    });
+    if (data.accessToken) this.setTokens(data);
+    return data;
+  }
+
   async login(identifier: string, password: string, totp?: string) {
     const data = await this.request<{ accessToken: string; refreshToken?: string; user: unknown }>(
       '/api/auth/login',

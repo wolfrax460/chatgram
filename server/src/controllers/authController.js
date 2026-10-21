@@ -6,17 +6,25 @@ const store = require('../utils/verificationStore');
 // Password resets use their own hashed, single-use, 15-minute tokens.
 const resetStore = require('../utils/resetTokenStore');
 const notifier = require('../utils/notifier');
+const { validatePassword } = require('../utils/passwordPolicy');
 
 const ACCESS_SECRET = () => process.env.JWT_SECRET || 'your-secret-key';
 const REFRESH_SECRET = () => process.env.JWT_REFRESH_SECRET || 'your-refresh-secret';
 
-const generateToken = (userId) =>
-  jwt.sign({ userId }, ACCESS_SECRET(), {
+/**
+ * `tv` (token version) lets one bump invalidate every existing session.
+ * Tokens issued before this feature existed have no `tv`; they are treated as
+ * version 0 so a deploy does not sign the world out.
+ */
+const tokenVersionOf = (user) => Number(user && user.tokenVersion) || 0;
+
+const generateToken = (userId, tokenVersion = 0) =>
+  jwt.sign({ userId, tv: Number(tokenVersion) || 0 }, ACCESS_SECRET(), {
     expiresIn: process.env.JWT_EXPIRES_IN || '1d',
   });
 
-const generateRefreshToken = (userId) =>
-  jwt.sign({ userId }, REFRESH_SECRET(), {
+const generateRefreshToken = (userId, tokenVersion = 0) =>
+  jwt.sign({ userId, tv: Number(tokenVersion) || 0 }, REFRESH_SECRET(), {
     expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   });
 
@@ -132,8 +140,8 @@ const registerUser = async (req, res) => {
       }
     }
 
-    const accessToken = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
+    const accessToken = generateToken(user._id, tokenVersionOf(user));
+    const refreshToken = generateRefreshToken(user._id, tokenVersionOf(user));
 
     return res.status(201).json(userPayload(user, accessToken, refreshToken));
   } catch (error) {
@@ -204,8 +212,8 @@ const loginUser = async (req, res) => {
       }
     }
 
-    const accessToken = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
+    const accessToken = generateToken(user._id, tokenVersionOf(user));
+    const refreshToken = generateRefreshToken(user._id, tokenVersionOf(user));
 
     user.lastSeen = new Date();
     user.isOnline = true;
@@ -263,10 +271,19 @@ const refreshToken = async (req, res) => {
       return res.status(401).json({ message: 'User not found' });
     }
 
+    // A token from before the latest password change / "log out other devices"
+    // must not be able to mint fresh tokens.
+    if ((Number(decoded.tv) || 0) !== tokenVersionOf(user)) {
+      return res.status(401).json({
+        message: 'This session was signed out. Please sign in again.',
+        code: 'SESSION_REVOKED',
+      });
+    }
+
     // Rotate both tokens so a long-lived session can keep refreshing.
     return res.json({
-      accessToken: generateToken(user._id),
-      refreshToken: generateRefreshToken(user._id),
+      accessToken: generateToken(user._id, tokenVersionOf(user)),
+      refreshToken: generateRefreshToken(user._id, tokenVersionOf(user)),
       user: userPayload(user, null, null).user,
     });
   } catch (error) {
@@ -312,6 +329,7 @@ const logoutUser = async (req, res) => {
 // @route   POST /api/auth/forgot-password
 // @access  Public
 const forgotPassword = async (req, res) => {
+  const startedAt = Date.now();
   try {
     const parsed = resolveIdentifier(req.body);
     if (!parsed) {
@@ -321,11 +339,23 @@ const forgotPassword = async (req, res) => {
       });
     }
 
+    // AUTH_REVEAL_ACCOUNT_EXISTS=true (the current product decision) tells the
+    // user whether the address is registered. `false` restores the
+    // anti-enumeration behaviour: identical message and response time for both
+    // cases, and no `exists` field.
+    const reveal = String(process.env.AUTH_REVEAL_ACCOUNT_EXISTS ?? 'true') !== 'false';
+    const minimumMs = reveal ? 0 : 700;
+    const finish = async (payload) => {
+      const wait = minimumMs - (Date.now() - startedAt);
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      return res.json(payload);
+    };
+
     const filter =
       parsed.channel === 'email' ? { email: parsed.target } : { phone: parsed.target };
     const user = await User.findOne(filter);
 
-    // Always answer the same way, so this endpoint cannot be used to discover
+    // Same answer for both cases, so this endpoint cannot be used to discover
     // which addresses have accounts.
     const genericReply = {
       message: `If an account exists for ${parsed.target}, a reset code has been sent.`,
@@ -333,7 +363,7 @@ const forgotPassword = async (req, res) => {
       target: parsed.target,
     };
 
-    if (!user) return res.json({ ...genericReply, exists: false });
+    if (!user) return finish(reveal ? { ...genericReply, exists: false } : genericReply);
 
     const issued = resetStore.issue(parsed.channel, parsed.target);
     if (!issued.ok) {
@@ -356,20 +386,22 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    const payload = {
-      ...genericReply,
-      exists: true,
-      expiresInSeconds: issued.expiresInSeconds,
-      delivered: delivery.delivered,
-      provider: delivery.provider,
-    };
+    const payload = reveal
+      ? {
+          ...genericReply,
+          exists: true,
+          expiresInSeconds: issued.expiresInSeconds,
+          delivered: delivery.delivered,
+          provider: delivery.provider,
+        }
+      : genericReply;
 
     if (notifier.showCodes) {
       payload.devCode = issued.code;
       payload.message += ' (development mode: the code is in devCode)';
     }
 
-    return res.json(payload);
+    return finish(payload);
   } catch (error) {
     console.error('Forgot password error:', error);
     return res.status(500).json({ message: 'Server error starting the password reset' });
@@ -414,13 +446,181 @@ const resetPassword = async (req, res) => {
     }
 
     // Assigning triggers the pre-save hook, which re-hashes the password.
+    // Bump the token version so every session that existed before the reset is
+    // signed out — a reset is usually a response to a compromised account.
     user.password = String(newPassword);
+    user.passwordChangedAt = new Date();
+    user.tokenVersion = tokenVersionOf(user) + 1;
     await user.save();
 
     return res.json({ message: 'Password updated. You can sign in now.' });
   } catch (error) {
     console.error('Reset password error:', error);
     return res.status(500).json({ message: 'Server error resetting the password' });
+  }
+};
+
+/* --------------------------------------------- change password (signed in) */
+
+// Per-account throttle for "current password" guesses. The per-IP limiter is in
+// authRoutes; this one follows the account so it works behind a shared NAT.
+const MAX_CURRENT_FAILURES = 5;
+const CURRENT_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const pwdFailures = new Map(); // userId -> { count, firstAt, until }
+
+function currentPasswordState(userId) {
+  const now = Date.now();
+  const key = String(userId);
+  const entry = pwdFailures.get(key);
+  if (!entry) return { count: 0, retryAfter: 0 };
+  if (entry.until > now) return { count: entry.count, retryAfter: Math.ceil((entry.until - now) / 1000) };
+  if (now - entry.firstAt > CURRENT_FAILURE_WINDOW_MS) {
+    pwdFailures.delete(key);
+    return { count: 0, retryAfter: 0 };
+  }
+  return { count: entry.count, retryAfter: 0 };
+}
+
+function recordCurrentFailure(userId) {
+  const now = Date.now();
+  const key = String(userId);
+  let entry = pwdFailures.get(key);
+  if (!entry || now - entry.firstAt > CURRENT_FAILURE_WINDOW_MS) {
+    entry = { count: 0, firstAt: now, until: 0 };
+  }
+  entry.count += 1;
+  if (entry.count >= MAX_CURRENT_FAILURES) entry.until = now + CURRENT_FAILURE_WINDOW_MS;
+  pwdFailures.set(key, entry);
+  if (pwdFailures.size > 5000) {
+    for (const [k, v] of pwdFailures) {
+      if (v.until < now && now - v.firstAt > CURRENT_FAILURE_WINDOW_MS) pwdFailures.delete(k);
+      if (pwdFailures.size <= 5000) break;
+    }
+  }
+}
+
+// @desc    Change the password of the signed-in account
+// @route   POST /api/auth/change-password
+// @access  Private
+const changePassword = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Not authorized' });
+    }
+
+    const state = currentPasswordState(req.user._id);
+    if (state.retryAfter > 0) {
+      res.set('Retry-After', String(state.retryAfter));
+      return res.status(429).json({
+        message: `Too many incorrect current-password attempts. Try again in ${state.retryAfter}s.`,
+        code: 'RATE_LIMITED',
+        retryAfter: state.retryAfter,
+      });
+    }
+
+    const body = req.body || {};
+    const currentPassword = String(body.currentPassword ?? body.oldPassword ?? '');
+    const newPassword = String(body.newPassword ?? body.password ?? '');
+    const hasConfirm = body.confirmPassword !== undefined && body.confirmPassword !== null;
+    const confirmPassword = hasConfirm ? String(body.confirmPassword) : null;
+
+    const user = await User.findById(req.user._id).select('+password');
+    if (!user) {
+      return res.status(401).json({ message: 'This account no longer exists.' });
+    }
+
+    // Google-only accounts have no local password yet. They can create one via
+    // the reset flow, which verifies ownership through their email.
+    if (!user.password) {
+      return res.status(400).json({
+        message:
+          'Your account signs in with Google and has no password yet. Use "Forgot password" to set one.',
+        code: 'PASSWORD_NOT_SET',
+      });
+    }
+
+    if (!currentPassword) {
+      return res.status(400).json({
+        message: 'Enter your current password.',
+        code: 'CURRENT_PASSWORD_REQUIRED',
+      });
+    }
+
+    const matches = await user.comparePassword(currentPassword);
+    if (!matches) {
+      recordCurrentFailure(user._id);
+      const next = currentPasswordState(user._id);
+      if (next.retryAfter > 0) {
+        res.set('Retry-After', String(next.retryAfter));
+        return res.status(429).json({
+          message: `Too many incorrect current-password attempts. Try again in ${next.retryAfter}s.`,
+          code: 'RATE_LIMITED',
+          retryAfter: next.retryAfter,
+        });
+      }
+      return res.status(400).json({
+        message: 'Your current password is not correct.',
+        code: 'CURRENT_PASSWORD_INVALID',
+      });
+    }
+
+    if (hasConfirm && confirmPassword !== newPassword) {
+      return res.status(400).json({
+        message: 'The new passwords do not match.',
+        code: 'PASSWORD_MISMATCH',
+      });
+    }
+
+    const policy = validatePassword(newPassword);
+    if (!policy.ok) {
+      return res.status(400).json({
+        message: policy.problems[0] || 'Choose a stronger password.',
+        problems: policy.problems,
+        code: policy.code,
+        strength: policy.strength,
+      });
+    }
+
+    if (await user.comparePassword(newPassword)) {
+      return res.status(400).json({
+        message: 'Your new password must be different from your current one.',
+        code: 'PASSWORD_UNCHANGED',
+      });
+    }
+
+    // Assigning triggers the pre-save hook, which re-hashes the password.
+    user.password = newPassword;
+    user.passwordChangedAt = new Date();
+    // Bump the session generation: every other device's access and refresh
+    // tokens stop working. This request gets fresh tokens below, so the device
+    // that made the change stays signed in.
+    user.tokenVersion = tokenVersionOf(user) + 1;
+    await user.save();
+
+    pwdFailures.delete(String(user._id));
+
+    // Tell the owner out-of-band. Never fail the password change because the
+    // mail server is unhappy.
+    let notified = { email: false, channel: null };
+    try {
+      notified = await notifier.notifyPasswordChanged(user);
+    } catch (notifyError) {
+      console.error('Password-changed notice failed:', notifyError.message);
+    }
+
+    const accessToken = generateToken(user._id, tokenVersionOf(user));
+    const refreshToken = generateRefreshToken(user._id, tokenVersionOf(user));
+
+    return res.json({
+      message: 'Password changed. Other devices have been signed out.',
+      accessToken,
+      refreshToken,
+      tokenVersion: tokenVersionOf(user),
+      notified,
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    return res.status(500).json({ message: 'Server error changing the password' });
   }
 };
 
@@ -433,8 +633,10 @@ module.exports = {
   checkIdentifier,
   forgotPassword,
   resetPassword,
+  changePassword,
   // Shared with the Google sign-in flow.
   generateToken,
   generateRefreshToken,
   userPayload,
+  tokenVersionOf,
 };

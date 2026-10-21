@@ -10,6 +10,7 @@ const {
   checkIdentifier,
   forgotPassword,
   resetPassword,
+  changePassword,
 } = require('../controllers/authController');
 const { sendCode, checkCode } = require('../controllers/verificationController');
 const {
@@ -31,6 +32,7 @@ const {
   signupLimiter,
   resetLimiter,
   verifyLimiter,
+  changePasswordLimiter,
   accountLockout,
 } = require('../middleware/authLimiter');
 
@@ -58,6 +60,10 @@ router.get('/google/poll', googlePoll);
 // Protected routes (need auth middleware)
 router.get('/me', protect, getUserProfile);
 router.post('/logout', protect, logoutUser);
+
+// Change password while signed in. Keep the current device signed in, sign out
+// every other session (token version bump) and email a notice.
+router.post('/change-password', protect, changePasswordLimiter, changePassword);
 
 // Two-factor authentication
 router.get('/2fa/status', protect, twoFactorStatus);

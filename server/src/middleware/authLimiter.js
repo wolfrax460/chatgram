@@ -56,6 +56,14 @@ const verifyLimiter = limiter({
   message: 'Too many verification requests. Please try again later.',
 });
 
+// Password changes are authenticated, so the per-account throttle lives in the
+// controller (it needs the user id). This is the blunt per-IP layer on top.
+const changePasswordLimiter = limiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many password change attempts. Please try again later.',
+});
+
 /* --------------------------------------------------------- per-account lockout */
 
 const MAX_FAILURES = 5;
@@ -164,6 +172,7 @@ module.exports = {
   signupLimiter,
   resetLimiter,
   verifyLimiter,
+  changePasswordLimiter,
   accountLockout,
   lockoutState,
   MAX_FAILURES,
