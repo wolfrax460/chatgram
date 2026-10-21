@@ -35,6 +35,8 @@ export interface Message {
   clientId?: string;
   chatId: string;
   senderId: string;
+  /** Populated when the API includes the sender object (group sender names). */
+  sender?: User;
   type: MessageType;
   content?: string;
   mediaUrl?: string;
@@ -111,11 +113,17 @@ export function userFromJson(json: unknown): User {
 
 export function messageFromJson(json: unknown): Message {
   const j = (json ?? {}) as Record<string, unknown>;
+  const rawSender = j.senderId;
+  const sender =
+    rawSender && typeof rawSender === 'object' && (rawSender as Record<string, unknown>).displayName
+      ? userFromJson(rawSender)
+      : undefined;
   return {
     id: idOf(j),
     clientId: j.clientId ? String(j.clientId) : undefined,
     chatId: idOf(j.chatId),
     senderId: idOf(j.senderId),
+    sender,
     type: (j.type as MessageType) ?? 'text',
     content: j.content ? String(j.content) : undefined,
     mediaUrl: j.mediaUrl ? String(j.mediaUrl) : undefined,

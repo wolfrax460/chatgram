@@ -30,9 +30,11 @@ async function apiRequest(method, path, { token, body } = {}) {
 
 let counter = 0;
 
-async function registerUser(label = 'user') {
+async function registerUser(label = 'user', options = {}) {
   counter += 1;
-  const identifier = `e2e-${label}-${Date.now().toString(36)}-${counter}@chatgram.test`;
+  const identifier = options.phone
+    ? `+25078${String(Date.now()).slice(-6)}${String(Math.floor(Math.random() * 90) + 10)}`
+    : `e2e-${label}-${Date.now().toString(36)}-${counter}@chatgram.test`;
   const res = await apiRequest('POST', '/api/auth/register', {
     body: { displayName: `E2E ${label} ${counter}`, identifier, password: PASSWORD },
   });

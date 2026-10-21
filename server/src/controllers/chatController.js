@@ -4,6 +4,7 @@ const User = require('../models/User');
 const Message = require('../models/Message');
 const mongoose = require('mongoose');
 const realtime = require('../utils/realtime');
+const { blockedBetween } = require('../utils/blocks');
 
 const PARTICIPANT_FIELDS = '_id displayName avatarUrl about isOnline lastSeen phone email';
 
@@ -34,6 +35,14 @@ const createChat = async (req, res) => {
       const participant = await User.findById(participantId);
       if (!participant) {
         return res.status(404).json({ message: 'Participant not found' });
+      }
+
+      // A blocked pair cannot start a new conversation with each other.
+      if (await blockedBetween(req.user._id, participantId)) {
+        return res.status(403).json({
+          message: 'You cannot start a chat with this person.',
+          code: 'BLOCKED',
+        });
       }
 
       const existingChat = await Chat.findOne({
@@ -87,9 +96,27 @@ const createChat = async (req, res) => {
       return res.status(400).json({ message: 'Add at least one other member to the group' });
     }
 
-    const existingUsers = await User.find({ _id: { $in: ids } }).select('_id');
+    const existingUsers = await User.find({ _id: { $in: ids } }).select(
+      '_id displayName whoCanAddToGroups contacts'
+    );
     if (existingUsers.length !== ids.length) {
       return res.status(404).json({ message: 'One or more members were not found' });
+    }
+
+    // "Who can add me to groups" privacy applies at creation time too.
+    const onlyContacts = existingUsers.filter(
+      (user) =>
+        user.whoCanAddToGroups === 'contacts' &&
+        !(user.contacts || []).some((id) => String(id) === String(req.user._id))
+    );
+    if (onlyContacts.length > 0) {
+      return res.status(403).json({
+        message: `${onlyContacts
+          .map((user) => user.displayName)
+          .join(', ')} only allow people in their contacts to add them to groups.`,
+        code: 'GROUP_ADD_NOT_ALLOWED',
+        userIds: onlyContacts.map((user) => String(user._id)),
+      });
     }
 
     const chat = await Chat.create({
@@ -354,12 +381,39 @@ const addParticipants = async (req, res) => {
       return res.status(400).json({ message: 'All users are already members' });
     }
 
-    chat.participants.push(...toAdd);
+    // "Who can add me to groups" privacy: when the target chose "only my
+    // contacts", the requester must be one of their contacts.
+    const targets = await User.find({ _id: { $in: toAdd } }).select(
+      '_id displayName whoCanAddToGroups contacts'
+    );
+    const knownIds = new Set(targets.map((user) => String(user._id)));
+    const onlyContacts = targets.filter(
+      (user) =>
+        user.whoCanAddToGroups === 'contacts' &&
+        !(user.contacts || []).some((id) => String(id) === String(req.user._id))
+    );
+    if (onlyContacts.length > 0) {
+      return res.status(403).json({
+        message: `${onlyContacts
+          .map((user) => user.displayName)
+          .join(', ')} only allow people in their contacts to add them to groups.`,
+        code: 'GROUP_ADD_NOT_ALLOWED',
+        userIds: onlyContacts.map((user) => String(user._id)),
+      });
+    }
+
+    // Ignore ids that do not resolve to a real account.
+    const addable = toAdd.filter((id) => knownIds.has(id));
+    if (!addable.length) {
+      return res.status(400).json({ message: 'No matching users to add' });
+    }
+
+    chat.participants.push(...addable);
     await chat.save();
 
     const populated = await Chat.findById(chat._id).populate('participants', PARTICIPANT_FIELDS);
-    realtime.joinUsersToChat(chat._id, toAdd);
-    for (const id of [...existing, ...toAdd]) {
+    realtime.joinUsersToChat(chat._id, addable);
+    for (const id of [...existing, ...addable]) {
       realtime.emitToUser(id, 'chat:updated', populated);
     }
 

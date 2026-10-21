@@ -17,6 +17,7 @@ export function ChatList({
   timeFormat,
   onSelect,
   onNewChat,
+  onOpenProfile,
 }: {
   chats: Chat[];
   meId: string;
@@ -26,6 +27,8 @@ export function ChatList({
   timeFormat: TimeFormat;
   onSelect: (id: string) => void;
   onNewChat: () => void;
+  /** Open a direct chat partner's profile from their avatar. */
+  onOpenProfile?: (userId: string, chatId: string) => void;
 }) {
   const [query, setQuery] = useState('');
 
@@ -80,17 +83,24 @@ export function ChatList({
           const read = last ? last.readBy.length > 0 : false;
 
           return (
-            <button
+            <div
               key={chat.id}
-              type="button"
-              onClick={() => onSelect(chat.id)}
-              className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition ${
+              className={`flex w-full items-center gap-3 px-3 py-2.5 transition ${
                 chat.id === selectedId
                   ? 'bg-brand-600/10 dark:bg-white/[.07]'
                   : 'hover:bg-ink-100/70 dark:hover:bg-white/[.04]'
               }`}
             >
-              <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() =>
+                  partner && onOpenProfile ? onOpenProfile(partner.id, chat.id) : onSelect(chat.id)
+                }
+                className="relative shrink-0 rounded-full"
+                title={partner ? `Open ${partner.displayName}'s profile` : 'Open chat'}
+                aria-label={partner ? `Open ${partner.displayName}'s profile` : undefined}
+                data-testid="chat-list-avatar"
+              >
                 <div
                   className={`grid h-11 w-11 place-items-center overflow-hidden rounded-full bg-gradient-to-br ${avatarGradient(
                     partner?.id ?? chat.id,
@@ -105,9 +115,13 @@ export function ChatList({
                 {onlineNow ? (
                   <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-ink-900" />
                 ) : null}
-              </div>
+              </button>
 
-              <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={() => onSelect(chat.id)}
+                className="min-w-0 flex-1 text-left"
+              >
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="truncate font-semibold">{chatTitle(chat, meId)}</span>
                   <span className="shrink-0 text-[11px] text-ink-600 dark:text-ink-300">
@@ -137,8 +151,8 @@ export function ChatList({
                     </span>
                   ) : null}
                 </div>
-              </div>
-            </button>
+              </button>
+            </div>
           );
         })}
       </div>

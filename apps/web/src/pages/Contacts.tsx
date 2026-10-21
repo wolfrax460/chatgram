@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, UserPlus, MessageCircle, BookUser } from 'lucide-react';
 import { useSession, type User } from '@chatgram/core';
 import { api } from '../lib/api';
+import { useProfilePanel } from '../lib/profilePanel';
 
 /**
  * Address book + directory search.
@@ -13,6 +14,7 @@ import { api } from '../lib/api';
 export default function Contacts({ onOpenChat }: { onOpenChat: (chatId: string) => void }) {
   const me = useSession((s) => s.user);
   const queryClient = useQueryClient();
+  const profilePanel = useProfilePanel();
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [error, setError] = useState('');
@@ -98,18 +100,32 @@ export default function Contacts({ onOpenChat }: { onOpenChat: (chatId: string) 
 
         {filtered.map((person) => (
           <div key={person.id} className="flex items-center gap-3 px-4 py-3 hover:bg-ink-100/70 dark:hover:bg-white/[.04]">
-            <div className="relative">
-              <div className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
-                {person.displayName.slice(0, 2).toUpperCase()}
+            <button
+              type="button"
+              onClick={() => profilePanel.openProfile(person.id)}
+              className="relative shrink-0 rounded-full"
+              title={`Open ${person.displayName}'s profile`}
+              aria-label={`Open ${person.displayName}'s profile`}
+            >
+              <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
+                {person.avatarUrl ? (
+                  <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  person.displayName.slice(0, 2).toUpperCase()
+                )}
               </div>
               {person.isOnline ? (
                 <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-ink-900" />
               ) : null}
-            </div>
-            <div className="min-w-0 flex-1">
+            </button>
+            <button
+              type="button"
+              onClick={() => profilePanel.openProfile(person.id)}
+              className="min-w-0 flex-1 text-left"
+            >
               <p className="truncate font-semibold">{person.displayName}</p>
               <p className="truncate text-xs text-ink-500 dark:text-ink-400">{person.email || person.phone || ''}</p>
-            </div>
+            </button>
             {busyId === person.id ? (
               <span className="text-xs text-ink-400">…</span>
             ) : searching ? (

@@ -129,6 +129,19 @@ async function notifySupportReply(ticket, replyText) {
   await Promise.all([sendTelegram(text)]);
 }
 
+/**
+ * Free-form owner alert (used for abuse reports). Best effort: a missing or
+ * failing channel never throws.
+ */
+async function notifyAlert(text) {
+  const body = String(text || '').slice(0, 3500);
+  if (!body) return [];
+  const results = await Promise.all([sendTelegram(body), sendEmail('[Chatgram] Alert', body)]);
+  const delivered = results.filter((r) => r.ok).map((r) => r.channel);
+  if (delivered.length) console.log(`Alert notified via: ${delivered.join(', ')}`);
+  return results;
+}
+
 /** Which channels are live right now — handy for diagnosing setup. */
 function channelStatus() {
   return {
@@ -137,4 +150,4 @@ function channelStatus() {
   };
 }
 
-module.exports = { notifyTicket, notifySupportReply, channelStatus, formatTicket };
+module.exports = { notifyTicket, notifySupportReply, notifyAlert, channelStatus, formatTicket };

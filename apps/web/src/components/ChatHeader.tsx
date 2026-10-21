@@ -28,6 +28,7 @@ export function ChatHeader({
   timeFormat,
   inChatSearchOpen,
   onToggleSearch,
+  onOpenProfile,
   onCall,
   menu,
   onBack,
@@ -41,6 +42,8 @@ export function ChatHeader({
   timeFormat: TimeFormat;
   inChatSearchOpen: boolean;
   onToggleSearch: () => void;
+  /** Open the profile panel for the other participant. */
+  onOpenProfile?: () => void;
   onCall: () => void;
   menu: HeaderMenuActions;
   onBack: () => void;
@@ -64,32 +67,41 @@ export function ChatHeader({
         <ChevronLeft className="h-5 w-5" />
       </button>
 
-      <div
-        className={`grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br ${avatarGradient(
-          partner?.id ?? chat.id,
-        )} text-xs font-bold text-white`}
+      <button
+        type="button"
+        onClick={onOpenProfile}
+        disabled={!onOpenProfile}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-default"
+        aria-label={onOpenProfile ? `Open ${title}'s profile` : undefined}
+        title={onOpenProfile ? 'Open profile' : undefined}
       >
-        {partner?.avatarUrl ? (
-          <img src={partner.avatarUrl} alt={title} className="h-full w-full object-cover" />
-        ) : (
-          initialsFor(chat.type === 'group' ? chat.groupName : title)
-        )}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-semibold leading-tight">{title}</p>
-        <p
-          className={`truncate text-[12.5px] leading-tight ${
-            !connected
-              ? 'font-semibold text-amber-500'
-              : typing
-                ? 'font-semibold text-brand-600 dark:text-brand-300'
-                : 'text-ink-600 dark:text-ink-300'
-          }`}
+        <div
+          className={`grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br ${avatarGradient(
+            partner?.id ?? chat.id,
+          )} text-xs font-bold text-white`}
         >
-          {subtitle}
-        </p>
-      </div>
+          {partner?.avatarUrl ? (
+            <img src={partner.avatarUrl} alt={title} className="h-full w-full object-cover" />
+          ) : (
+            initialsFor(chat.type === 'group' ? chat.groupName : title)
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold leading-tight">{title}</p>
+          <p
+            className={`truncate text-[12.5px] leading-tight ${
+              !connected
+                ? 'font-semibold text-amber-500'
+                : typing
+                  ? 'font-semibold text-brand-600 dark:text-brand-300'
+                  : 'text-ink-600 dark:text-ink-300'
+            }`}
+          >
+            {subtitle}
+          </p>
+        </div>
+      </button>
 
       <button type="button" className="btn-ghost !px-2" title="Search in chat" onClick={onToggleSearch}>
         {inChatSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}

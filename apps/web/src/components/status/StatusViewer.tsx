@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Pause, Play, Trash2, Volume2, VolumeX, X } from 'lucide-react';
 import type { StatusItem } from '@chatgram/core';
 import { api } from '../../lib/api';
+import { useProfilePanel } from '../../lib/profilePanel';
 import { AudioPlayer } from './AudioPlayer';
 import { Avatar, timeAgo } from './Parts';
 
@@ -36,6 +37,7 @@ export function StatusViewer({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const profilePanel = useProfilePanel();
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -198,11 +200,19 @@ export function StatusViewer({
       </div>
 
       <div className="flex items-center gap-3 px-3 py-3">
-        <Avatar name={group.displayName} src={group.avatarUrl} size={36} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-white">{group.displayName}</p>
-          <p className="text-[11px] text-white/60">{timeAgo(current.createdAt)}</p>
-        </div>
+        <button
+          type="button"
+          onClick={() => profilePanel.openProfile(group.userId)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          title={`Open ${group.displayName}'s profile`}
+          aria-label={`Open ${group.displayName}'s profile`}
+        >
+          <Avatar name={group.displayName} src={group.avatarUrl} size={36} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-white">{group.displayName}</p>
+            <p className="text-[11px] text-white/60">{timeAgo(current.createdAt)}</p>
+          </div>
+        </button>
         {kind === 'video' ? (
           <button
             type="button"

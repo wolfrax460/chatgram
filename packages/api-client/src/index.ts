@@ -405,8 +405,93 @@ export class ApiClient {
     };
   }
 
-  updatePrivacy(input: { showOnlineStatus?: boolean; hiddenFrom?: string[] }) {
+  updatePrivacy(input: {
+    showOnlineStatus?: boolean;
+    hiddenFrom?: string[];
+    showPhone?: boolean;
+    showEmail?: boolean;
+    showAbout?: boolean;
+    showProfilePhoto?: boolean;
+    readReceipts?: boolean;
+    whoCanAddToGroups?: 'everyone' | 'contacts';
+  }) {
     return this.request('/api/users/me/privacy', { method: 'PUT', body: input });
+  }
+
+  /* ------------------------------------------------------- profile panel */
+
+  /** Privacy-aware profile for the profile panel. */
+  getProfile(userId: string) {
+    return this.request<{
+      profile: {
+        id: string;
+        displayName: string;
+        avatarUrl: string;
+        photoHidden?: boolean;
+        about: string;
+        aboutHidden?: boolean;
+        isOnline: boolean;
+        lastSeen: string | null;
+        presenceHidden?: boolean;
+        phone: string | null;
+        email: string | null;
+        phoneHidden?: boolean;
+        emailHidden?: boolean;
+      };
+      isSelf: boolean;
+      isContact: boolean;
+      iBlocked: boolean;
+      blockedMe: boolean;
+      canMessage: boolean;
+      mutedChatId: string | null;
+      commonGroups: { id: string; name: string; avatarUrl: string; memberCount: number }[];
+      sharedMedia: { messageId: string; type: string; url: string; at: string; chatId: string }[];
+      sharedLinks: { messageId: string; url: string; at: string; chatId: string }[];
+    }>(`/api/users/${userId}/profile`);
+  }
+
+  blockUser(userId: string) {
+    return this.request<{ message: string; blocked: boolean; blockedUserId: string }>(
+      `/api/users/${userId}/block`,
+      { method: 'POST' },
+    );
+  }
+
+  unblockUser(userId: string) {
+    return this.request<{ message: string; blocked: boolean }>(`/api/users/${userId}/block`, {
+      method: 'DELETE',
+    });
+  }
+
+  blockedUsers() {
+    return this.request<{ _id?: string; id?: string; displayName: string; avatarUrl?: string; about?: string }[]>(
+      '/api/users/me/blocked',
+    );
+  }
+
+  reportUser(userId: string, reason: string, details?: string, chatId?: string) {
+    return this.request<{ message: string; reportId: string; reason: string }>(
+      `/api/users/${userId}/report`,
+      { method: 'POST', body: { reason, details, chatId } },
+    );
+  }
+
+  muteChat(chatId: string, untilMs?: number) {
+    return this.request<{ message: string; chatId: string; muted: boolean; until: string | null }>(
+      `/api/users/me/muted/${chatId}`,
+      { method: 'POST', body: untilMs ? { untilMs } : {} },
+    );
+  }
+
+  unmuteChat(chatId: string) {
+    return this.request<{ message: string; chatId: string; muted: boolean }>(
+      `/api/users/me/muted/${chatId}`,
+      { method: 'DELETE' },
+    );
+  }
+
+  mutedChats() {
+    return this.request<{ chatId: string; mutedAt: string; until: string | null }[]>('/api/users/me/muted');
   }
 
   /* ----------------------------------------------------------- contacts */

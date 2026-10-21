@@ -15,6 +15,7 @@ import {
 } from '@chatgram/core';
 import { api, realtime } from './lib/api';
 import { useRealtimeBridge } from './lib/useRealtime';
+import { useProfilePanel } from './lib/profilePanel';
 import { ChatList } from './components/ChatList';
 import { ChatHeader } from './components/ChatHeader';
 import { MessageBubble } from './components/MessageBubble';
@@ -26,6 +27,8 @@ import SettingsPage from './pages/Settings';
 import Auth from './pages/Auth';
 import SupportWidget from './components/SupportWidget';
 import Admin from './pages/Admin';
+import { ProfilePanel } from './components/ProfilePanel';
+import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, sameDay, statusOf } from './lib/ui';
 
 type Tab = 'chats' | 'status' | 'groups' | 'contacts' | 'settings';
@@ -76,6 +79,7 @@ function setUnreadFavicon(count: number): void {
 
 function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: () => void }) {
   const queryClient = useQueryClient();
+  const profilePanel = useProfilePanel();
   const timeFormat = usePrefs((s) => s.timeFormat);
   const typingByChat = useRealtime((s) => s.typing);
   const online = useRealtime((s) => s.online);
@@ -266,10 +270,18 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
           setSearchOpen((v) => !v);
           setInChatSearch('');
         }}
+        onOpenProfile={partner ? () => profilePanel.openProfile(partner.id, chat.id) : undefined}
         onCall={() => setNotice('Voice calls are still being deployed — coming soon.')}
         menu={{
-          onContactInfo: () => setNotice('Contact info is still being deployed — coming soon.'),
-          onMute: () => setNotice('Mute is still being deployed — coming soon.'),
+          onContactInfo: () => (partner ? profilePanel.openProfile(partner.id, chat.id) : undefined),
+          onMute: async () => {
+            try {
+              await api.muteChat(chat.id);
+              setNotice('Notifications muted for this chat.');
+            } catch (err) {
+              setNotice(err instanceof Error ? err.message : 'Could not mute this chat');
+            }
+          },
           onForward: () => setNotice('Forwarding is still being deployed — coming soon.'),
           onClearChat: async () => {
             try {
@@ -281,7 +293,7 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
               setNotice(err instanceof Error ? err.message : 'Could not clear chat');
             }
           },
-          onBlock: () => setNotice('Blocking is still being deployed — coming soon.'),
+          onBlock: () => (partner ? profilePanel.openProfile(partner.id, chat.id) : undefined),
         }}
         onBack={onBack}
       />
@@ -368,7 +380,12 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
                   timeFormat={timeFormat}
                   firstInGroup={firstInGroup}
                   lastInGroup={lastInGroup}
-                  actions={{ onReply: reply, onDelete: removeMessage, onReact: reactTo }}
+                  actions={{
+                    onReply: reply,
+                    onDelete: removeMessage,
+                    onReact: reactTo,
+                    onOpenProfile: (userId) => profilePanel.openProfile(userId, chat.id),
+                  }}
                 />
               </div>
             );
@@ -428,6 +445,7 @@ function Shell() {
   const [tab, setTab] = useState<Tab>('chats');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [profileTarget, setProfileTarget] = useState<{ userId: string; chatId?: string } | null>(null);
 
   useRealtimeBridge();
 
@@ -457,9 +475,20 @@ function Shell() {
     setSelectedId(chatId);
   }, []);
 
+  const closeProfile = useCallback(() => setProfileTarget(null), []);
+  const profileApi = useMemo<ProfilePanelApi>(
+    () => ({
+      openProfile: (userId: string, chatId?: string) => setProfileTarget({ userId, chatId }),
+      closeProfile,
+      activeUserId: profileTarget?.userId ?? null,
+    }),
+    [closeProfile, profileTarget?.userId],
+  );
+
   if (!user) return null;
 
   return (
+    <ProfilePanelContext.Provider value={profileApi}>
     <div className="flex h-full">
       <nav className="hidden w-[76px] shrink-0 flex-col items-center gap-1 border-r border-ink-200 py-4 dark:border-white/10 sm:flex">
         {NAV.map(({ key, label, Icon }) => (
@@ -508,6 +537,7 @@ function Shell() {
               timeFormat={timeFormat}
               onSelect={setSelectedId}
               onNewChat={() => setTab('contacts')}
+              onOpenProfile={(userId, chatId) => profileApi.openProfile(userId, chatId)}
             />
           </aside>
 
@@ -560,7 +590,17 @@ function Shell() {
           </div>
         </div>
       ) : null}
+
+      {profileTarget ? (
+        <ProfilePanel
+          userId={profileTarget.userId}
+          chatId={profileTarget.chatId}
+          onClose={closeProfile}
+          onOpenChat={openChat}
+        />
+      ) : null}
     </div>
+    </ProfilePanelContext.Provider>
   );
 }
 

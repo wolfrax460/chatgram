@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Users, X, Check, Trash2, Shield, ShieldOff, Loader2 } from 'lucide-react';
 import { chatTitle, useSession, type Chat, type User } from '@chatgram/core';
 import { api } from '../lib/api';
+import { useProfilePanel } from '../lib/profilePanel';
 
 /* ------------------------------------------------------------ create modal */
 
@@ -90,6 +91,7 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
 
 function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const profilePanel = useProfilePanel();
   const [error, setError] = useState('');
   const isAdmin = (chat.admins ?? []).includes(meId);
 
@@ -158,19 +160,26 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
           const personIsAdmin = person.isAdmin;
           const isMe = person.isYou;
           return (
-            <div key={person._id} className="flex items-center gap-3 px-4 py-2.5">
-              <div className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[11px] font-bold text-white">
-                {person.displayName.slice(0, 2).toUpperCase()}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">
-                  {person.displayName}
-                  {isMe ? ' (you)' : ''}
-                </p>
-                {personIsAdmin ? (
-                  <p className="text-[11px] font-semibold text-brand-600 dark:text-brand-300">admin</p>
-                ) : null}
-              </div>
+            <div key={person._id} className="flex items-center gap-1 px-2 py-1">
+              <button
+                type="button"
+                onClick={() => profilePanel.openProfile(person._id, chat.id)}
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-ink-100 dark:hover:bg-white/5"
+                title={`Open ${person.displayName}'s profile`}
+              >
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[11px] font-bold text-white">
+                  {person.displayName.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">
+                    {person.displayName}
+                    {isMe ? ' (you)' : ''}
+                  </p>
+                  {personIsAdmin ? (
+                    <p className="text-[11px] font-semibold text-brand-600 dark:text-brand-300">admin</p>
+                  ) : null}
+                </div>
+              </button>
               {iAmAdmin && !isMe ? (
                 <>
                   <button

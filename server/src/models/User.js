@@ -83,7 +83,8 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
-  // Privacy: whether other people may see "online" and "last seen" at all.
+  // Privacy: whether other people may see that this user is online / when they
+  // were last seen (the Flutter client only knows this one).
   showOnlineStatus: {
     type: Boolean,
     default: true
@@ -92,6 +93,35 @@ const userSchema = new mongoose.Schema({
   onlineStatusExceptions: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
+  }],
+  // Profile-field privacy. Additive: every switch defaults to the previous
+  // behaviour (phone/email/about/photo visible), and GET /api/users/:id/profile
+  // omits the field entirely when the viewer may not see it. Phone and email
+  // are additionally limited to contacts.
+  showPhone: { type: Boolean, default: true },
+  showEmail: { type: Boolean, default: true },
+  showAbout: { type: Boolean, default: true },
+  showProfilePhoto: { type: Boolean, default: true },
+  // 'everyone' | 'contacts' — who may add this user to a group.
+  whoCanAddToGroups: {
+    type: String,
+    enum: ['everyone', 'contacts'],
+    default: 'everyone'
+  },
+  // WhatsApp-style read receipts. When false this user still receives messages
+  // but does not publish read receipts to senders.
+  readReceipts: { type: Boolean, default: true },
+  // Users this account has blocked, and chats this account muted.
+  // Muted chats suppress notifications only; messages still arrive.
+  blocked: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  mutedChats: [{
+    chatId: { type: mongoose.Schema.Types.ObjectId, ref: 'Chat' },
+    mutedAt: { type: Date, default: Date.now },
+    // null = forever
+    until: { type: Date, default: null }
   }],
   lastSeen: {
     type: Date,

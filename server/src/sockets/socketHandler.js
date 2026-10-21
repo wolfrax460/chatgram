@@ -13,6 +13,7 @@ const User = require('../models/User');
 const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const realtime = require('../utils/realtime');
+const { blockedBetween } = require('../utils/blocks');
 
 const JWT_SECRET = () => process.env.JWT_SECRET || 'your-secret-key';
 
@@ -20,7 +21,11 @@ async function resolveUserFromToken(token) {
   if (!token) return null;
   const decoded = jwt.verify(token, JWT_SECRET());
   const user = await User.findById(decoded.userId);
-  return user || null;
+  if (!user) return null;
+  // Session generation: a password change / reset / "log out other devices"
+  // invalidates older tokens, including sockets opened with them.
+  if ((Number(decoded.tv) || 0) !== (Number(user.tokenVersion) || 0)) return null;
+  return user;
 }
 
 function publicUser(user) {
@@ -133,6 +138,19 @@ function registerSocketHandlers(io) {
             clientId,
           });
           return;
+        }
+
+        // Blocking applies to the socket path too, not just REST.
+        if (chat.type === 'direct') {
+          const other = chat.participants.find((p) => String(p) !== socket.userId);
+          if (other && (await blockedBetween(socket.userId, other))) {
+            socket.emit('message:error', {
+              message: 'You cannot message this person.',
+              clientId,
+              code: 'BLOCKED',
+            });
+            return;
+          }
         }
 
         if (type === 'text' && (!content || String(content).trim() === '')) {

@@ -1,8 +1,10 @@
 // Message controller
 const Message = require('../models/Message');
 const Chat = require('../models/Chat');
+const User = require('../models/User');
 const mongoose = require('mongoose');
 const realtime = require('../utils/realtime');
+const { blockedBetween } = require('../utils/blocks');
 
 const MESSAGE_TYPES = ['text', 'image', 'video', 'audio', 'file'];
 
@@ -39,6 +41,17 @@ const sendMessage = async (req, res) => {
     }
     if (type !== 'text' && !mediaUrl) {
       return res.status(400).json({ message: `${type} message must have a mediaUrl` });
+    }
+
+    // Blocking: if either side blocked the other, a direct message is refused.
+    if (chat.type === 'direct') {
+      const other = chat.participants.find((id) => String(id) !== String(req.user._id));
+      if (other && (await blockedBetween(req.user._id, other))) {
+        return res.status(403).json({
+          message: 'You cannot message this person.',
+          code: 'BLOCKED',
+        });
+      }
     }
 
     const message = await Message.create({
@@ -192,16 +205,25 @@ const markAsRead = async (req, res) => {
     const { error } = await assertParticipant(message.chatId, req.user._id);
     if (error) return res.status(error.status).json({ message: error.message });
 
+    // Read-receipt privacy: with receipts off, delivery is still recorded but no
+    // `message:read` is published, so the sender never sees the blue ticks.
+    const reader = await User.findById(req.user._id).select('readReceipts');
+    const publishReceipts = reader?.readReceipts !== false;
+
     await Message.updateMany(
       { _id: id, readBy: { $ne: req.user._id } },
-      { $addToSet: { readBy: req.user._id } }
+      publishReceipts
+        ? { $addToSet: { readBy: req.user._id, deliveredTo: req.user._id } }
+        : { $addToSet: { deliveredTo: req.user._id } }
     );
 
-    const payload = { messageId: message._id, chatId: message.chatId, userId: req.user._id };
-    realtime.emitToUser(message.senderId, 'message:read', payload);
-    realtime.emitToChat(message.chatId, 'message:read', payload);
+    if (publishReceipts) {
+      const payload = { messageId: message._id, chatId: message.chatId, userId: req.user._id };
+      realtime.emitToUser(message.senderId, 'message:read', payload);
+      realtime.emitToChat(message.chatId, 'message:read', payload);
+    }
 
-    res.json({ message: 'Marked as read' });
+    res.json({ message: 'Marked as read', readReceipts: publishReceipts });
   } catch (error) {
     console.error('Mark as read error:', error);
     res.status(500).json({ message: 'Server error marking message as read' });
@@ -221,18 +243,25 @@ const markChatAsRead = async (req, res) => {
     const { error } = await assertParticipant(chatId, req.user._id);
     if (error) return res.status(error.status).json({ message: error.message });
 
+    const reader = await User.findById(req.user._id).select('readReceipts');
+    const publishReceipts = reader?.readReceipts !== false;
+
     const result = await Message.updateMany(
       { chatId, senderId: { $ne: req.user._id }, readBy: { $ne: req.user._id } },
-      { $addToSet: { readBy: req.user._id, deliveredTo: req.user._id } }
+      publishReceipts
+        ? { $addToSet: { readBy: req.user._id, deliveredTo: req.user._id } }
+        : { $addToSet: { deliveredTo: req.user._id } }
     );
 
-    realtime.emitToChat(chatId, 'message:read', {
-      chatId,
-      userId: req.user._id,
-      all: true,
-    });
+    if (publishReceipts) {
+      realtime.emitToChat(chatId, 'message:read', {
+        chatId,
+        userId: req.user._id,
+        all: true,
+      });
+    }
 
-    res.json({ message: 'Chat marked as read', modified: result.modifiedCount });
+    res.json({ message: 'Chat marked as read', modified: result.modifiedCount, readReceipts: publishReceipts });
   } catch (error) {
     console.error('Mark chat as read error:', error);
     res.status(500).json({ message: 'Server error marking chat as read' });

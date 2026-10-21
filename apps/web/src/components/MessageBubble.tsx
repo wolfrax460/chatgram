@@ -9,6 +9,8 @@ export interface BubbleActions {
   onReply: (message: Message) => void;
   onDelete: (message: Message, scope: 'me' | 'everyone') => void;
   onReact: (message: Message, emoji: string) => void;
+  /** Open the sender's profile panel (used in groups). */
+  onOpenProfile?: (userId: string) => void;
 }
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -39,7 +41,7 @@ export function MessageBubble({
   const [reactOpen, setReactOpen] = useState(false);
 
   const mine = message.senderId === meId;
-  const senderName = (message as Message & { senderName?: string }).senderName;
+  const senderName = message.sender?.displayName;
 
   const grouped = message.reactions.reduce<Record<string, number>>((acc, reaction) => {
     acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
@@ -146,7 +148,14 @@ export function MessageBubble({
             } ${message.failed ? 'opacity-60' : ''}`}
           >
             {!mine && firstInGroup && senderName ? (
-              <p className="mb-0.5 text-[12px] font-semibold text-brand-600 dark:text-brand-300">{senderName}</p>
+              <button
+                type="button"
+                className="mb-0.5 block text-[12px] font-semibold text-brand-600 hover:underline dark:text-brand-300"
+                onClick={() => actions.onOpenProfile?.(message.senderId)}
+                title={`Open ${senderName}'s profile`}
+              >
+                {senderName}
+              </button>
             ) : null}
 
             <MessageMedia message={message} mine={mine} />
