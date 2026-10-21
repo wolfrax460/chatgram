@@ -645,3 +645,17 @@ The web UI for the members panel / leave button is not built (API only). Admin a
 ### Verified
 Build green. Deployed bundle contains Leave group, Yes leave, /participants, /leave. /, /web/, /web/admin all 200.
 
+
+---
+
+## B1. Status media fit (2026-10-21)
+
+The composer preview used object-cover, which cropped whichever dimension overflowed - that is the crop visible in the reported screenshot. Both preview surfaces now preserve the uploaded aspect ratio.
+
+- Composer preview: wrapped in a dark letterbox (bg-black, grid place-items-center, overflow-hidden) with the image at object-contain, max-h 240px and w-auto max-w-full. Portrait, landscape and square all fit, and the capped height keeps the Post status button visible without scrolling.
+- Viewer: object-contain on a bg-black letterbox at max-h 68vh, w-auto max-w-full, matching the composer sizing.
+- Avatars intentionally keep object-cover (correct for round thumbnails).
+
+### Not done in B
+Video and audio status types, thumbnail generation, duration limits, viewer auto-advance and hold-to-pause, upload progress/cancel/retry, caption for media, and deleting the stored file on expiry. These are still outstanding.
+

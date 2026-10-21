@@ -144,7 +144,13 @@ function StatusComposer({ onClose }: { onClose: () => void }) {
 
         {preview ? (
           <div className="relative mt-3">
-            <img src={preview} alt="Status preview" className="max-h-56 w-full rounded-xl object-cover" />
+            <div className="grid max-h-[240px] place-items-center overflow-hidden rounded-xl bg-black">
+              <img
+                src={preview}
+                alt="Status preview"
+                className="max-h-[240px] w-auto max-w-full object-contain"
+              />
+            </div>
             <button
               type="button"
               className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-black/60 text-white"
@@ -266,7 +272,11 @@ function StatusViewer({
         <button type="button" className="absolute right-0 top-0 h-1/3 w-1/3" onClick={next} aria-label="Next" />
         <div className="max-h-full w-full max-w-lg text-center">
           {item.mediaUrl ? (
-            <img src={item.mediaUrl} alt="" className="mx-auto max-h-[62vh] rounded-xl object-contain" />
+            <img
+              src={item.mediaUrl}
+              alt=""
+              className="mx-auto max-h-[68vh] w-auto max-w-full rounded-xl bg-black object-contain"
+            />
           ) : null}
           {item.text ? (
             <p className="mt-4 whitespace-pre-wrap break-words text-lg font-medium text-white">{item.text}</p>
