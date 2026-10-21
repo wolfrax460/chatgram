@@ -11,6 +11,7 @@ const {
   uploadMedia,
   deleteMessage,
   reactToMessage,
+  getMessageReaders,
 } = require('../controllers/messageController');
 const upload = require('../utils/upload');
 
@@ -31,6 +32,9 @@ router.post('/chat/:chatId/read', markChatAsRead);
 
 // Reactions (additive)
 router.post('/:id/reactions', reactToMessage);
+
+// "Seen by": the sender asks who read one of their messages
+router.get('/:id/readers', getMessageReaders);
 
 // Delete: ?scope=me (default) or ?scope=everyone (sender only)
 router.delete('/:id', deleteMessage);

@@ -14,6 +14,7 @@ const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const realtime = require('../utils/realtime');
 const { blockedBetween } = require('../utils/blocks');
+const groupSystem = require('../utils/groupSystem');
 
 const JWT_SECRET = () => process.env.JWT_SECRET || 'your-secret-key';
 
@@ -158,6 +159,21 @@ function registerSocketHandlers(io) {
           return;
         }
 
+        // Group setting: "only admins can send messages".
+        if (!groupSystem.canSendMessages(chat, socket.userId)) {
+          socket.emit('message:error', {
+            message: 'Only group admins can send messages in this group.',
+            clientId,
+            code: 'GROUP_SEND_FORBIDDEN',
+          });
+          return;
+        }
+
+        const mentioned =
+          chat.type === 'group' && type === 'text'
+            ? await groupSystem.mentionedUserIds(content, chat.participants, socket.userId)
+            : [];
+
         const message = await Message.create({
           chatId,
           senderId: socket.userId,
@@ -168,6 +184,7 @@ function registerSocketHandlers(io) {
           // The sender implicitly has the message.
           deliveredTo: [socket.userId],
           readBy: [socket.userId],
+          mentionUserIds: mentioned,
         });
 
         await Chat.findByIdAndUpdate(chatId, {
@@ -195,6 +212,15 @@ function registerSocketHandlers(io) {
         .catch(() => {});
 
       io.to(realtime.roomForChat(chatId)).emit('message:new', payload);
+
+      // @mention notifications for group members.
+      if (mentioned.length > 0) {
+        try {
+          groupSystem.emitMentions(payload, chat, mentioned);
+        } catch (mentionError) {
+          console.warn('Mention notification failed:', mentionError.message);
+        }
+      }
       } catch (error) {
         console.error('Message send error:', error);
         socket.emit('message:error', {

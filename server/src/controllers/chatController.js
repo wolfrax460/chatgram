@@ -5,6 +5,8 @@ const Message = require('../models/Message');
 const mongoose = require('mongoose');
 const realtime = require('../utils/realtime');
 const { blockedBetween } = require('../utils/blocks');
+const groupSystem = require('../utils/groupSystem');
+const crypto = require('crypto');
 
 const PARTICIPANT_FIELDS = '_id displayName avatarUrl about isOnline lastSeen phone email';
 
@@ -81,6 +83,9 @@ const createChat = async (req, res) => {
     if (!groupName) {
       return res.status(400).json({ message: 'Group name is required for group chat' });
     }
+    if (groupName.length > 100) {
+      return res.status(400).json({ message: 'Group name is too long (max 100 characters)', code: 'GROUP_NAME_TOO_LONG' });
+    }
 
     const rawParticipants =
       req.body.participantIds || req.body.participants || [];
@@ -122,6 +127,8 @@ const createChat = async (req, res) => {
     const chat = await Chat.create({
       type: 'group',
       groupName,
+      groupDescription: String(req.body.groupDescription || req.body.description || '').slice(0, 1024),
+      groupCreatedBy: req.user._id,
       participants: [req.user._id, ...ids],
       groupAdmins: [req.user._id],
     });
@@ -181,9 +188,9 @@ const getGroups = async (req, res) => {
   }
 };
 
-// @desc    Rename a group / change its avatar (admins only)
+// @desc    Rename a group / change its avatar, description or permissions
 // @route   PATCH /api/chats/:id
-// @access  Private (group admin)
+// @access  Private (per group settings: anyone or admins)
 const updateGroup = async (req, res) => {
   try {
     const { id } = req.params;
@@ -196,27 +203,73 @@ const updateGroup = async (req, res) => {
     if (chat.type !== 'group') {
       return res.status(400).json({ message: 'Only groups can be edited' });
     }
-    if (!chat.groupAdmins.some((a) => a.equals(req.user._id))) {
-      return res.status(403).json({ message: 'Only group admins can edit the group' });
+    if (!groupSystem.canEditInfo(chat, req.user._id)) {
+      return res.status(403).json({
+        message: 'Only group admins can edit this group. Ask an admin to change it.',
+        code: 'GROUP_EDIT_FORBIDDEN',
+      });
     }
 
-    const { groupName, groupAvatar } = req.body;
+    const body = req.body || {};
+    const changes = [];
+    const groupName = body.groupName;
+    const groupDescription = body.groupDescription ?? body.description;
+    const groupAvatar = body.groupAvatar;
 
     if (groupName !== undefined) {
       const name = String(groupName).trim();
       if (!name) return res.status(400).json({ message: 'Group name cannot be empty' });
-      chat.groupName = name;
+      if (name.length > 100) return res.status(400).json({ message: 'Group name is too long (max 100 characters)' });
+      if (name !== chat.groupName) {
+        chat.groupName = name;
+        changes.push(`changed the group name to "${name}"`);
+      }
     }
-    if (groupAvatar !== undefined) chat.groupAvatar = String(groupAvatar);
+    if (groupAvatar !== undefined) {
+      chat.groupAvatar = String(groupAvatar);
+      changes.push('changed the group photo');
+    }
+    if (groupDescription !== undefined) {
+      const description = String(groupDescription).slice(0, 1024);
+      if (description !== chat.groupDescription) {
+        chat.groupDescription = description;
+        changes.push(description ? 'changed the group description' : 'removed the group description');
+      }
+    }
+
+    let settingsChanged = false;
+    if (body.groupSettings && typeof body.groupSettings === 'object') {
+      if (!groupSystem.isAdmin(chat, req.user._id)) {
+        return res.status(403).json({
+          message: 'Only group admins can change group settings.',
+          code: 'GROUP_SETTINGS_FORBIDDEN',
+        });
+      }
+      const next = { ...groupSystem.settingsOf(chat) };
+      for (const key of ['whoCanEditInfo', 'whoCanSendMessages', 'whoCanAddMembers']) {
+        if (body.groupSettings[key] !== undefined) {
+          next[key] = body.groupSettings[key] === 'admins' ? 'admins' : 'all';
+          settingsChanged = true;
+        }
+      }
+      chat.groupSettings = next;
+      if (settingsChanged) changes.push('changed the group permissions');
+    }
+
+    if (!changes.length && !settingsChanged) {
+      const unchanged = await Chat.findById(chat._id).populate('participants', PARTICIPANT_FIELDS);
+      return res.json(unchanged);
+    }
 
     await chat.save();
 
-    const populated = await Chat.findById(chat._id).populate('participants', PARTICIPANT_FIELDS);
-    realtime.joinUsersToChat(chat._id, populated.participants.map((p) => p._id.toString()));
-    for (const participant of populated.participants) {
-      realtime.emitToUser(participant._id, 'chat:updated', populated);
+    const me = await User.findById(req.user._id).select('displayName');
+    if (changes.length) {
+      await groupSystem.postSystemMessage(chat, `${me?.displayName || 'A member'} ${changes.join(', ')}`);
     }
 
+    const populated = await groupSystem.broadcastChatUpdate(chat._id);
+    groupSystem.broadcastMemberList(chat._id);
     res.json(populated);
   } catch (error) {
     console.error('Update group error:', error);
@@ -254,17 +307,29 @@ const setGroupAdmin = async (req, res) => {
       // Never leave a group with no admin.
       const remaining = chat.groupAdmins.filter((a) => !a.equals(userId));
       if (remaining.length === 0) {
-        return res.status(400).json({ message: 'A group needs at least one admin' });
+        return res.status(400).json({
+          message: 'A group needs at least one admin. Promote somebody else first.',
+          code: 'LAST_ADMIN',
+        });
       }
       chat.groupAdmins = remaining;
     }
 
     await chat.save();
-    const populated = await Chat.findById(chat._id).populate('participants', PARTICIPANT_FIELDS);
 
-    for (const participant of populated.participants) {
-      realtime.emitToUser(participant._id, 'chat:updated', populated);
-    }
+    const target = await User.findById(userId).select('displayName');
+    const actor = await User.findById(req.user._id).select('displayName');
+    const targetName = target?.displayName || 'A member';
+    await groupSystem.postSystemMessage(
+      chat,
+      isAdmin
+        ? `${targetName} is now an admin`
+        : `${targetName} is no longer an admin`,
+    );
+    void actor;
+
+    const populated = await groupSystem.broadcastChatUpdate(chat._id);
+    groupSystem.broadcastMemberList(chat._id);
 
     res.json(populated);
   } catch (error) {
@@ -367,8 +432,11 @@ const addParticipants = async (req, res) => {
     if (chat.type !== 'group') {
       return res.status(400).json({ message: 'Can only add members to a group chat' });
     }
-    if (!chat.groupAdmins.some((a) => a.equals(req.user._id))) {
-      return res.status(403).json({ message: 'Only group admins can add members' });
+    if (!chat.groupAdmins.some((a) => a.equals(req.user._id)) && !groupSystem.canAddMembers(chat, req.user._id)) {
+      return res.status(403).json({
+        message: 'Only group admins can add members to this group.',
+        code: 'GROUP_ADD_FORBIDDEN',
+      });
     }
 
     const ids = participantIds
@@ -411,11 +479,16 @@ const addParticipants = async (req, res) => {
     chat.participants.push(...addable);
     await chat.save();
 
-    const populated = await Chat.findById(chat._id).populate('participants', PARTICIPANT_FIELDS);
+    const actor = await User.findById(req.user._id).select('displayName');
+    const added = await User.find({ _id: { $in: addable } }).select('displayName');
+    await groupSystem.postSystemMessage(
+      chat,
+      `${actor?.displayName || 'A member'} added ${added.map((u) => u.displayName).join(', ')}`,
+    );
+
     realtime.joinUsersToChat(chat._id, addable);
-    for (const id of [...existing, ...addable]) {
-      realtime.emitToUser(id, 'chat:updated', populated);
-    }
+    const populated = await groupSystem.broadcastChatUpdate(chat._id);
+    groupSystem.broadcastMemberList(chat._id);
 
     res.json(populated);
   } catch (error) {
@@ -452,8 +525,18 @@ const removeParticipant = async (req, res) => {
     }
 
     await chat.save();
-    const populated = await Chat.findById(chat._id).populate('participants', PARTICIPANT_FIELDS);
+
+    const removedUser = await User.findById(userId).select('displayName');
+    const actor = await User.findById(req.user._id).select('displayName');
+    const actorName = isSelf ? (removedUser?.displayName || 'A member') : (actor?.displayName || 'An admin');
+    await groupSystem.postSystemMessage(
+      chat,
+      isSelf ? `${actorName} left` : `${actorName} removed ${removedUser?.displayName || 'a member'}`,
+    );
+
     realtime.emitToUser(userId, 'chat:removed', { chatId: id });
+    const populated = await groupSystem.broadcastChatUpdate(chat._id);
+    groupSystem.broadcastMemberList(chat._id);
 
     res.json(populated);
   } catch (error) {
@@ -487,6 +570,8 @@ const getGroupMembers = async (req, res) => {
       displayName: p.displayName,
       avatarUrl: p.avatarUrl,
       about: p.about,
+      // ObjectId contains a creation timestamp: a good proxy for "joined".
+      joinedAt: p._id && typeof p._id.getTimestamp === 'function' ? p._id.getTimestamp() : null,
       isAdmin: adminIds.includes(String(p._id)),
       isYou: String(p._id) === me,
       // Respect the privacy setting: hide presence when the member opted out.
@@ -494,7 +579,27 @@ const getGroupMembers = async (req, res) => {
       lastSeen: p.showOnlineStatus === false ? null : p.lastSeen,
     }));
 
-    return res.json({ chatId: chat._id, members, memberCount: members.length });
+    const creator = chat.groupCreatedBy
+      ? await User.findById(chat.groupCreatedBy).select('_id displayName').lean()
+      : null;
+
+    return res.json({
+      chatId: chat._id,
+      members,
+      memberCount: members.length,
+      group: {
+        id: String(chat._id),
+        name: chat.groupName || 'Group',
+        description: chat.groupDescription || '',
+        avatarUrl: chat.groupAvatar || '',
+        createdBy: creator ? { id: String(creator._id), displayName: creator.displayName } : null,
+        createdAt: chat.createdAt || null,
+        settings: groupSystem.settingsOf(chat),
+        inviteEnabled: chat.inviteEnabled === true,
+        inviteToken: groupSystem.isAdmin(chat, me) && chat.inviteEnabled ? chat.inviteToken : null,
+        pinnedMessageId: chat.pinnedMessageId ? String(chat.pinnedMessageId) : null,
+      },
+    });
   } catch (error) {
     console.error('Get group members error:', error.message);
     return res.status(500).json({ message: 'Could not load the members' });
@@ -550,22 +655,12 @@ const leaveGroup = async (req, res) => {
 
     await chat.save();
 
-    // System message so the others see what happened.
+    // System message so the others see what happened, a live member-list
+    // refresh, and a chat:removed to the leaver.
     try {
-      const message = await Message.create({
-        chatId: chat._id,
-        senderId: me,
-        type: 'text',
-        content: systemNote,
-        isSystem: true,
-        sentAt: new Date(),
-      });
-      const populated = await Message.findById(message._id).populate('senderId', '_id displayName avatarUrl');
-      const realtime = require('../utils/realtime');
-      const io = realtime.getIo();
-      io?.to(realtime.roomForChat(chat._id)).emit('message:new', populated);
-      // Live member-list refresh for everyone still in the group.
-      io?.to(realtime.roomForChat(chat._id)).emit('group:members', { chatId: chat._id, action: 'leave', userId: me });
+      await groupSystem.postSystemMessage(chat, systemNote, { senderId: me });
+      groupSystem.broadcastMemberList(chat._id);
+      groupSystem.broadcastChatUpdate(chat._id).catch(() => {});
       realtime.emitToUser(me, 'chat:removed', { chatId: chat._id });
     } catch (error) {
       console.warn('Leave-group notification failed:', error.message);
@@ -575,6 +670,263 @@ const leaveGroup = async (req, res) => {
   } catch (error) {
     console.error('Leave group error:', error.message);
     return res.status(500).json({ message: 'Could not leave the group' });
+  }
+};
+
+/* ------------------------------------------------------------ invite links */
+
+const MAX_GROUP_MEMBERS = 256;
+
+function invitePath(token) {
+  return `/join/${token}`;
+}
+
+// @desc    Read the group's invite link (admins only)
+// @route   GET /api/chats/:id/invite
+// @access  Private (group admin)
+const getInvite = async (req, res) => {
+  try {
+    const chat = await Chat.findById(req.params.id);
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    if (chat.type !== 'group') return res.status(400).json({ message: 'Only groups have invite links' });
+    if (!groupSystem.isAdmin(chat, req.user._id)) {
+      return res.status(403).json({ message: 'Only group admins can manage the invite link' });
+    }
+    return res.json({
+      chatId: String(chat._id),
+      inviteEnabled: chat.inviteEnabled === true,
+      token: chat.inviteEnabled ? chat.inviteToken : null,
+      path: chat.inviteEnabled && chat.inviteToken ? invitePath(chat.inviteToken) : null,
+    });
+  } catch (error) {
+    console.error('Get invite error:', error);
+    return res.status(500).json({ message: 'Could not read the invite link' });
+  }
+};
+
+// @desc    Create or reset the group invite link (admins only)
+// @route   POST /api/chats/:id/invite
+// @access  Private (group admin)
+const createInvite = async (req, res) => {
+  try {
+    const chat = await Chat.findById(req.params.id);
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    if (chat.type !== 'group') return res.status(400).json({ message: 'Only groups have invite links' });
+    if (!groupSystem.isAdmin(chat, req.user._id)) {
+      return res.status(403).json({ message: 'Only group admins can manage the invite link' });
+    }
+
+    chat.inviteToken = crypto.randomBytes(18).toString('base64url');
+    chat.inviteEnabled = true;
+    await chat.save();
+
+    return res.json({
+      message: chat.inviteToken ? 'Invite link ready' : 'Invite link created',
+      chatId: String(chat._id),
+      inviteEnabled: true,
+      token: chat.inviteToken,
+      path: invitePath(chat.inviteToken),
+    });
+  } catch (error) {
+    console.error('Create invite error:', error);
+    return res.status(500).json({ message: 'Could not create the invite link' });
+  }
+};
+
+// @desc    Revoke the invite link (admins only)
+// @route   DELETE /api/chats/:id/invite
+// @access  Private (group admin)
+const revokeInvite = async (req, res) => {
+  try {
+    const chat = await Chat.findById(req.params.id);
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    if (!groupSystem.isAdmin(chat, req.user._id)) {
+      return res.status(403).json({ message: 'Only group admins can manage the invite link' });
+    }
+    chat.inviteToken = null;
+    chat.inviteEnabled = false;
+    await chat.save();
+    return res.json({ message: 'Invite link revoked', chatId: String(chat._id), inviteEnabled: false, token: null });
+  } catch (error) {
+    console.error('Revoke invite error:', error);
+    return res.status(500).json({ message: 'Could not revoke the invite link' });
+  }
+};
+
+// @desc    Preview a group from its invite link
+// @route   GET /api/chats/invite/:token
+// @access  Private
+const previewInvite = async (req, res) => {
+  try {
+    const token = String(req.params.token || '');
+    const chat = await Chat.findOne({ inviteToken: token, inviteEnabled: true });
+    if (!chat) {
+      return res.status(404).json({ message: 'This invite link is not valid or was revoked.', code: 'INVITE_INVALID' });
+    }
+    const alreadyMember = chat.participants.some((p) => String(p) === String(req.user._id));
+    return res.json({
+      chatId: String(chat._id),
+      name: chat.groupName || 'Group',
+      description: chat.groupDescription || '',
+      avatarUrl: chat.groupAvatar || '',
+      memberCount: chat.participants.length,
+      alreadyMember,
+      full: chat.participants.length >= MAX_GROUP_MEMBERS,
+    });
+  } catch (error) {
+    console.error('Preview invite error:', error);
+    return res.status(500).json({ message: 'Could not read the invite link' });
+  }
+};
+
+// @desc    Join a group via its invite link
+// @route   POST /api/chats/invite/:token/join
+// @access  Private
+const joinViaInvite = async (req, res) => {
+  try {
+    const token = String(req.params.token || '');
+    const chat = await Chat.findOne({ inviteToken: token, inviteEnabled: true });
+    if (!chat) {
+      return res.status(404).json({ message: 'This invite link is not valid or was revoked.', code: 'INVITE_INVALID' });
+    }
+    if (chat.participants.some((p) => String(p) === String(req.user._id))) {
+      const existing = await Chat.findById(chat._id).populate('participants', PARTICIPANT_FIELDS);
+      return res.json({ message: 'You are already a member', chat: existing, alreadyMember: true });
+    }
+    if (chat.participants.length >= MAX_GROUP_MEMBERS) {
+      return res.status(403).json({
+        message: `This group is full (maximum ${MAX_GROUP_MEMBERS} members).`,
+        code: 'GROUP_FULL',
+      });
+    }
+
+    chat.participants.push(req.user._id);
+    await chat.save();
+
+    const joiner = await User.findById(req.user._id).select('displayName');
+    await groupSystem.postSystemMessage(chat, `${joiner?.displayName || 'A member'} joined via the invite link`);
+
+    realtime.joinUsersToChat(chat._id, [String(req.user._id)]);
+    const populated = await groupSystem.broadcastChatUpdate(chat._id);
+    groupSystem.broadcastMemberList(chat._id);
+
+    return res.json({ message: 'Joined the group', chat: populated, alreadyMember: false });
+  } catch (error) {
+    console.error('Join via invite error:', error);
+    return res.status(500).json({ message: 'Could not join the group' });
+  }
+};
+
+/* ------------------------------------------------------------- pinned + media */
+
+// @desc    Pin a message in a group
+// @route   POST /api/chats/:id/pin
+// @access  Private (member)
+const pinMessage = async (req, res) => {
+  try {
+    const chat = await Chat.findById(req.params.id);
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    if (chat.type !== 'group') return res.status(400).json({ message: 'Only groups can pin messages' });
+    if (!chat.participants.some((p) => String(p) === String(req.user._id))) {
+      return res.status(403).json({ message: 'You are not a member of this group' });
+    }
+    const { messageId } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(messageId)) {
+      return res.status(400).json({ message: 'Invalid message ID' });
+    }
+    const message = await Message.findOne({ _id: messageId, chatId: chat._id, isDeleted: { $ne: true } });
+    if (!message) return res.status(404).json({ message: 'Message not found in this group' });
+
+    chat.pinnedMessageId = message._id;
+    await chat.save();
+    await groupSystem.broadcastChatUpdate(chat._id);
+    return res.json({ chatId: String(chat._id), pinnedMessageId: String(message._id), message });
+  } catch (error) {
+    console.error('Pin message error:', error);
+    return res.status(500).json({ message: 'Could not pin the message' });
+  }
+};
+
+// @desc    Unpin the group's pinned message
+// @route   DELETE /api/chats/:id/pin
+// @access  Private (member)
+const unpinMessage = async (req, res) => {
+  try {
+    const chat = await Chat.findById(req.params.id);
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    if (!chat.participants.some((p) => String(p) === String(req.user._id))) {
+      return res.status(403).json({ message: 'You are not a member of this group' });
+    }
+    chat.pinnedMessageId = null;
+    await chat.save();
+    await groupSystem.broadcastChatUpdate(chat._id);
+    return res.json({ chatId: String(chat._id), pinnedMessageId: null });
+  } catch (error) {
+    console.error('Unpin message error:', error);
+    return res.status(500).json({ message: 'Could not unpin the message' });
+  }
+};
+
+// @desc    Shared media / files / links in this chat
+// @route   GET /api/chats/:id/media
+// @access  Private (member)
+const getChatMedia = async (req, res) => {
+  try {
+    const chat = await Chat.findById(req.params.id).select('participants type');
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    if (!chat.participants.some((p) => String(p) === String(req.user._id))) {
+      return res.status(403).json({ message: 'You are not a member of this chat' });
+    }
+
+    const media = await Message.find({
+      chatId: chat._id,
+      isDeleted: { $ne: true },
+      mediaUrl: { $ne: null },
+      type: { $in: ['image', 'video', 'audio', 'file'] },
+    })
+      .sort({ sentAt: -1 })
+      .limit(100)
+      .select('_id type mediaUrl content sentAt senderId')
+      .populate('senderId', '_id displayName')
+      .lean();
+
+    const linkRows = await Message.find({
+      chatId: chat._id,
+      isDeleted: { $ne: true },
+      type: 'text',
+      content: { $regex: 'https?://' },
+    })
+      .sort({ sentAt: -1 })
+      .limit(100)
+      .select('_id content sentAt senderId')
+      .lean();
+
+    const links = linkRows
+      .flatMap((row) => {
+        const urls = String(row.content || '').match(/https?:\/\/[^\s<>"']+/gi) || [];
+        return urls.map((url) => ({
+          messageId: String(row._id),
+          url,
+          at: row.sentAt,
+        }));
+      })
+      .slice(0, 60);
+
+    return res.json({
+      chatId: String(chat._id),
+      media: media.map((row) => ({
+        messageId: String(row._id),
+        type: row.type,
+        url: row.mediaUrl,
+        name: row.content || '',
+        at: row.sentAt,
+        sender: row.senderId ? { id: String(row.senderId._id), displayName: row.senderId.displayName } : null,
+      })),
+      links,
+    });
+  } catch (error) {
+    console.error('Get chat media error:', error);
+    return res.status(500).json({ message: 'Could not load shared media' });
   }
 };
 
@@ -589,4 +941,13 @@ module.exports = {
   removeParticipant,
   getGroupMembers,
   leaveGroup,
+  getInvite,
+  createInvite,
+  revokeInvite,
+  previewInvite,
+  joinViaInvite,
+  pinMessage,
+  unpinMessage,
+  getChatMedia,
+  MAX_GROUP_MEMBERS,
 };

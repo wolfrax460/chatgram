@@ -14,7 +14,8 @@ const messageSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['text', 'image', 'video', 'audio', 'file'],
+    // 'system' rows are created by the server for group events ("X left").
+    enum: ['text', 'image', 'video', 'audio', 'file', 'system'],
     default: 'text'
   },
   content: {
@@ -53,7 +54,12 @@ const messageSchema = new mongoose.Schema({
   isDeleted: {
     type: Boolean,
     default: false
-  }
+  },
+  // Users mentioned with @displayName in a group message (for notifications).
+  mentionUserIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }]
 }, {
   timestamps: true
 });

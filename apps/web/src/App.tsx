@@ -27,6 +27,7 @@ import SettingsPage from './pages/Settings';
 import Auth from './pages/Auth';
 import SupportWidget from './components/SupportWidget';
 import Admin from './pages/Admin';
+import JoinGroup from './pages/JoinGroup';
 import { ProfilePanel } from './components/ProfilePanel';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, sameDay, statusOf } from './lib/ui';
@@ -255,6 +256,37 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
     else realtime.typingStop(chat.id);
   }
 
+  // ---- group extras: pinned message, seen-by ---------------------------------
+  const [readersFor, setReadersFor] = useState<Message | null>(null);
+  const readersQuery = useQuery({
+    queryKey: ['readers', readersFor?.id],
+    queryFn: () => api.messageReaders(readersFor?.id ?? ''),
+    enabled: Boolean(readersFor),
+    retry: false,
+  });
+
+  const pinnedMessage = list.find((message) => message.id === chat.pinnedMessageId);
+
+  async function pinToGroup(message: Message) {
+    try {
+      await api.pinMessage(chat.id, message.id);
+      void queryClient.invalidateQueries({ queryKey: ['chats'] });
+      setNotice('Message pinned to this group.');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not pin the message');
+    }
+  }
+
+  async function unpinFromGroup() {
+    try {
+      await api.unpinMessage(chat.id);
+      void queryClient.invalidateQueries({ queryKey: ['chats'] });
+      setNotice('Pinned message removed.');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not unpin the message');
+    }
+  }
+
   return (
     <section className="flex min-w-0 flex-1 flex-col">
       <ChatHeader
@@ -297,6 +329,22 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
         }}
         onBack={onBack}
       />
+
+      {chat.type === 'group' && chat.pinnedMessageId ? (
+        <div className="flex items-center gap-2 border-b border-ink-200 bg-brand-600/5 px-4 py-2 dark:border-white/10 dark:bg-brand-600/10">
+          <span className="rounded bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">Pinned</span>
+          <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-700 dark:text-ink-200" data-testid="pinned-message">
+            {pinnedMessage?.content || (pinnedMessage ? pinnedMessage.type : 'Pinned message')}
+          </span>
+          <button
+            type="button"
+            className="text-[12px] font-semibold text-ink-500 hover:text-rose-500 dark:text-ink-300"
+            onClick={() => void unpinFromGroup()}
+          >
+            Unpin
+          </button>
+        </div>
+      ) : null}
 
       {ticket ? (
         <div className="flex flex-wrap items-center gap-2 border-b border-ink-200 bg-amber-50 px-4 py-2 text-[12px] dark:border-white/10 dark:bg-amber-500/10">
@@ -385,6 +433,9 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
                     onDelete: removeMessage,
                     onReact: reactTo,
                     onOpenProfile: (userId) => profilePanel.openProfile(userId, chat.id),
+                    onPin: chat.type === 'group' ? (message) => void pinToGroup(message) : undefined,
+                    onSeenBy:
+                      message.senderId === meId ? (message) => setReadersFor(message) : undefined,
                   }}
                 />
               </div>
@@ -419,6 +470,45 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
           onDismissNotice={() => setNotice(null)}
         />
       </div>
+
+      {readersFor ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={() => setReadersFor(null)}>
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-ink-800"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-label="Who has seen this message"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="font-bold">Seen by</h3>
+              <button type="button" className="btn-ghost !px-2" onClick={() => setReadersFor(null)} aria-label="Close">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {readersQuery.isLoading ? <p className="text-sm text-ink-500">Loading…</p> : null}
+            {readersQuery.isError ? (
+              <p className="text-sm text-rose-600 dark:text-rose-400">Could not load the list.</p>
+            ) : null}
+            {readersQuery.data && readersQuery.data.readers.length === 0 ? (
+              <p className="text-sm text-ink-500 dark:text-ink-300">Nobody has seen this yet.</p>
+            ) : null}
+            <ul className="max-h-64 overflow-y-auto">
+              {(readersQuery.data?.readers ?? []).map((reader) => (
+                <li key={reader.id} className="flex items-center gap-2 py-1.5">
+                  <span className="grid h-8 w-8 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[10px] font-bold text-white">
+                    {reader.avatarUrl ? (
+                      <img src={reader.avatarUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      reader.displayName.slice(0, 2).toUpperCase()
+                    )}
+                  </span>
+                  <span className="truncate text-sm">{reader.displayName}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -448,6 +538,15 @@ function Shell() {
   const [profileTarget, setProfileTarget] = useState<{ userId: string; chatId?: string } | null>(null);
 
   useRealtimeBridge();
+
+  // A group created / joined just before a reload asks to be opened.
+  useEffect(() => {
+    const pending = window.localStorage.getItem('chatgram.pendingChat');
+    if (!pending) return;
+    window.localStorage.removeItem('chatgram.pendingChat');
+    setTab('chats');
+    setSelectedId(pending);
+  }, []);
 
   const chats = useQuery({ queryKey: ['chats'], queryFn: () => api.chats() });
   const selected = useMemo(
@@ -636,6 +735,18 @@ export default function App() {
   // Tiny path route: /web/admin opens the support control dashboard.
   if (typeof window !== 'undefined' && /\/admin\/?$/.test(window.location.pathname)) {
     return <Admin />;
+  }
+
+  // Group invite links: /web/join/<token>
+  const joinMatch =
+    typeof window !== 'undefined' ? window.location.pathname.match(/\/join\/([^/]+)\/?$/) : null;
+  if (joinMatch && joinMatch[1]) {
+    return (
+      <>
+        <JoinGroup token={decodeURIComponent(joinMatch[1])} />
+        <SupportWidget />
+      </>
+    );
   }
 
   return (

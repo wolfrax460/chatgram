@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Reply, Copy, Trash2, MoreVertical, Smile } from 'lucide-react';
+import { Reply, Copy, Trash2, MoreVertical, Smile, Pin, Eye } from 'lucide-react';
 import type { Message, MessageStatus } from '@chatgram/core';
 import { MessageMedia } from './MessageMedia';
 import { MessageTicks } from './MessageTicks';
@@ -11,6 +11,10 @@ export interface BubbleActions {
   onReact: (message: Message, emoji: string) => void;
   /** Open the sender's profile panel (used in groups). */
   onOpenProfile?: (userId: string) => void;
+  /** Pin this message in a group. */
+  onPin?: (message: Message) => void;
+  /** Show who has seen one of my messages. */
+  onSeenBy?: (message: Message) => void;
 }
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -61,6 +65,32 @@ export function MessageBubble({
 
   const hoverBtn =
     'grid h-7 w-7 place-items-center rounded-full text-ink-500 hover:bg-ink-200/60 dark:text-ink-300 dark:hover:bg-white/10';
+
+  // Group events ("Alice left", "Bob is now an admin") are rendered as a
+  // centred pill, never as a normal bubble.
+  if (message.type === 'system') {
+    return (
+      <div className="my-2 flex justify-center" data-testid="system-message">
+        <span className="max-w-[85%] rounded-full bg-ink-200/70 px-3 py-1 text-center text-[11.5px] font-medium text-ink-700 dark:bg-white/10 dark:text-ink-200">
+          {message.content}
+        </span>
+      </div>
+    );
+  }
+
+  /** Highlight @mentions in the message text. */
+  function renderContent(text: string) {
+    const parts = text.split(/(@[\w.\-]+)/g);
+    return parts.map((part, index) =>
+      /^@[\w.\-]+$/.test(part) ? (
+        <span key={index} className={`font-semibold ${mine ? 'text-white underline' : 'text-brand-600 dark:text-brand-300'}`}>
+          {part}
+        </span>
+      ) : (
+        <span key={index}>{part}</span>
+      ),
+    );
+  }
 
   return (
     <div
@@ -134,6 +164,30 @@ export function MessageBubble({
                 <Trash2 className="h-4 w-4" /> Delete for everyone
               </button>
             ) : null}
+            {actions.onSeenBy ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10"
+                onClick={() => {
+                  actions.onSeenBy?.(message);
+                  setMenuOpen(false);
+                }}
+              >
+                <Eye className="h-4 w-4" /> Who has seen this
+              </button>
+            ) : null}
+            {actions.onPin ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10"
+                onClick={() => {
+                  actions.onPin?.(message);
+                  setMenuOpen(false);
+                }}
+              >
+                <Pin className="h-4 w-4" /> Pin message
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -161,7 +215,7 @@ export function MessageBubble({
             <MessageMedia message={message} mine={mine} />
 
             {message.content && message.type !== 'file' ? (
-              <span className="whitespace-pre-wrap break-words">{message.content}</span>
+              <span className="whitespace-pre-wrap break-words">{renderContent(message.content)}</span>
             ) : null}
 
             <span

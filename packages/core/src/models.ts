@@ -6,7 +6,8 @@
  * and `senderId` may be either a string or a populated user object.
  */
 
-export type MessageType = 'text' | 'image' | 'video' | 'audio' | 'file';
+// 'system' rows are created by the server for group events ("Alice left").
+export type MessageType = 'text' | 'image' | 'video' | 'audio' | 'file' | 'system';
 
 /** Delivery state from the current user's perspective. */
 export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
@@ -58,6 +59,16 @@ export interface Chat {
   lastMessage?: Message;
   unreadCount?: number;
   updatedAt?: string;
+  /** Group description + metadata (additive). */
+  description?: string;
+  createdBy?: string;
+  settings?: {
+    whoCanEditInfo: 'all' | 'admins';
+    whoCanSendMessages: 'all' | 'admins';
+    whoCanAddMembers: 'all' | 'admins';
+  };
+  inviteEnabled?: boolean;
+  pinnedMessageId?: string;
 }
 
 export type StatusMediaType = 'image' | 'video' | 'audio';
@@ -155,6 +166,19 @@ export function chatFromJson(json: unknown): Chat {
     lastMessage: j.lastMessage ? messageFromJson(j.lastMessage) : undefined,
     unreadCount: typeof j.unreadCount === 'number' ? j.unreadCount : 0,
     updatedAt: j.updatedAt ? String(j.updatedAt) : undefined,
+    description: j.groupDescription ? String(j.groupDescription) : undefined,
+    createdBy: j.groupCreatedBy ? idOf(j.groupCreatedBy) : undefined,
+    settings: (() => {
+      const raw = j.groupSettings as Record<string, unknown> | undefined;
+      if (!raw) return undefined;
+      return {
+        whoCanEditInfo: raw.whoCanEditInfo === 'admins' ? ('admins' as const) : ('all' as const),
+        whoCanSendMessages: raw.whoCanSendMessages === 'admins' ? ('admins' as const) : ('all' as const),
+        whoCanAddMembers: raw.whoCanAddMembers === 'admins' ? ('admins' as const) : ('all' as const),
+      };
+    })(),
+    inviteEnabled: j.inviteEnabled === true,
+    pinnedMessageId: j.pinnedMessageId ? idOf(j.pinnedMessageId) : undefined,
   };
 }
 

@@ -550,7 +550,20 @@ export class ApiClient {
         isYou: boolean;
         isOnline?: boolean;
         lastSeen?: string | null;
+        joinedAt?: string | null;
       }[];
+      group?: {
+        id: string;
+        name: string;
+        description: string;
+        avatarUrl: string;
+        createdBy: { id: string; displayName: string } | null;
+        createdAt: string | null;
+        settings: { whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins' };
+        inviteEnabled: boolean;
+        inviteToken: string | null;
+        pinnedMessageId: string | null;
+      };
     }>(`/api/chats/${chatId}/participants`);
   }
 
@@ -562,11 +575,11 @@ export class ApiClient {
     );
   }
 
-  async createGroup(groupName: string, participantIds: string[]): Promise<Chat> {
+  async createGroup(groupName: string, participantIds: string[], description?: string): Promise<Chat> {
     return chatFromJson(
       await this.request('/api/chats', {
         method: 'POST',
-        body: { type: 'group', groupName, participantIds },
+        body: { type: 'group', groupName, participantIds, groupDescription: description },
       }),
     );
   }
@@ -575,6 +588,90 @@ export class ApiClient {
 
   renameGroup(chatId: string, groupName: string) {
     return this.request(`/api/chats/${chatId}`, { method: 'PATCH', body: { groupName } });
+  }
+
+  /** Update any editable group field (name, description, photo, permissions). */
+  updateGroup(
+    chatId: string,
+    fields: {
+      groupName?: string;
+      groupDescription?: string;
+      groupAvatar?: string;
+      groupSettings?: Partial<{ whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins' }>;
+    },
+  ) {
+    return this.request(`/api/chats/${chatId}`, { method: 'PATCH', body: fields });
+  }
+
+  /* -------------------------------------------------------- group extras */
+
+  /** Admin-managed invite link. */
+  getInvite(chatId: string) {
+    return this.request<{ chatId: string; inviteEnabled: boolean; token: string | null; path: string | null }>(
+      `/api/chats/${chatId}/invite`,
+    );
+  }
+
+  createInvite(chatId: string) {
+    return this.request<{ message: string; chatId: string; inviteEnabled: boolean; token: string; path: string }>(
+      `/api/chats/${chatId}/invite`,
+      { method: 'POST' },
+    );
+  }
+
+  revokeInvite(chatId: string) {
+    return this.request<{ message: string; chatId: string; inviteEnabled: boolean }>(
+      `/api/chats/${chatId}/invite`,
+      { method: 'DELETE' },
+    );
+  }
+
+  previewInvite(token: string) {
+    return this.request<{
+      chatId: string;
+      name: string;
+      description: string;
+      avatarUrl: string;
+      memberCount: number;
+      alreadyMember: boolean;
+      full: boolean;
+    }>(`/api/chats/invite/${encodeURIComponent(token)}`);
+  }
+
+  async joinViaInvite(token: string) {
+    const data = await this.request<{ message: string; chat: unknown; alreadyMember: boolean }>(
+      `/api/chats/invite/${encodeURIComponent(token)}/join`,
+      { method: 'POST' },
+    );
+    return { ...data, chat: chatFromJson(data.chat) };
+  }
+
+  pinMessage(chatId: string, messageId: string) {
+    return this.request<{ chatId: string; pinnedMessageId: string }>(`/api/chats/${chatId}/pin`, {
+      method: 'POST',
+      body: { messageId },
+    });
+  }
+
+  unpinMessage(chatId: string) {
+    return this.request<{ chatId: string; pinnedMessageId: null }>(`/api/chats/${chatId}/pin`, {
+      method: 'DELETE',
+    });
+  }
+
+  chatMedia(chatId: string) {
+    return this.request<{
+      chatId: string;
+      media: { messageId: string; type: string; url: string; name: string; at: string; sender: { id: string; displayName: string } | null }[];
+      links: { messageId: string; url: string; at: string }[];
+    }>(`/api/chats/${chatId}/media`);
+  }
+
+  /** Who has seen one of my messages. */
+  messageReaders(messageId: string) {
+    return this.request<{ messageId: string; readers: { id: string; displayName: string; avatarUrl: string }[]; count: number }>(
+      `/api/messages/${messageId}/readers`,
+    );
   }
 
   addParticipants(chatId: string, participantIds: string[]) {

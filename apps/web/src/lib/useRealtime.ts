@@ -35,6 +35,7 @@ export function useRealtimeBridge(): void {
         onDisconnected: () => setConnected(false),
 
         onMessageNew: (message: Message) => {
+          const hadCache = Boolean(queryClient.getQueryData<Message[]>(['messages', message.chatId]));
           queryClient.setQueryData<Message[]>(['messages', message.chatId], (prev) => {
             if (!prev) return prev;
             // Reconcile the optimistic bubble by clientId when present.
@@ -49,6 +50,11 @@ export function useRealtimeBridge(): void {
             if (prev.some((m) => m.id === message.id)) return prev;
             return [...prev, message];
           });
+          // The conversation was not open yet (or its first page was still
+          // loading) — fetch the full history instead of dropping the event.
+          if (!hadCache) {
+            void queryClient.invalidateQueries({ queryKey: ['messages', message.chatId] });
+          }
           // Notify only when the window is not in the foreground, so we never
           // interrupt someone reading the conversation.
           if (message.senderId !== userId) {
@@ -88,8 +94,13 @@ export function useRealtimeBridge(): void {
           );
         },
 
-        onTyping: ({ chatId, userId: typingId, isTyping }) => {
-          if (typingId === userId) return;
+        /** The server rejected a send (blocked, admins-only group, …).
+         * Drop the optimistic bubble by refetching the conversation. */
+        onMessageError: () => {
+          void queryClient.invalidateQueries({ queryKey: ['messages'] });
+        },
+
+        onTyping: ({ chatId, userId: typingId, isTyping }) => {          if (typingId === userId) return;
           setTyping(chatId, isTyping ? typingId : null);
         },
 
@@ -97,9 +108,40 @@ export function useRealtimeBridge(): void {
           setOnline(presenceId, isOnline);
         },
 
-        onChatNew: () => void queryClient.invalidateQueries({ queryKey: ['chats'] }),
-        onChatUpdated: () => void queryClient.invalidateQueries({ queryKey: ['chats'] }),
-        onChatRemoved: () => void queryClient.invalidateQueries({ queryKey: ['chats'] }),
+        onChatNew: () => {
+          void queryClient.invalidateQueries({ queryKey: ['chats'] });
+          void queryClient.invalidateQueries({ queryKey: ['groups'] });
+        },
+        onChatUpdated: () => {
+          void queryClient.invalidateQueries({ queryKey: ['chats'] });
+          void queryClient.invalidateQueries({ queryKey: ['groups'] });
+          void queryClient.invalidateQueries({ queryKey: ['group-members'] });
+        },
+        onChatRemoved: () => {
+          void queryClient.invalidateQueries({ queryKey: ['chats'] });
+          void queryClient.invalidateQueries({ queryKey: ['groups'] });
+        },
+
+        onGroupMembers: ({ chatId }) => {
+          void queryClient.invalidateQueries({ queryKey: ['group-members', chatId] });
+          void queryClient.invalidateQueries({ queryKey: ['chats'] });
+          void queryClient.invalidateQueries({ queryKey: ['groups'] });
+        },
+
+        onMessageMention: ({ message, chatId, groupName }) => {
+          // Mention notifications fire even when the window is focused: being
+          // named is the point of a mention.
+          if (sounds) playMessageSound();
+          if (notifications) {
+            showNotification(
+              `${groupName}: you were mentioned`,
+              message.content || 'You were mentioned in a group',
+              () => window.focus(),
+            );
+          }
+          void queryClient.invalidateQueries({ queryKey: ['chats'] });
+          void queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
+        },
 
         onUserUpdated: (updated) => {
           // The signed-in user may have changed their own profile elsewhere.

@@ -5,6 +5,7 @@ const User = require('../models/User');
 const mongoose = require('mongoose');
 const realtime = require('../utils/realtime');
 const { blockedBetween } = require('../utils/blocks');
+const groupSystem = require('../utils/groupSystem');
 
 const MESSAGE_TYPES = ['text', 'image', 'video', 'audio', 'file'];
 
@@ -54,6 +55,20 @@ const sendMessage = async (req, res) => {
       }
     }
 
+    // Group setting: "only admins can send messages".
+    if (!groupSystem.canSendMessages(chat, req.user._id)) {
+      return res.status(403).json({
+        message: 'Only group admins can send messages in this group.',
+        code: 'GROUP_SEND_FORBIDDEN',
+      });
+    }
+
+    // @mentions (groups only): find who was mentioned so they can be notified.
+    const mentioned =
+      chat.type === 'group' && type === 'text'
+        ? await groupSystem.mentionedUserIds(content, chat.participants, req.user._id)
+        : [];
+
     const message = await Message.create({
       chatId,
       senderId: req.user._id,
@@ -63,6 +78,7 @@ const sendMessage = async (req, res) => {
       sentAt: new Date(),
       deliveredTo: [req.user._id],
       readBy: [req.user._id],
+      mentionUserIds: mentioned,
     });
 
     await Chat.findByIdAndUpdate(chatId, {
@@ -92,6 +108,15 @@ const sendMessage = async (req, res) => {
       ...populated.toObject(),
       clientId: clientId || null,
     });
+
+    // @mention notifications (group only, best effort).
+    if (mentioned.length > 0) {
+      try {
+        groupSystem.emitMentions(populated, chat, mentioned);
+      } catch (mentionError) {
+        console.warn('Mention notification failed:', mentionError.message);
+      }
+    }
 
     res.status(201).json(populated);
   } catch (error) {
@@ -426,6 +451,45 @@ const clearChatMessages = async (req, res) => {
   }
 };
 
+/* ----------------------------------------------------- seen-by (readers) */
+
+// @desc    Who has seen a message (only the sender may ask)
+// @route   GET /api/messages/:id/readers
+// @access  Private (message sender)
+const getMessageReaders = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid message ID' });
+    }
+    const message = await Message.findById(id).populate(
+      'readBy',
+      '_id displayName avatarUrl readReceipts',
+    );
+    if (!message) return res.status(404).json({ message: 'Message not found' });
+
+    const { error } = await assertParticipant(message.chatId, req.user._id);
+    if (error) return res.status(error.status).json({ message: error.message });
+    if (String(message.senderId) !== String(req.user._id)) {
+      return res.status(403).json({ message: 'Only the sender can see who read a message' });
+    }
+
+    const readers = (message.readBy || [])
+      .filter((user) => user && user.readReceipts !== false)
+      .filter((user) => String(user._id) !== String(req.user._id))
+      .map((user) => ({
+        id: String(user._id),
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl || '',
+      }));
+
+    return res.json({ messageId: String(message._id), readers, count: readers.length });
+  } catch (error) {
+    console.error('Get message readers error:', error);
+    return res.status(500).json({ message: 'Could not load the reader list' });
+  }
+};
+
 module.exports = {
   sendMessage,
   getMessages,
@@ -436,4 +500,5 @@ module.exports = {
   deleteMessage,
   reactToMessage,
   clearChatMessages,
+  getMessageReaders,
 };

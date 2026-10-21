@@ -1,6 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Users, X, Check, Trash2, Shield, ShieldOff, Loader2 } from 'lucide-react';
+import {
+  Check, Copy, Loader2, Link as LinkIcon, Plus, Search, Settings2, Shield, ShieldOff,
+  Trash2, Users, X, BellOff, Bell, LogOut, FileText, Film, Music, RefreshCw,
+} from 'lucide-react';
 import { chatTitle, useSession, type Chat, type User } from '@chatgram/core';
 import { api } from '../lib/api';
 import { useProfilePanel } from '../lib/profilePanel';
@@ -9,48 +12,68 @@ import { useProfilePanel } from '../lib/profilePanel';
 
 function CreateGroupModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
   const queryClient = useQueryClient();
 
   const contacts = useQuery({ queryKey: ['contacts'], queryFn: () => api.contacts() });
 
   const create = useMutation({
-    mutationFn: () => api.createGroup(name.trim(), selected),
-    onSuccess: () => {
+    mutationFn: () => api.createGroup(name.trim(), selected, description.trim() || undefined),
+    onSuccess: (chat) => {
       void queryClient.invalidateQueries({ queryKey: ['groups'] });
       void queryClient.invalidateQueries({ queryKey: ['chats'] });
+      window.localStorage.setItem('chatgram.pendingChat', chat.id);
       onClose();
     },
     onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not create group'),
   });
 
   const canSubmit = name.trim().length > 0 && selected.length > 0 && !create.isPending;
+  const filtered = (contacts.data ?? []).filter((person) =>
+    person.displayName.toLowerCase().includes(search.trim().toLowerCase()),
+  );
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 animate-fade-up" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-ink-800" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-bold">New group</h3>
-          <button type="button" className="btn-ghost !px-2" onClick={onClose}>
+          <button type="button" className="btn-ghost !px-2" onClick={onClose} aria-label="Close">
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {error ? (
-          <p className="mb-3 rounded-xl border border-rose-300/50 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+          <p role="alert" className="mb-3 rounded-xl border border-rose-300/50 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
             {error}
           </p>
         ) : null}
 
         <label className="label" htmlFor="gname">Group name</label>
-        <input id="gname" className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Team chat" />
+        <input id="gname" className="field" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} placeholder="Team chat" />
+
+        <label className="label mt-3" htmlFor="gdesc">Description (optional)</label>
+        <input
+          id="gdesc"
+          className="field"
+          maxLength={1024}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="What is this group about?"
+        />
 
         <p className="label mt-4">Members ({selected.length})</p>
-        <div className="max-h-56 overflow-y-auto rounded-xl border border-ink-200 dark:border-white/10">
+        <div className="relative mb-2">
+          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-ink-400" />
+          <input className="field pl-9" placeholder="Search contacts" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+        <div className="max-h-52 overflow-y-auto rounded-xl border border-ink-200 dark:border-white/10">
           {contacts.isLoading ? <p className="p-3 text-sm text-ink-500">Loading contacts…</p> : null}
           {contacts.data?.length === 0 ? <p className="p-3 text-sm text-ink-500">No contacts yet.</p> : null}
-          {contacts.data?.map((person: User) => {
+          {filtered.map((person: User) => {
             const checked = selected.includes(person.id);
             return (
               <button
@@ -87,33 +110,126 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+/* -------------------------------------------------------- add members modal */
+
+function AddMembersModal({ chat, onClose }: { chat: Chat; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [error, setError] = useState('');
+  const contacts = useQuery({ queryKey: ['contacts'], queryFn: () => api.contacts() });
+  const members = useQuery({ queryKey: ['group-members', chat.id], queryFn: () => api.getGroupMembers(chat.id) });
+  const memberIds = new Set((members.data?.members ?? []).map((m) => m._id));
+
+  const add = useMutation({
+    mutationFn: () => api.addParticipants(chat.id, selected),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['group-members', chat.id] });
+      void queryClient.invalidateQueries({ queryKey: ['groups'] });
+      onClose();
+    },
+    onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not add members'),
+  });
+
+  const candidates = (contacts.data ?? []).filter((person) => !memberIds.has(person.id));
+
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/60 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5 dark:bg-ink-800" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold">Add members</h3>
+        {error ? <p role="alert" className="mt-2 text-sm text-rose-600 dark:text-rose-400">{error}</p> : null}
+        <div className="mt-3 max-h-64 overflow-y-auto rounded-xl border border-ink-200 dark:border-white/10">
+          {candidates.length === 0 ? <p className="p-3 text-sm text-ink-500">Everyone in your contacts is already a member.</p> : null}
+          {candidates.map((person) => {
+            const checked = selected.includes(person.id);
+            return (
+              <button
+                key={person.id}
+                type="button"
+                onClick={() =>
+                  setSelected((prev) =>
+                    prev.includes(person.id) ? prev.filter((id) => id !== person.id) : [...prev, person.id],
+                  )
+                }
+                className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-ink-100/70 dark:hover:bg-white/5"
+              >
+                <span
+                  className={`grid h-5 w-5 place-items-center rounded-md border ${
+                    checked ? 'border-brand-600 bg-brand-600 text-white' : 'border-ink-300 dark:border-white/20'
+                  }`}
+                >
+                  {checked ? <Check className="h-3.5 w-3.5" /> : null}
+                </span>
+                <span className="truncate text-sm">{person.displayName}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn-primary" disabled={selected.length === 0 || add.isPending} onClick={() => add.mutate()}>
+            {add.isPending ? 'Adding…' : `Add ${selected.length || ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------- group info */
+
+type GroupTab = 'members' | 'media' | 'settings';
 
 function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose: () => void }) {
   const queryClient = useQueryClient();
   const profilePanel = useProfilePanel();
   const [error, setError] = useState('');
-  const isAdmin = (chat.admins ?? []).includes(meId);
+  const [notice, setNotice] = useState('');
+  const [tab, setTab] = useState<GroupTab>('members');
+  const [search, setSearch] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(chat.groupName ?? '');
+  const [description, setDescription] = useState(chat.description ?? '');
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['groups'] });
     void queryClient.invalidateQueries({ queryKey: ['chats'] });
-    void queryClient.invalidateQueries({ queryKey: ['chat', chat.id] });
+    void queryClient.invalidateQueries({ queryKey: ['group-members', chat.id] });
   };
 
-  const remove = useMutation({
-    mutationFn: (userId: string) => api.removeParticipant(chat.id, userId),
-    onSuccess: refresh,
-    onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not remove member'),
-  });
-
-  // Authoritative roster from the server (chat.participants is often just ids).
   const membersQuery = useQuery({
     queryKey: ['group-members', chat.id],
     queryFn: () => api.getGroupMembers(chat.id),
     retry: false,
   });
-  type Member = { _id: string; displayName: string; isAdmin: boolean; isYou: boolean; isOnline?: boolean };
+  const inviteQuery = useQuery({
+    queryKey: ['group-invite', chat.id],
+    queryFn: () => api.getInvite(chat.id),
+    retry: false,
+  });
+  const mediaQuery = useQuery({
+    queryKey: ['group-media', chat.id],
+    queryFn: () => api.chatMedia(chat.id),
+    enabled: tab === 'media',
+  });
+  const mutedQuery = useQuery({ queryKey: ['muted-chats'], queryFn: () => api.mutedChats() });
+
+  useEffect(() => {
+    setName(chat.groupName ?? '');
+    setDescription(chat.description ?? '');
+  }, [chat.groupName, chat.description]);
+
+  type Member = {
+    _id: string;
+    displayName: string;
+    avatarUrl?: string;
+    isAdmin: boolean;
+    isYou: boolean;
+    isOnline?: boolean;
+    about?: string;
+  };
   const members: Member[] =
     membersQuery.data?.members ??
     (chat.participants ?? []).map((p) => ({
@@ -122,9 +238,17 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
       isAdmin: (chat.admins ?? []).includes(p.id),
       isYou: p.id === meId,
     }));
-  const iAmAdmin = members.find((m) => m.isYou)?.isAdmin ?? isAdmin;
+  const iAmAdmin = members.find((m) => m.isYou)?.isAdmin ?? (chat.admins ?? []).includes(meId);
+  const group = membersQuery.data?.group;
+  const settings = group?.settings ?? chat.settings ?? { whoCanEditInfo: 'all', whoCanSendMessages: 'all', whoCanAddMembers: 'admins' };
+  const muted = (mutedQuery.data ?? []).some((entry) => entry.chatId === chat.id);
 
-  const [confirmLeave, setConfirmLeave] = useState(false);
+  const remove = useMutation({
+    mutationFn: (userId: string) => api.removeParticipant(chat.id, userId),
+    onSuccess: refresh,
+    onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not remove member'),
+  });
+
   const leave = useMutation({
     mutationFn: () => api.leaveGroup(chat.id),
     onSuccess: () => {
@@ -137,75 +261,338 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
   const toggleAdmin = useMutation({
     mutationFn: ({ userId, makeAdmin }: { userId: string; makeAdmin: boolean }) =>
       api.setGroupAdmin(chat.id, userId, makeAdmin),
-    onSuccess: refresh,
+    onSuccess: () => {
+      refresh();
+      setNotice('Admin rights updated.');
+    },
     onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not change admin'),
   });
 
+  const saveGroup = useMutation({
+    mutationFn: () =>
+      api.updateGroup(chat.id, { groupName: name.trim(), groupDescription: description.trim() }),
+    onSuccess: () => {
+      refresh();
+      setEditing(false);
+      setNotice('Group info updated.');
+    },
+    onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not save the group'),
+  });
+
+  const saveSettings = useMutation({
+    mutationFn: (patch: Partial<typeof settings>) => api.updateGroup(chat.id, { groupSettings: patch }),
+    onSuccess: () => {
+      refresh();
+      setNotice('Group permissions saved.');
+    },
+    onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not save permissions'),
+  });
+
+  const createInvite = useMutation({
+    mutationFn: () => api.createInvite(chat.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['group-invite', chat.id] });
+      setNotice('Invite link ready. Copy and share it.');
+    },
+    onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not create the invite link'),
+  });
+
+  const revokeInvite = useMutation({
+    mutationFn: () => api.revokeInvite(chat.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['group-invite', chat.id] });
+      setNotice('Invite link revoked.');
+    },
+    onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not revoke the invite link'),
+  });
+
+  const toggleMute = useMutation({
+    mutationFn: () => (muted ? api.unmuteChat(chat.id) : api.muteChat(chat.id)),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['muted-chats'] });
+      setNotice(muted ? 'Notifications unmuted.' : 'Notifications muted.');
+    },
+    onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not change the mute setting'),
+  });
+
+  const visibleMembers = members.filter((m) =>
+    m.displayName.toLowerCase().includes(search.trim().toLowerCase()),
+  );
+
+  async function copyInvite() {
+    const token = inviteQuery.data?.token;
+    if (!token) return;
+    const url = `${window.location.origin}/web/join/${token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setError('Could not copy. Long-press the link to copy it manually.');
+    }
+  }
+
   return (
-    <aside className="flex w-[300px] shrink-0 flex-col border-l border-ink-200 dark:border-white/10">
+    <aside className="flex w-full shrink-0 flex-col border-l border-ink-200 dark:border-white/10 sm:w-[340px]" data-testid="group-info">
       <header className="flex items-center justify-between border-b border-ink-200 px-4 py-3 dark:border-white/10">
         <h3 className="font-bold">Group info</h3>
-        <button type="button" className="btn-ghost !px-2" onClick={onClose}>
+        <button type="button" className="btn-ghost !px-2" onClick={onClose} aria-label="Close group info">
           <X className="h-4 w-4" />
         </button>
       </header>
 
-      {error ? <p className="px-4 py-2 text-xs text-rose-500">{error}</p> : null}
+      {error ? <p role="alert" className="px-4 py-2 text-xs text-rose-500">{error}</p> : null}
+      {notice ? <p role="status" className="px-4 py-2 text-xs text-emerald-600 dark:text-emerald-400">{notice}</p> : null}
 
-      <div className="flex-1 overflow-y-auto">
-        <p className="px-4 pt-4 text-[11px] font-bold uppercase tracking-wider text-ink-500 dark:text-ink-400">
-          {members.length} members
+      <div className="border-b border-ink-200 px-4 py-4 text-center dark:border-white/10">
+        <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-2xl font-bold text-white">
+          {chatTitle(chat, meId).slice(0, 2).toUpperCase()}
+        </div>
+        <h4 className="mt-2 text-lg font-bold">{group?.name ?? chatTitle(chat, meId)}</h4>
+        <p className="text-[12px] text-ink-500 dark:text-ink-400">
+          {members.length} member{members.length === 1 ? '' : 's'}
+          {group?.createdBy ? ` · created by ${group.createdBy.displayName}` : ''}
         </p>
-        {members.map((person) => {
-          const personIsAdmin = person.isAdmin;
-          const isMe = person.isYou;
-          return (
-            <div key={person._id} className="flex items-center gap-1 px-2 py-1">
-              <button
-                type="button"
-                onClick={() => profilePanel.openProfile(person._id, chat.id)}
-                className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-ink-100 dark:hover:bg-white/5"
-                title={`Open ${person.displayName}'s profile`}
-              >
-                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[11px] font-bold text-white">
-                  {person.displayName.slice(0, 2).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">
-                    {person.displayName}
-                    {isMe ? ' (you)' : ''}
-                  </p>
-                  {personIsAdmin ? (
-                    <p className="text-[11px] font-semibold text-brand-600 dark:text-brand-300">admin</p>
-                  ) : null}
-                </div>
-              </button>
-              {iAmAdmin && !isMe ? (
-                <>
-                  <button
-                    type="button"
-                    className="btn-ghost !px-1.5"
-                    title={personIsAdmin ? 'Remove admin' : 'Make admin'}
-                    onClick={() => toggleAdmin.mutate({ userId: person._id, makeAdmin: !personIsAdmin })}
-                  >
-                    {personIsAdmin ? <ShieldOff className="h-4 w-4" /> : <Shield className="h-4 w-4" />}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost !px-1.5 text-rose-500"
-                    title="Remove from group"
-                    onClick={() => remove.mutate(person._id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </>
-              ) : null}
-            </div>
-          );
-        })}
+        {group?.description ? (
+          <p className="mt-2 whitespace-pre-wrap text-sm text-ink-600 dark:text-ink-300">{group.description}</p>
+        ) : null}
+        <div className="mt-3 flex justify-center gap-2">
+          <button type="button" className="btn-ghost !py-1.5 text-[12px]" onClick={() => toggleMute.mutate()}>
+            {muted ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />} {muted ? 'Unmute' : 'Mute'}
+          </button>
+          {editing ? null : (
+            <button type="button" className="btn-ghost !py-1.5 text-[12px]" onClick={() => setEditing(true)}>
+              <Settings2 className="h-4 w-4" /> Edit
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Leave group — with confirmation, since it cannot be undone */}
+      {editing ? (
+        <div className="border-b border-ink-200 px-4 py-3 dark:border-white/10">
+          <label className="label" htmlFor="group-name">Group name</label>
+          <input id="group-name" className="field" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
+          <label className="label mt-2" htmlFor="group-description">Description</label>
+          <textarea
+            id="group-description"
+            className="field resize-none"
+            rows={3}
+            maxLength={1024}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+          <div className="mt-2 flex gap-2">
+            <button type="button" className="btn-primary !py-1.5 text-[12px]" disabled={!name.trim() || saveGroup.isPending} onClick={() => saveGroup.mutate()}>
+              {saveGroup.isPending ? 'Saving…' : 'Save'}
+            </button>
+            <button type="button" className="btn-ghost !py-1.5 text-[12px]" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex border-b border-ink-200 text-[12.5px] font-semibold dark:border-white/10">
+        {(['members', 'media', 'settings'] as const).map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`flex-1 py-2 capitalize ${
+              tab === key ? 'border-b-2 border-brand-600 text-brand-700 dark:text-brand-300' : 'text-ink-500 dark:text-ink-400'
+            }`}
+          >
+            {key}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {tab === 'members' ? (
+          <>
+            {iAmAdmin || settings.whoCanAddMembers === 'all' ? (
+              <div className="px-3 pt-3">
+                <button type="button" className="btn-primary w-full !py-1.5 text-[12px]" onClick={() => setAdding(true)}>
+                  <Plus className="h-4 w-4" /> Add members
+                </button>
+              </div>
+            ) : null}
+            <div className="relative px-3 py-2">
+              <Search className="pointer-events-none absolute left-6 top-4 h-4 w-4 text-ink-400" />
+              <input className="field pl-9" placeholder="Search members" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            {membersQuery.isLoading ? <p className="px-4 text-xs text-ink-500">Loading members…</p> : null}
+            {visibleMembers.map((person) => {
+              const personIsAdmin = person.isAdmin;
+              const isMe = person.isYou;
+              return (
+                <div key={person._id} className="flex items-center gap-1 px-2 py-1">
+                  <button
+                    type="button"
+                    onClick={() => profilePanel.openProfile(person._id, chat.id)}
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-ink-100 dark:hover:bg-white/5"
+                    title={`Open ${person.displayName}'s profile`}
+                  >
+                    <div className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[11px] font-bold text-white">
+                      {person.avatarUrl ? (
+                        <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        person.displayName.slice(0, 2).toUpperCase()
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">
+                        {person.displayName}
+                        {isMe ? ' (you)' : ''}
+                      </p>
+                      <p className="text-[11px] text-ink-500 dark:text-ink-400">
+                        {personIsAdmin ? 'Admin' : 'Member'}
+                        {person.isOnline ? ' · online' : ''}
+                      </p>
+                    </div>
+                  </button>
+                  {iAmAdmin && !isMe ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-ghost !px-1.5"
+                        title={personIsAdmin ? 'Remove admin' : 'Make admin'}
+                        onClick={() => toggleAdmin.mutate({ userId: person._id, makeAdmin: !personIsAdmin })}
+                      >
+                        {personIsAdmin ? <ShieldOff className="h-4 w-4" /> : <Shield className="h-4 w-4" />}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost !px-1.5 text-rose-500"
+                        title="Remove from group"
+                        onClick={() => remove.mutate(person._id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              );
+            })}
+          </>
+        ) : null}
+
+        {tab === 'media' ? (
+          <div className="p-3">
+            {mediaQuery.isLoading ? <p className="text-xs text-ink-500">Loading shared media…</p> : null}
+            {mediaQuery.data && mediaQuery.data.media.length === 0 && mediaQuery.data.links.length === 0 ? (
+              <p className="text-xs text-ink-500 dark:text-ink-400">No shared media, files or links in this group yet.</p>
+            ) : null}
+            {mediaQuery.data && mediaQuery.data.media.length > 0 ? (
+              <>
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-ink-500 dark:text-ink-400">Media</p>
+                <div className="grid grid-cols-4 gap-1">
+                  {mediaQuery.data.media.map((item) => (
+                    <a
+                      key={item.messageId}
+                      href={item.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="grid aspect-square place-items-center overflow-hidden rounded-lg bg-ink-100 text-ink-500 dark:bg-white/10 dark:text-ink-300"
+                      title={item.name || item.type}
+                    >
+                      {item.type === 'image' ? (
+                        <img src={item.url} alt="" className="h-full w-full object-cover" />
+                      ) : item.type === 'video' ? (
+                        <Film className="h-5 w-5" />
+                      ) : item.type === 'audio' ? (
+                        <Music className="h-5 w-5" />
+                      ) : (
+                        <FileText className="h-5 w-5" />
+                      )}
+                    </a>
+                  ))}
+                </div>
+              </>
+            ) : null}
+            {mediaQuery.data && mediaQuery.data.links.length > 0 ? (
+              <>
+                <p className="mb-1 mt-3 text-[11px] font-bold uppercase tracking-wider text-ink-500 dark:text-ink-400">Links</p>
+                {mediaQuery.data.links.map((link) => (
+                  <a
+                    key={`${link.messageId}-${link.url}`}
+                    href={link.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="block truncate py-1 text-[12.5px] text-brand-600 hover:underline dark:text-brand-300"
+                  >
+                    {link.url}
+                  </a>
+                ))}
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
+        {tab === 'settings' ? (
+          <div className="px-3 py-3">
+            {iAmAdmin ? (
+              <>
+                {([
+                  ['whoCanEditInfo', 'Who can edit group info'],
+                  ['whoCanSendMessages', 'Who can send messages'],
+                  ['whoCanAddMembers', 'Who can add members'],
+                ] as const).map(([key, label]) => (
+                  <div key={key} className="mb-3">
+                    <p className="mb-1 text-[12px] font-semibold">{label}</p>
+                    <div className="flex gap-1">
+                      {(['all', 'admins'] as const).map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          disabled={saveSettings.isPending}
+                          onClick={() => saveSettings.mutate({ [key]: value } as Partial<typeof settings>)}
+                          className={`flex-1 rounded-lg border px-2 py-1.5 text-[12px] font-semibold ${
+                            settings[key] === value
+                              ? 'border-brand-600 bg-brand-600/10 text-brand-700 dark:text-brand-300'
+                              : 'border-ink-200 text-ink-600 dark:border-white/10 dark:text-ink-300'
+                          }`}
+                        >
+                          {value === 'all' ? 'Everyone' : 'Admins only'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <div className="mt-4 border-t border-ink-200 pt-3 dark:border-white/10">
+                  <p className="mb-1 flex items-center gap-1 text-[12px] font-semibold">
+                    <LinkIcon className="h-3.5 w-3.5" /> Invite link
+                  </p>
+                  {inviteQuery.data?.inviteEnabled && inviteQuery.data.token ? (
+                    <>
+                      <p className="truncate rounded bg-ink-100 px-2 py-1 font-mono text-[11px] dark:bg-white/10">
+                        /web/join/{inviteQuery.data.token.slice(0, 10)}…
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        <button type="button" className="btn-ghost !py-1 text-[12px]" onClick={() => void copyInvite()}>
+                          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copied ? 'Copied' : 'Copy link'}
+                        </button>
+                        <button type="button" className="btn-ghost !py-1 text-[12px]" onClick={() => createInvite.mutate()}>
+                          <RefreshCw className="h-3.5 w-3.5" /> Reset
+                        </button>
+                        <button type="button" className="btn-ghost !py-1 text-[12px] text-rose-500" onClick={() => revokeInvite.mutate()}>
+                          Revoke
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <button type="button" className="btn-primary !py-1.5 text-[12px]" onClick={() => createInvite.mutate()}>
+                      <LinkIcon className="h-4 w-4" /> Create invite link
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-ink-500 dark:text-ink-400">Only group admins can change these settings.</p>
+            )}
+          </div>
+        ) : null}
+      </div>
+
       <footer className="border-t border-ink-200 p-3 dark:border-white/10">
         {confirmLeave ? (
           <div className="space-y-2">
@@ -232,10 +619,12 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
             onClick={() => setConfirmLeave(true)}
             className="btn-ghost h-9 w-full text-[13px] font-semibold text-rose-600"
           >
-            Leave group
+            <LogOut className="h-4 w-4" /> Leave group
           </button>
         )}
       </footer>
+
+      {adding ? <AddMembersModal chat={chat} onClose={() => setAdding(false)} /> : null}
     </aside>
   );
 }
@@ -246,14 +635,18 @@ export default function Groups({ onOpenChat }: { onOpenChat: (chatId: string) =>
   const me = useSession((s) => s.user);
   const [creating, setCreating] = useState(false);
   const [infoFor, setInfoFor] = useState<Chat | null>(null);
+  const [query, setQuery] = useState('');
 
   const groups = useQuery({ queryKey: ['groups'], queryFn: () => api.groups() });
   const meId = me?.id ?? '';
 
-  // Keep the info panel in sync after mutations refresh the list.
   const liveInfo = useMemo(
     () => (infoFor ? groups.data?.find((g) => g.id === infoFor.id) ?? infoFor : null),
     [infoFor, groups.data],
+  );
+
+  const visible = (groups.data ?? []).filter((chat) =>
+    chatTitle(chat, meId).toLowerCase().includes(query.trim().toLowerCase()),
   );
 
   return (
@@ -268,6 +661,11 @@ export default function Groups({ onOpenChat }: { onOpenChat: (chatId: string) =>
           </button>
         </header>
 
+        <div className="relative px-3 py-2">
+          <Search className="pointer-events-none absolute left-6 top-4 h-4 w-4 text-ink-400" />
+          <input className="field pl-9" placeholder="Search groups" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+
         <div className="flex-1 overflow-y-auto">
           {groups.isLoading ? <p className="p-4 text-sm text-ink-500">Loading groups…</p> : null}
           {groups.data?.length === 0 ? (
@@ -279,12 +677,12 @@ export default function Groups({ onOpenChat }: { onOpenChat: (chatId: string) =>
               </div>
             </div>
           ) : null}
-          {groups.data?.map((chat) => (
+          {visible.map((chat) => (
             <div
               key={chat.id}
               className="flex items-center gap-3 px-4 py-3 hover:bg-ink-100/70 dark:hover:bg-white/[.04]"
             >
-              <div className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
                 {chatTitle(chat, meId).slice(0, 2).toUpperCase()}
               </div>
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onOpenChat(chat.id)}>

@@ -26,6 +26,35 @@ const chatSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  // Group description shown in the info panel (additive).
+  groupDescription: {
+    type: String,
+    default: '',
+    maxlength: 1024
+  },
+  // Who created the group, shown as "Created by X".
+  groupCreatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  // Admin-configurable permissions. Defaults preserve the behaviour that
+  // existed before these switches: anyone can edit info, anyone can post,
+  // but only admins can add members.
+  groupSettings: {
+    whoCanEditInfo: { type: String, enum: ['all', 'admins'], default: 'all' },
+    whoCanSendMessages: { type: String, enum: ['all', 'admins'], default: 'all' },
+    whoCanAddMembers: { type: String, enum: ['all', 'admins'], default: 'admins' }
+  },
+  // Invite link (admin-managed). Disabled by default: an admin must create it.
+  inviteToken: { type: String, default: null, index: true },
+  inviteEnabled: { type: Boolean, default: false },
+  // One pinned message per group (additive).
+  pinnedMessageId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Message',
+    default: null
+  },
   groupAdmins: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'

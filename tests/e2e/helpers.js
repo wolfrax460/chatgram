@@ -69,6 +69,20 @@ async function openTab(page, label) {
   await page.getByRole('button', { name: label, exact: true }).first().click();
 }
 
+/**
+ * A second, fully isolated signed-in session.
+ *
+ * Pages inside one Playwright context SHARE localStorage, which means tokens
+ * from a second user would silently replace the first user's tokens. Multi-user
+ * tests must therefore open a new context per user.
+ */
+async function newSession(browser, account) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await signIn(page, account);
+  return { context, page };
+}
+
 /** Let the other account become a contact of this one (both directions). */
 async function addContact(account, contactId) {
   const res = await apiRequest('POST', '/api/contacts', { token: account.accessToken, body: { userId: contactId } });
@@ -108,6 +122,7 @@ module.exports = {
   apiRequest,
   registerUser,
   signIn,
+  newSession,
   openTab,
   addContact,
   createGroup,

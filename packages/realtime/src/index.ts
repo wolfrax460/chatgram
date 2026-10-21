@@ -42,6 +42,15 @@ export interface RealtimeHandlers {
     reactions: { userId: string; emoji: string }[];
   }) => void;
   onMessageDeleted?: (payload: { messageId: string; chatId: string; scope: string }) => void;
+  /** A group member list changed (add/remove/leave/promote). */
+  onGroupMembers?: (payload: { chatId: string }) => void;
+  /** Somebody @mentioned me in a group. */
+  onMessageMention?: (payload: {
+    message: Message;
+    chatId: string;
+    groupName: string;
+    chatType: string;
+  }) => void;
 }
 
 export interface RealtimeOptions {
@@ -134,6 +143,21 @@ export class RealtimeClient {
     socket.on('message:deleted', (data: { messageId: string; chatId: string; scope: string }) =>
       h.onMessageDeleted?.(data),
     );
+    socket.on('group:members', (data: { chatId: string }) => h.onGroupMembers?.(data));
+    socket.on('message:mention', (data: unknown) => {
+      const payload = (data ?? {}) as {
+        message?: unknown;
+        chatId?: string;
+        groupName?: string;
+        chatType?: string;
+      };
+      h.onMessageMention?.({
+        message: messageFromJson(payload.message),
+        chatId: String(payload.chatId ?? ''),
+        groupName: String(payload.groupName ?? 'Group'),
+        chatType: String(payload.chatType ?? 'group'),
+      });
+    });
   }
 
   get connected(): boolean {

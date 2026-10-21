@@ -14,6 +14,14 @@ const {
   removeParticipant,
   getGroupMembers,
   leaveGroup,
+  getInvite,
+  createInvite,
+  revokeInvite,
+  previewInvite,
+  joinViaInvite,
+  pinMessage,
+  unpinMessage,
+  getChatMedia,
 } = require('../controllers/chatController');
 
 // All routes require authentication
@@ -28,6 +36,10 @@ router.get('/', getChats);
 // Groups only — must be declared before `/:id` so "groups" is not read as an id.
 router.get('/groups', getGroups);
 
+// Invite links — `/invite/...` must also be declared before `/:id`.
+router.get('/invite/:token', previewInvite);
+router.post('/invite/:token/join', joinViaInvite);
+
 // Get chat by ID
 router.get('/:id', getChatById);
 
@@ -35,7 +47,17 @@ router.get('/:id', getChatById);
 router.get('/:id/participants', getGroupMembers);
 router.delete('/:id/leave', leaveGroup);
 
-// Edit a group (admin)
+// Invite link management (admins)
+router.get('/:id/invite', getInvite);
+router.post('/:id/invite', createInvite);
+router.delete('/:id/invite', revokeInvite);
+
+// Pinned message + shared media
+router.post('/:id/pin', pinMessage);
+router.delete('/:id/pin', unpinMessage);
+router.get('/:id/media', getChatMedia);
+
+// Edit a group (name, photo, description, settings)
 router.patch('/:id', updateGroup);
 
 // Group membership / roles
