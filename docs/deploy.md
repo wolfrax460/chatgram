@@ -203,6 +203,8 @@ rollback is unambiguous.
 
 | 2026-10-24 (17:24) | Change 1: pinned AI row + Ask-AI search | Restored pinned "Chatgram AI" row with assistant avatar + verified badge at the top of the chat list; added the "Ask Chatgram AI" row in chat search that sends the typed query via the streaming endpoint. Web only: build green, deployed chatgram-gkizpo8ia; /web/ and /web/admin 200. | Green (build + page checks). UI smoke with a signed-in test account not run this round. Rollback: previous Vercel deployment. |
 
+| 2026-10-24 (17:26) | Item 4 partial: empty-screen recommendations + quick actions | Branded empty-state card with rotating recommendation (downloads / AI / profile photo / invite) and quick-action row (New chat, Add contact, Invite via Web Share, New group, Chatgram AI). Web only: build green, deployed chatgram-qzvhilsac, /web/ + /web/admin 200. | Green (build + page checks). API-driven recommendations and admin editor NOT done. Rollback: previous Vercel deployment. |
+
 ## 6. Deploy record
 
 | Date | Commit | Deployed | Result / rollback |

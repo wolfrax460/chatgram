@@ -71,7 +71,9 @@ Legend: ✅ done + deployed · ◐ partial (missing parts listed) · ✗ not sta
    admin Inbox + KB learning + blocked topics + degraded banner + answer-to-user are deployed.
    Missing: Meta-AI-style *standard chat view* (Change 1: per-message actions, share,
    regenerate, image/pasted input, group @mentions, unread previews), 9e notification digests.
-4. ✗ Empty-screen recommendations + quick actions.
+4. ◐ Empty-screen recommendations + quick actions — deployed (2026-10-24, web chatgram-qzvhilsac):
+    branded card, rotating recommendation, quick-actions row. Missing: /api/app/recommendations,
+    admin editor, dismissal, completed-state hiding, Playwright test.
 9a. ◐ Admin password gate deployed and enabled in production (sessions, CSRF, lockout, audit,
     change-password). Missing: TOTP enrolment, IP allowlist, removal of the legacy
     support-admin guard.
@@ -1243,3 +1245,8 @@ authenticated AI test, then the Groq key replacement through the admin providers
 - Web deployed chatgram-gkizpo8ia (backend unchanged). Built with tsc + Vite green; /web/ and
   /web/admin 200. Pinned row and search handoff are build-verified; a signed-in production
   smoke of the new row was not run this round (no test account created).
+
+
+### Session 22 (2026-10-24) — item 4 partial
+- Web deployed chatgram-qzvhilsac (build green, /web/ + /web/admin 200). Hard-coded
+  recommendations + quick actions; backend endpoint and admin editor still crossed.

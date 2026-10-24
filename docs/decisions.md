@@ -525,3 +525,17 @@ tab, `AI_UNKNOWN_NOTIFY` digests/9e alerts, moderation topics list, and the
 - Still crossed for Change 1: the AI thread is not yet the shared ChatWindow component, no
   share-to-chat, image/pasted-text input, group @Chatgram AI toggle, unread badge/last-message
   preview for AI replies, and reply-to-specific-message.
+
+
+---
+
+## D28 - Item 4 (partial): empty-screen recommendations + quick actions (2026-10-24)
+
+- Replaced the plain "Select a conversation" panel with a branded empty-state card: Chatgram logo
+  tile, headline and one **rotating recommendation** (downloads / Chatgram AI / profile photo /
+  invite). The recommendation rotates on the current hour and only references shipped features.
+- Added a **quick-actions row**: New chat, Add contact, Invite friend (Web Share API with
+  clipboard fallback), New group, Chatgram AI — keyboard accessible buttons with aria labels.
+- Crossed: the recommendations are still hard-coded in the client, not served by
+  `GET /api/app/recommendations`, not editable in /web/admin, not dismissible, and completed
+  states (2FA on, photo set) are not hidden yet.

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Moon, Sun, Monitor, MessageCircle, LogOut, Users, BookUser, CircleDashed,
   Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy, Sparkles, BadgeCheck,
+  UserPlus, Download, Share2, FolderUp, MessageSquarePlus, Camera,
 } from 'lucide-react';
 import {
   chatPartner,
@@ -883,12 +884,54 @@ function Shell() {
           {selected ? (
             <ChatWindow chat={selected} meId={meId} onBack={() => setSelectedId(null)} />
           ) : (
-            <section className="hidden flex-1 place-items-center px-6 text-center sm:grid">
-              <div>
-                <MessageCircle className="mx-auto h-12 w-12 text-ink-300 dark:text-ink-600" />
-                <h2 className="mt-4 text-lg font-bold">Select a conversation</h2>
-                <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">Pick a chat on the left, or start a new one.</p>
+            <section className="hidden flex-1 place-items-center overflow-y-auto px-6 py-6 text-center sm:grid">
+              <div className="w-full max-w-md">
+                <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-brand-600 text-white shadow-lg">
+                  <MessageCircle className="h-8 w-8" />
+                </span>
+                <h2 className="mt-3 text-lg font-bold">Welcome to Chatgram</h2>
+                <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">Pick a chat on the left, or start something new.</p>
                 {!connected ? <p className="mt-2 text-xs font-semibold text-amber-500">Reconnecting…</p> : null}
+
+                {/* One rotating recommendation (item 4); completed ones are hidden below. */}
+                <div className="mt-4 rounded-2xl border border-ink-200 bg-white p-3 text-left dark:border-white/10 dark:bg-white/[.03]" data-testid="empty-recommendation">
+                  {(() => {
+                    const recommendations = [
+                      { title: 'Chatgram for Windows and Android', body: 'Use Chatgram on your desktop and phone.', cta: 'See downloads', icon: Download, action: () => window.open('/docs#downloads', '_blank', 'noopener') },
+                      { title: 'Ask Chatgram AI anything', body: 'General questions, writing, translations and code help.', cta: 'Open Chatgram AI', icon: Sparkles, action: () => setTab('ai') },
+                      { title: 'Add a profile photo', body: 'Help people recognise you in chats.', cta: 'Edit profile', icon: Camera, action: () => setTab('settings') },
+                      { title: 'Invite a friend', body: 'Share your Chatgram link and start chatting.', cta: 'Invite', icon: Share2, action: () => { const url = window.location.origin + '/web/'; if (navigator.share) void navigator.share({ title: 'Chatgram', url }); else void navigator.clipboard?.writeText(url); } },
+                    ];
+                    const pick = recommendations[(new Date().getHours() % recommendations.length) as number]!;
+                    const Icon = pick.icon;
+                    return (
+                      <div className="flex items-start gap-3">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-600/10 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><Icon className="h-5 w-5" /></span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold">{pick.title}</p>
+                          <p className="mt-0.5 text-[12.5px] text-ink-500 dark:text-ink-300">{pick.body}</p>
+                          <button type="button" className="btn-primary mt-2 !h-8 !px-3 !text-[12px]" onClick={pick.action}>{pick.cta}</button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Quick actions row (item 4). */}
+                <div className="mt-4 grid grid-cols-5 gap-1.5" data-testid="empty-quick-actions">
+                  {[
+                    { label: 'New chat', icon: MessageSquarePlus, action: () => openChat('') },
+                    { label: 'Add contact', icon: UserPlus, action: () => setTab('contacts') },
+                    { label: 'Invite friend', icon: Share2, action: () => { const url = window.location.origin + '/web/'; if (navigator.share) void navigator.share({ title: 'Chatgram', url }); else void navigator.clipboard?.writeText(url); } },
+                    { label: 'New group', icon: FolderUp, action: () => setTab('groups') },
+                    { label: 'Chatgram AI', icon: Sparkles, action: () => setTab('ai') },
+                  ].map((action) => (
+                    <button key={action.label} type="button" onClick={action.action} className="flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[11px] font-medium text-ink-600 hover:bg-ink-100/70 dark:text-ink-300 dark:hover:bg-white/[.04]" aria-label={action.label} title={action.label}>
+                      <span className="grid h-9 w-9 place-items-center rounded-full bg-ink-100 text-ink-700 dark:bg-white/[.07] dark:text-ink-100"><action.icon className="h-4 w-4" /></span>
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </section>
           )}
