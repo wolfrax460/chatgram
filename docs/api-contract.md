@@ -325,3 +325,20 @@ Socket signalling (all authenticated; the server forwards, never sees media):
 Both users must share the chat (`call:offer` etc. are rejected with `CALL_FORBIDDEN` otherwise)
 and blocked users cannot call each other. The web app shows a full-screen call overlay
 (ring/accept/decline, mute, camera, hang-up) and works in a one-to-one chat.
+
+
+## Session 11 additions (2026-10-24) — admin panel access (item 9a)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/admin/auth/login` | `{ password }`; sets the `chatgram_admin` cookie, returns `{ csrfToken, session }`; 401 generic on failure, 429 with `retryAfter` when locked out, 503 when no admin hash is configured |
+| GET | `/api/admin/auth/session` | current session + `csrfToken`, `activeSessions`, `totpEnabled`; 401 without a valid session |
+| GET | `/api/admin/auth/sessions` | active sessions (no tokens) |
+| GET | `/api/admin/auth/audit` | recent audit entries |
+| POST | `/api/admin/auth/logout` | CSRF required; revokes this session |
+| POST | `/api/admin/auth/logout-all` | CSRF required; revokes every admin session |
+| POST | `/api/admin/auth/change-password` | CSRF required; `{ currentPassword, newPassword }`; persists the new bcrypt hash to `.env` |
+
+Gateway rule: no admin route works from a normal user JWT — only the admin cookie
+(and CSRF header for state changes). The web app reaches these through the
+same-origin `/api/*` proxy so SameSite=Strict cookies are sent.

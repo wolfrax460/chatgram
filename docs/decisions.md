@@ -346,3 +346,31 @@ throwaway test accounts which are deleted afterwards.
 
 **Owner step:** paste a fresh Groq key in /web/admin → **AI model** → *API key* field (write-only)
 and press **Test AI**. The panel now shows a red explanation if the key/quota/model is wrong.
+
+
+---
+
+## D19 - Admin panel gets its own password gate (2026-10-24, item 9a)
+
+**Design:** /web/admin no longer signs in as a Chatgram user. It has one admin
+password, stored ONLY as a bcrypt (cost 12) hash in `ADMIN_PANEL_PASSWORD_HASH`
+(server `.env`), set by `scripts/set-admin-password.js` which prompts with a
+hidden input (14+ chars, 3 character classes), writes the hash and restarts PM2.
+There is no email recovery; the server script is the only reset path.
+
+- A successful login creates a server-side `AdminSession` row and sets an
+  HttpOnly, SameSite=Strict, Secure (production) cookie with a per-session CSRF
+  token. State-changing admin requests must send `X-Admin-CSRF`.
+- Sliding 30-minute idle timeout; 8-hour absolute lifetime; "sign out" and
+  "sign out all" revoke sessions server-side.
+- Brute force: per-IP 5 failures / 15 minutes, then progressive lockout
+  (15 min doubling to 1 h), constant-time password comparison (a dummy bcrypt
+  hash is compared when unconfigured), 350 ms failure delay, generic error.
+- Every success/failure/lockout/logout/CSRF failure/password change is appended
+  to `AdminAudit` (never secrets) and shown in the admin UI.
+- The API is served to the browser same-origin through a Vercel `/api/*` proxy
+  route so the Strict cookie is sent (cross-site cookies with SameSite=Strict
+  would otherwise be dropped).
+- Not implemented yet: TOTP enrolment screen, optional IP allowlist, and removal
+  of the legacy support-account guard on `/api/support/admin/*` (kept until the
+  new dashboard tabs land in 9b/9d).

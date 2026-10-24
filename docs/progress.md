@@ -1061,7 +1061,15 @@ Legend: ✅ done + vs deployed · ✗ not started · ◐ partial.
    Verified by `server/test/integration/supportReply.test.js` (9/9), all other integration
    suites, and a production smoke: **Support answered a test user in 2.8 s**, test account
    and chat deleted afterwards.
-9a. ✗ Admin password gate / sessions / TOTP / brute force — not started.
+9a. ◐ Admin password gate — **server + UI deployed**. One admin password (bcrypt cost 12,
+   `ADMIN_PANEL_PASSWORD_HASH`, `scripts/set-admin-password.js`), server-side sessions with
+   HttpOnly/SameSite=Strict/Secure cookie, per-session CSRF, sliding 30 min / absolute 8 h,
+   sign-out + sign-out-all, per-IP progressive lockout (5/15 min), constant-time comparison,
+   append-only audit trail, change-password screen, sessions screen, same-origin /api proxy
+   for the Strict cookie. Verified: 23 integration assertions (wrong password, lockout, CSRF,
+   user JWT rejected, cookie flags, no hash leakage, logout/logout-all, audit).
+   **Not done:** TOTP enrolment UI, optional IP allowlist, removing the legacy
+   support-account guard on /api/support/admin/*, and the 9b dashboard tabs.
 9c. ✗ Model provider switching tab — not started (existing providers panel remains).
 3.  ✗ Chatgram AI (sidebar entry, general assistant, streaming, silent learning loop,
     admin inbox) — not started.
@@ -1087,3 +1095,13 @@ authenticated AI test, then the Groq key replacement through the admin providers
 - Production verification: AI test OK (323 ms, no last error); end-to-end Support message
   answered in 2.8 s; temporary test account/chat deleted.
 - Remaining queue from the new plan: items 9a, 9c, 3, 4, 9e, 9b, 9d, 5, 6, 7 — all still ✗.
+
+
+### Session 12 (2026-10-24) — item 9a admin gate deployed
+- Backend deployed first (DB backup `20261024-130018`, src backup `src.bak-20261024-130018`,
+  health ok); web deployed `chatgram-kashovb0o`. `/web/admin` now shows the "Admin access"
+  password screen; a same-origin `/api/*` proxy route was added on Vercel (verified:
+  `/api/status/health` through the Vercel domain returns the API JSON).
+- Production currently answers `503 ADMIN_NOT_CONFIGURED` for the admin session until the
+  owner runs `node scripts/set-admin-password.js` on the server — this is intentional (the
+  server never ships a default admin password).

@@ -53,6 +53,9 @@ $env:AUTH_REVEAL_ACCOUNT_EXISTS = 'true'
 $env:AUTH_RATE_LIMIT_DISABLED = 'true'
 # Same for the help-widget limits (also ignored in production).
 $env:HELP_RATE_LIMIT_DISABLED = 'true'
+# Local-only admin panel password: staging-admin-password-123 (never production).
+$env:ADMIN_PANEL_PASSWORD_HASH = '$2b$12$YjluET9J1.kgYZcaFojKuOeQ8Lj7l3T7O7r8MFqIY2K4kDQv9oPX2'
+$env:ADMIN_PANEL_ENV_FILE = (Join-Path (Get-Location) 'server\.env.admin-staging')
 $env:UPLOAD_DIR = (Join-Path (Get-Location) 'uploads')
 $env:BASE_URL = "http://127.0.0.1:$Port"
 

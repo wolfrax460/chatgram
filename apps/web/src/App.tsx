@@ -30,7 +30,7 @@ import Status from './pages/Status';
 import SettingsPage from './pages/Settings';
 import Auth from './pages/Auth';
 import SupportWidget from './components/SupportWidget';
-import Admin from './pages/Admin';
+import AdminGate from './pages/AdminGate';
 import JoinGroup from './pages/JoinGroup';
 import { ProfilePanel } from './components/ProfilePanel';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
@@ -954,7 +954,7 @@ export default function App() {
 
   // Tiny path route: /web/admin opens the support control dashboard.
   if (typeof window !== 'undefined' && /\/admin\/?$/.test(window.location.pathname)) {
-    return <Admin />;
+    return <AdminGate />;
   }
 
   // Group invite links: /web/join/<token>

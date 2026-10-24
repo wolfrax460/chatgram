@@ -271,6 +271,7 @@ app.use('/api/status', statusRoutes);
 app.use('/api/app', appRoutes);
 app.use('/api/help', require('./help'));
 app.use('/api/support', supportRoutes);
+app.use('/api/admin', require('./routes/adminRoutes'));
 
 // SPA fallback: any non-API GET that did not match a file returns index.html so
 // client-side routes (e.g. /chat/<id>) survive a refresh or a shared link.
