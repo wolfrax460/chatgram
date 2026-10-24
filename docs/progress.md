@@ -86,7 +86,10 @@ Legend: ✅ done + deployed · ◐ partial (missing parts listed) · ✗ not sta
 6.  ◐ Android — the earlier build is sideload-only and was NOT rebuilt with this session's
     features; no release keystore (by design).
 7.  ✗ Landing Features/Downloads tab with checksums and QR code.
-•   Change 1 (Meta-AI-style conversation) — ✗ not implemented (separate AI page still).
+•   Change 1 (Meta-AI-style conversation) — ◐ partial: disclaimer banner, intro bubble, pills
+    above the composer, verified badge, typing dots, copy/good/bad/regenerate actions and thumbs
+    feedback are deployed. Still missing: standard ChatWindow component, share-to-chat,
+    image/pasted input, group @Chatgram AI, unread badge/preview, "Ask Chatgram AI" search row.
 •   Change 2 (route-based admin dashboard) — ✗ not implemented.
 •   Admin account setup (Chatgram Admin user, queued-inbox delivery, credentials file,
     must-change-password flag, provider banner) — ✅ done 2026-10-24.
@@ -1210,3 +1213,9 @@ authenticated AI test, then the Groq key replacement through the admin providers
 - Added the dashboard banner shown while no AI provider is configured.
 - Backend deployed (DB backup `20261024-150153`, src backup `src.bak-20261024-150153`), web
   `chatgram-m9obak9dg`. Tests: `server/test/ai/adminDelivery.test.js` 8/8.
+
+
+### Session 18 (2026-10-24) — AI bubble polish + feedback
+- Backend deployed (DB backup 20261024-150744, src backup src.bak-20261024-150744, health ok),
+  web chatgram-k8n88dt5n. Tests: server/test/ai/feedback.test.js 7/7 (up accepted with no inbox
+  noise, down recorded with question + counter, repeat increments, other users rejected).

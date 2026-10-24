@@ -459,3 +459,19 @@ tab, `AI_UNKNOWN_NOTIFY` digests/9e alerts, moderation topics list, and the
   for anonymous display). Saving an approved answer also delivers it as a message from the
   Chatgram Support account in the asker's support conversation; the inbox row says whether
   the answer will reach the user in-app.
+
+
+---
+
+## D24 - AI bubble polish + thumbs feedback (2026-10-24, Change 1 partial)
+
+- AI thread now shows a single **disclaimer system banner** at the top, a compact centred intro
+  bubble on the empty thread, **suggestion pills above the composer** that disappear after the
+  first message, a **verified/official badge**, an animated **three-dot typing indicator**, and
+  per-answer actions: **Copy, Good (thumbs up), Bad (thumbs down), Regenerate** on the latest answer.
+- New `POST /api/ai/messages/:id/feedback` (auth, owner-only) records thumbs-down into the
+  admin Inbox as type `negative_feedback` with the question and asker id; a repeat vote increments
+  the counter. Thumbs-up creates no inbox noise. No secrets are returned.
+- Not done (still crossed): the thread is not yet the *standard* ChatWindow (dedicated route with
+  the same look), share-to-chat, image/pasted input, group @Chatgram AI, unread badges/previews for
+  new AI replies, and the "Ask Chatgram AI" search row.

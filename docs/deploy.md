@@ -195,6 +195,8 @@ rollback is unambiguous.
 
 | 2026-10-24 (17:05) | admin account + inbox delivery | Chatgram Admin account created (must-change flag), queued AI inbox records delivered once each (idempotent bookkeeping), `.secrets/` ignore rules + dashboard no-provider banner. Backend first (DB backup `20261024-150153`, src backup `src.bak-20261024-150153`, health ok), web `chatgram-m9obak9dg`. | **Green.** Admin user login 200 via the public API; inbox queue delivered=2 remaining=0; pages 200. Rollback: previous Vercel deployment, `src.bak-20261024-150153`, DB dump `20261024-150153`. |
 
+| 2026-10-24 (17:09) | AI bubble polish + feedback | Disclaimer banner, intro bubble, suggestion pills above composer, verified badge, typing dots, copy/good/bad/regenerate actions, POST /api/ai/messages/:id/feedback (thumbs-down -> admin Inbox negative_feedback, dedupe counter). Backend first (DB backup 20261024-150744, src backup src.bak-20261024-150744, health ok), web chatgram-k8n88dt5n. | Green. Feedback endpoint 401 unauthenticated; pages 200. Rollback: previous Vercel deployment, src.bak-20261024-150744, DB dump 20261024-150744. |
+
 ## 6. Deploy record
 
 | Date | Commit | Deployed | Result / rollback |
