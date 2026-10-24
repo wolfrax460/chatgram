@@ -170,6 +170,7 @@ If a health check or the smoke test fails: roll back immediately (section 5) and
 Always record the current commit and the Vercel deployment URL before deploying so
 rollback is unambiguous.
 | 2026-10-24 (evening) | \`ef8d69b\` | Do-not-disturb notification preferences (User.notificationPrefs, GET/PUT /api/users/me/notifications, Settings UI switch + From/To times, client gate silencing desktop notifications and the chime, wrap-over-midnight aware). Gate: 365 integration assertions + 22 unit + 36 AI + 55 Playwright. | **Green.** DB backup \`20261024-114214\` (28K, statuses 0), src backup \`src.bak-20261024-114214\`, deps installed then PM2 \`--update-env\` → health ok. Web deployment \`chatgram-24mhshntt\`; /, /web/, /docs/, /web/admin 200; auth layout re-verified. New endpoint 401 unauthenticated. |
+| 2026-10-24 (night) | \`8e4e192\` | WebRTC 1:1 voice calls: GET /api/calls/ice (STUN/TURN from env), authenticated socket signalling (offer/answer/ICE/reject/end, shared-chat + block checks, offline + forbidden errors), web call overlay (ring, accept/decline, mute, camera, timer, hang-up), ChatHeader call button, Playwright fake-media args. Gate: 381 integration assertions + 22 unit + 36 AI + 57 Playwright. | **Green.** DB backup \`20261024-115853\` (28K, statuses 0), src backup \`src.bak-20261024-115853\`, deps installed then PM2 \`--update-env\` → health ok. Web deployment \`chatgram-fwrlqb6h9\`; /, /web/, /docs/, /web/admin 200; auth layout verified; /api/calls/ice 401 unauth. TURN is optional via STUN_URLS/TURN_* env vars. |
 
 ## 6. Deploy record
 

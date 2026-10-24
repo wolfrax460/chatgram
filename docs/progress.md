@@ -1022,3 +1022,17 @@ DB `chatgram-backups/20261024-105120.tgz`, nginx `.bak-20261024`. Recorded in
   `calls.spec.js` **2/2** (decline flow + accept → live timer → hang-up).
 - TURN is optional (`TURN_URLS/TURN_USERNAME/TURN_CREDENTIAL`); P2P works without it,
   strict-NAT users need it configured on the server.
+
+
+### Session 8 deploy (2026-10-24) — WebRTC calls
+- Deployed commit `8e4e192` to API (backup `20261024-115853`, src backup
+  `src.bak-20261024-115853`) and web (Vercel `chatgram-fwrlqb6h9`).
+- Gate before deploy: unit 22, integration 381 assertions (incl. 16 call-signalling
+  checks), AI 36, Playwright 57 (incl. 2 call flows with fake media), typecheck + build.
+- After deploy: health ok, all pages 200, auth layout verified, `/api/calls/ice` 401
+  unauthenticated, PM2 online (no unstable restarts), error log only expected lines.
+- TURN is not configured in production yet: P2P calls work for normal networks; add
+  `TURN_URLS`/`TURN_USERNAME`/`TURN_CREDENTIAL` to `~/chatgram/server/.env` and restart
+  for strict-NAT users.
+- Rollback: previous Vercel deployment, `src.bak-20261024-115853`,
+  `chatgram-backups/20261024-115853.tgz`.
