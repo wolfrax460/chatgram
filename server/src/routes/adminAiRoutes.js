@@ -5,8 +5,16 @@ const { requireAdminSession, requireAdminCsrf } = require('../middleware/adminAu
 const admin = require('../admin/auth');
 const ai = require('../ai/chatgram');
 const aiPolicy = require('../ai/policy');
+const insights = require('../controllers/adminAiInsightsController');
 
 router.use(requireAdminSession);
+
+// AI usage analytics + knowledge base editor (9b, Chatgram AI section).
+router.get('/usage', insights.usage);
+router.get('/knowledge', insights.knowledgeList);
+router.post('/knowledge', requireAdminCsrf, insights.knowledgeSave);
+router.put('/knowledge/:id', requireAdminCsrf, insights.knowledgeSave);
+router.delete('/knowledge/:id', requireAdminCsrf, insights.knowledgeDelete);
 
 router.get('/health', async (req, res) => {
   return res.json({ ai: ai.aiHealth(), blockedTopicsConfigured: Boolean(process.env.AI_BLOCKED_TOPICS) });

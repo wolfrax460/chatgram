@@ -17,6 +17,8 @@ const ProvidersPage = lazy(() => import('./ProvidersPage'));
 const AnnouncementsPage = lazy(() => import('./AnnouncementsPage'));
 const HealthPage = lazy(() => import('./HealthPage'));
 const AuditPage = lazy(() => import('./AuditPage'));
+const AiUsagePage = lazy(() => import('./AiUsagePage'));
+const KnowledgePage = lazy(() => import('./KnowledgePage'));
 const LegacyPanels = lazy(() => import('../AdminGate'));
 
 /* ------------------------------------------------------------------- routes */
@@ -34,8 +36,8 @@ const NAV: NavEntry[] = [
   { path: '/admin/support', label: 'Support', icon: LifeBuoy, group: 'Content' },
   { path: '/admin/inbox', label: 'Inbox', icon: Inbox, group: 'Chatgram AI', built: true, badge: 'inbox' },
   { path: '/admin/providers', label: 'Model providers', icon: Workflow, group: 'Chatgram AI', built: true },
-  { path: '/admin/knowledge', label: 'Knowledge base', icon: BookOpen, group: 'Chatgram AI' },
-  { path: '/admin/ai-usage', label: 'AI usage', icon: Sparkles, group: 'Chatgram AI' },
+  { path: '/admin/knowledge', label: 'Knowledge base', icon: BookOpen, group: 'Chatgram AI', built: true },
+  { path: '/admin/ai-usage', label: 'AI usage', icon: Sparkles, group: 'Chatgram AI', built: true },
   { path: '/admin/safety', label: 'AI safety', icon: ShieldCheck, group: 'Chatgram AI' },
   { path: '/admin/announcements', label: 'Announcements', icon: Megaphone, group: 'Operations', built: true },
   { path: '/admin/releases', label: 'App releases', icon: Download, group: 'Operations' },
@@ -294,6 +296,8 @@ function PageForPath({
   if (normalized === '/admin/security') return <SecurityPage session={session} onSignOut={onSignOut} />;
   if (normalized === '/admin/health') return <HealthPage />;
   if (normalized === '/admin/audit') return <AuditPage />;
+  if (normalized === '/admin/ai-usage') return <AiUsagePage />;
+  if (normalized === '/admin/knowledge') return <KnowledgePage session={session} />;
   if (normalized === '/admin/announcements') return <AnnouncementsPage session={session} />;
   if (normalized === '/admin/legacy') return <LegacyPanels />;
   const entry = NAV.find((item) => item.path === normalized) ?? NAV[0]!;
