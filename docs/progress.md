@@ -15,6 +15,50 @@ Work from earlier sessions is committed locally in small commits.
 Deploy policy: **deploy-after-green** (owner authorised production deploys on 2026-10-24).
 Deploy record + rollback commands: `docs/deploy.md`.
 
+### 2026-10-24 — Presence bug (Janvier / Samuel always "online") — DONE
+
+**Symptom:** Janvier Yedid and Samuel FX showed a permanent green dot / "online" even when not using the app.
+
+**Cause (b in the brief): the DB flag was the source of truth.** `User.isOnline` was set to true by
+any REST login (password or Google) and only cleared by a clean socket disconnect. Every PM2 restart or
+crash killed the sockets without running those handlers, so the flag stayed true. Evidence before the fix:
+3 users flagged `isOnline=true` while the API had only 2 established TCP connections, 67 PM2 restarts,
+and the two reported users last seen on 19 Oct / 20 Oct. Presence events themselves were fine; the
+REST payloads (chat list, group roster, profile, contacts) trusted the column.
+
+**Fix**
+- presence = live sockets only: `utils/realtime` keeps `userId -> Set<socketId>`; a user is online iff the set is non-empty
+- every REST read path now asks the registry (chats, groups, rosters, profiles, contacts, search, own payload)
+- login/OAuth no longer mark a user online
+- heartbeat: client `presence:ping` every 25 s, per-socket `lastPing`, sweeper disconnects sockets silent for
+  `PRESENCE_STALE_MS` (60 s prod). Normal disconnect then updates lastSeen, clears the flag on the last device,
+  and emits `presence:offline` with lastSeen
+- every boot runs `resetStuckPresence()` (flags cleared, lastSeen preserved); `server/scripts/reset-presence.js`
+  is the one-off cleanup (dry run by default, `--apply`)
+- `/api/status/health` now exposes `presence: { usersOnline, sockets, staleMs }`
+- client: `apps/web/src/lib/presence.ts` — live value wins, and while the socket is down presence is unknown so
+  everyone renders offline instead of falling back to a stale REST snapshot. Chat list dot, chat header,
+  contacts, group members and the profile panel all share that one source; the map is cleared on disconnect
+- incidental: the presence hook was first called inside the chat-list map, which crashed the app as soon as a
+  user had =1 chat ("Rendered more hooks than during the previous render"); hoisted to the component. Caught by
+  the new Playwright test.
+
+**Verified on production (2026-10-24)**
+- pre-fix dry run: 2 flagged (Janvier Yedid, SAMUEL FX) — 0 smoke accounts involved
+- restart boot log: `Presence: reset 2/2 stuck online flag(s) on startup e.g. Janvier Yedid, SAMUEL FX`
+- after the fix: `users isOnline=true: 0`; Janvier false lastSeen 2026-10-19T17:48Z, Samuel false lastSeen 2026-10-20T21:03Z
+- production smoke test with 2 throwaway accounts (created and deleted by exact id, 0 left): 7/7 — stuck flag
+  does not read as online; connected reads online; disconnect emits offline + lastSeen; disconnected reads offline
+- health: `presence: {usersOnline: 0, sockets: 0, staleMs: 60000}`
+
+**Tests added:** `server/test/unit/presence.test.js` (14), `server/test/integration/presenceReset.test.js` (12),
+`server/test/integration/presence.test.js` (16), `tests/e2e/presence.spec.js` (Playwright: B closes the tab,
+A sees "last seen"). Full gate on the local stack: 460 integration + 50 unit + 36 AI assertions green;
+typecheck and build clean.
+
+**Deploy:** backend `src.bak-20261024-143333`, DB dump `~/chatgram-backups/20261024-143333.tgz`, web
+`chatgram-8jiknwnkc`. Recorded in `docs/deploy.md`.
+
 ### Where the work queue stands
 
 1. DONE C - change password (sessions invalidated, email notice, 30 integration assertions).
@@ -183,7 +227,8 @@ see decisions.md D9).
 - **A4 (partial)** Hover actions: reply (quoted preview above the bubble, sent as a
   \> Name: text\ prefix), copy, delete-for-me (local, see gaps).
 - **A5** "Scroll to latest" floating button; "New messages" divider derived from
-  the first message not in \eadBy\.
+  the first message not in \
+eadBy\.
 - **A6** Typing indicator in the chat header and in the chat-list row.
 - **B1-B5** Emoji picker (32 emoji), send/mic swap, Enter sends + Shift+Enter newline,
   textarea auto-grows to ~5 lines, per-chat drafts, attach menu (photo / document / camera).
@@ -210,7 +255,8 @@ see decisions.md D9).
 
 All additive; existing documents and the Flutter client are unaffected.
 
-- \Message\: \eactions[{userId, emoji, createdAt}]\, \deletedFor[userId]\, \isDeleted\
+- \Message\: \
+eactions[{userId, emoji, createdAt}]\, \deletedFor[userId]\, \isDeleted\
   (+ indexes on \chatId+isDeleted\ and \deletedFor\).
 - \DELETE /api/messages/:id?scope=me|everyone\ â€” \me\ pushes to \deletedFor\;
   \everyone\ (sender only) sets \isDeleted\, clears content/media and emits
@@ -223,7 +269,8 @@ All additive; existing documents and the Flutter client are unaffected.
 
 ### Incident: brief production outage
 While deploying the first version, \messageRoutes.js\ referenced
-\eactToMessage\/\deleteMessage\ without importing them, so the API crash-looped
+\
+eactToMessage\/\deleteMessage\ without importing them, so the API crash-looped
 and nginx returned 502. A destructuring anchor in my patch did not match and I did
 not verify the deployed file before restarting. Caught within minutes, fixed by
 adding the imports, redeployed and verified healthy. Lesson: run the require
@@ -262,7 +309,8 @@ graph against the *uploaded* file, not only the local one.
   (served from docs/index.html â€” the same SPA shell, routed by pathname in
   main.jsx). Sign-in/sign-up Terms and Privacy links deep-link to
   /docs#terms and /docs#privacy.
-  Note: a Vercel ewrites entry for /docs did not take effect, so /docs is
+  Note: a Vercel 
+ewrites entry for /docs did not take effect, so /docs is
   served as a real directory instead of a rewrite.
 - Deployed to production: landing + /docs + /web (new auth screens).
 - /app still 307 -> /web.
