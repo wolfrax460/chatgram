@@ -1,3 +1,56 @@
+## STATUS after the 2026-10-24 evening round (deployed, production green)
+
+### Done, tested and deployed this round
+- **STEP 0** verified against production (item 4 card live, Support answers in ~3 s with a 9/9
+  regression test, pinned AI row + Ask-AI row work in a real browser). See "Round 1" below.
+- **Change 3** native dropdown fix (color-scheme, dark options, date/time, autofill) + guard test +
+  contrast Playwright specs.
+- **Change 1** Chatgram AI as a normal conversation (shared ChatHeader/Composer, menus, previews,
+  unread badge, streamed safe markdown, actions, clear/new) **and group @Chatgram AI mentions**
+  (off by default, rate limited, dedicated system account). Two production-only AI bugs fixed:
+  `service.streamForFeature` was missing from the destructured service (every answer said
+  "unavailable"), and the Vercel config never proxied `/api` (stream fetch 405 + admin cookie).
+  The hidden learning marker no longer leaks, even mid-stream.
+- **9e tail**: low-confidence/empty/refused answers and repeated questions create/increment Inbox
+  records; a message to Chatgram Support with no reply in 60 s creates `support_timeout`;
+  `GET /api/admin/ai/inbox/unread` feeds a 15 s live badge.
+- **Change 2 chunk 1**: the new route-based admin dashboard (Overview, Users + detail, Inbox,
+  Providers, Admin security, placeholders), dark design system, Ctrl+K palette, shared custom
+  Select, new dashboard endpoints, and the previously missing `/api/admin/ai/policy` routes.
+  Screenshots: `docs/screens/admin-*.png`.
+- Admin panel password reset (the recorded one did not match the server hash) — the owner must
+  change it on first use and delete `.secrets/admin-credentials.txt`.
+
+### Production state
+`/api/status/health` ok (DB + socket + Cloudinary), `/web/`, `/web/admin`, `/docs/` 200,
+`/api` proxy verified (GET health + POST login). Last web deployment `chatgram-oazzw9gg7`, backend
+PM2 restart #79, backups `20261024-173554` and `20261024-182636` with source snapshots.
+
+### Still to build (crossed in the report)
+1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
+   base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,
+   Feature flags & maintenance, Safety & abuse, System health, Audit log UI, Settings, Data
+   requests. Each is an honest "not built yet" placeholder in the new dashboard today.
+2. **9d oversight** (sensitive): security-review reason prompt, audit "who viewed what",
+   read-only conversation review with a 15-minute session, global message search, rate limits,
+   legal/notice text updates.
+3. **9a remainder**: TOTP enrolment + recovery codes, optional IP allowlist, removing the legacy
+   role-based admin guard (sign-out-all already exists).
+4. **Item 4 remainder**: `GET /api/app/recommendations`, dismissal, completed-state hiding, admin
+   editor (the rotating card + quick actions are live).
+5. **Items 5/6/7**: rebuild the Windows NSIS installer from the current web build, build the
+   Android APK, and the landing Features/Downloads tab with real screenshots + checksums + QR.
+6. Owner actions: change both passwords and delete `.secrets/admin-credentials.txt`, enable TOTP
+   once built, paste a working Groq key in Model providers, rotate leaked keys, install the APK on
+   a real phone once built.
+
+### Next session starts here (in this order)
+1. Finish 9b pages one per deploy, starting with Reports/Support/Groups (data endpoints already
+   follow the pattern in `server/src/controllers/adminOverviewController.js`).
+2. 9d oversight with its guard rails before showing any user message content.
+3. 9a TOTP + IP allowlist + remove the legacy guard (list removals in docs/decisions.md).
+4. Item 4 API/editor; then items 5, 6, 7 (installers/APK/landing) and one final report.
+
 ## Round 1 (fresh session, 2026-10-24 evening) — starts here
 
 ### STEP 0 verification (done against code + production)
