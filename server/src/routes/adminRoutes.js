@@ -35,4 +35,24 @@ router.get('/users/:id', requireAdminSession, userDetail);
 router.post('/users/:id/force-logout', requireAdminSession, requireAdminCsrf, forceLogout);
 router.post('/users/:id/reset-2fa', requireAdminSession, requireAdminCsrf, resetTwoFactor);
 
+// Empty-screen recommendations editor (item 4, Announcements page).
+const recommendations = require('../ai/recommendations');
+router.get('/recommendations', requireAdminSession, async (req, res) => {
+  try {
+    return res.json({ recommendations: await recommendations.listAll() });
+  } catch (error) {
+    return res.status(500).json({ message: 'Could not load recommendations.' });
+  }
+});
+router.put('/recommendations', requireAdminSession, requireAdminCsrf, async (req, res) => {
+  try {
+    const rows = await recommendations.updateAll(req.body?.recommendations);
+    const admin = require('../admin/auth');
+    await admin.audit('recommendations_update', req, `${rows.length} entries`);
+    return res.json({ recommendations: rows });
+  } catch (error) {
+    return res.status(400).json({ message: error.message || 'Could not save recommendations.' });
+  }
+});
+
 module.exports = router;

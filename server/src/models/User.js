@@ -127,6 +127,8 @@ const userSchema = new mongoose.Schema({
     dndStart: { type: String, default: '22:00' },
     dndEnd: { type: String, default: '07:00' },
   },
+  // Empty-screen recommendation keys this user dismissed (item 4).
+  dismissedRecommendations: { type: [String], default: [] },
   // Users this account has blocked, and chats this account muted.
   // Muted chats suppress notifications only; messages still arrive.
   blocked: [{

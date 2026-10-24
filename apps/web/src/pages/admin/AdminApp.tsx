@@ -14,6 +14,7 @@ const UsersPage = lazy(() => import('./UsersPage'));
 const UserDetailPage = lazy(() => import('./UserDetailPage'));
 const InboxPage = lazy(() => import('./InboxPage'));
 const ProvidersPage = lazy(() => import('./ProvidersPage'));
+const AnnouncementsPage = lazy(() => import('./AnnouncementsPage'));
 const LegacyPanels = lazy(() => import('../AdminGate'));
 
 /* ------------------------------------------------------------------- routes */
@@ -34,7 +35,7 @@ const NAV: NavEntry[] = [
   { path: '/admin/knowledge', label: 'Knowledge base', icon: BookOpen, group: 'Chatgram AI' },
   { path: '/admin/ai-usage', label: 'AI usage', icon: Sparkles, group: 'Chatgram AI' },
   { path: '/admin/safety', label: 'AI safety', icon: ShieldCheck, group: 'Chatgram AI' },
-  { path: '/admin/announcements', label: 'Announcements', icon: Megaphone, group: 'Operations' },
+  { path: '/admin/announcements', label: 'Announcements', icon: Megaphone, group: 'Operations', built: true },
   { path: '/admin/releases', label: 'App releases', icon: Download, group: 'Operations' },
   { path: '/admin/flags', label: 'Feature flags', icon: Flag, group: 'Operations' },
   { path: '/admin/settings', label: 'Settings', icon: Settings, group: 'Operations' },
@@ -289,6 +290,7 @@ function PageForPath({
   if (normalized === '/admin/inbox') return <InboxPage session={session} />;
   if (normalized === '/admin/providers') return <ProvidersPage session={session} />;
   if (normalized === '/admin/security') return <SecurityPage session={session} onSignOut={onSignOut} />;
+  if (normalized === '/admin/announcements') return <AnnouncementsPage session={session} />;
   if (normalized === '/admin/legacy') return <LegacyPanels />;
   const entry = NAV.find((item) => item.path === normalized) ?? NAV[0]!;
   return <PlaceholderPage entry={entry} />;

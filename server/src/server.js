@@ -285,6 +285,9 @@ app.get('/api/status/health', require('./help/controller').getServiceStatus);
 
 app.use('/api/status', statusRoutes);
 app.use('/api/app', appRoutes);
+// Empty-screen recommendations (item 4): mounted after /api/app so the existing
+// app routes keep working and this path falls through to its own router.
+app.use('/api/app/recommendations', require('./routes/recommendationRoutes'));
 app.use('/api/help', require('./help'));
 app.use('/api/support', supportRoutes);
 app.use('/api/ai', require('./routes/aiRoutes'));

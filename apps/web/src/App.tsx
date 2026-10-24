@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Moon, Sun, Monitor, MessageCircle, LogOut, Users, BookUser, CircleDashed,
   Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy, Sparkles, BadgeCheck,
-  UserPlus, Download, Share2, FolderUp, MessageSquarePlus, Camera,
+  UserPlus, Download, Share2, FolderUp, FileText, Camera,
 } from 'lucide-react';
 import {
   chatPartner,
@@ -40,6 +40,16 @@ import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, formatTime, sameDay, statusOf } from './lib/ui';
 
 type Tab = 'chats' | 'status' | 'groups' | 'contacts' | 'settings' | 'ai';
+
+/** Item 4: one empty-screen recommendation from GET /api/app/recommendations. */
+type AppRecommendation = {
+  key: string;
+  title: string;
+  body: string;
+  ctaLabel: string;
+  action: 'ai' | 'downloads' | 'profile' | 'invite' | 'url';
+  url?: string;
+};
 
 // The admin dashboard is its own route tree, loaded lazily so the messaging app
 // bundle never carries the dashboard code.
@@ -748,6 +758,7 @@ function Shell() {
   const [aiPendingQuestion, setAiPendingQuestion] = useState<string | null>(null);
 
   useRealtimeBridge();
+  const queryClient = useQueryClient();
 
   // Load the user's do-not-disturb schedule; notifications/sounds honour it.
   const notificationPrefs = useQuery({
@@ -803,6 +814,56 @@ function Shell() {
     }),
     [closeProfile, profileTarget?.userId],
   );
+
+  // Item 4: the empty-screen recommendation is server-driven (admin editor) and
+  // can be dismissed; completed items are already filtered by the API.
+  const recommendationsQuery = useQuery({
+    queryKey: ['app-recommendations'],
+    queryFn: () => api.request<{ recommendations: AppRecommendation[] }>('/api/app/recommendations'),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const [dismissingRecommendation, setDismissingRecommendation] = useState(false);
+  const [emptyDocument, setEmptyDocument] = useState<File | null>(null);
+  const emptyDocRef = useRef<HTMLInputElement>(null);
+
+  function shareInvite() {
+    const url = `${window.location.origin}/web/`;
+    if (navigator.share) void navigator.share({ title: 'Chatgram', url });
+    else void navigator.clipboard?.writeText(url);
+  }
+
+  function runRecommendation(rec: AppRecommendation) {
+    if (rec.action === 'ai') setTab('ai');
+    else if (rec.action === 'downloads') window.open('/docs#downloads', '_blank', 'noopener');
+    else if (rec.action === 'profile') setTab('settings');
+    else if (rec.action === 'invite') shareInvite();
+    else if (rec.url) window.open(rec.url, '_blank', 'noopener');
+  }
+
+  async function dismissRecommendation(key: string) {
+    setDismissingRecommendation(true);
+    try {
+      await api.request(`/api/app/recommendations/${encodeURIComponent(key)}/dismiss`, { method: 'POST' });
+      await queryClient.invalidateQueries({ queryKey: ['app-recommendations'] });
+    } catch {
+      // The card simply stays if the dismiss fails.
+    } finally {
+      setDismissingRecommendation(false);
+    }
+  }
+
+  async function sendEmptyDocument(chatId: string) {
+    if (!emptyDocument) return;
+    try {
+      const uploaded = await api.uploadMedia(emptyDocument);
+      await api.sendMessage({ chatId, type: 'file', mediaUrl: uploaded.url, content: uploaded.originalname });
+      setEmptyDocument(null);
+      openChat(chatId);
+    } catch {
+      // Leave the picker open so the user can retry.
+    }
+  }
 
   if (!user) return null;
 
@@ -951,36 +1012,44 @@ function Shell() {
                 <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">Pick a chat on the left, or start something new.</p>
                 {!connected ? <p className="mt-2 text-xs font-semibold text-amber-500">Reconnecting…</p> : null}
 
-                {/* One rotating recommendation (item 4); completed ones are hidden below. */}
-                <div className="mt-4 rounded-2xl border border-ink-200 bg-white p-3 text-left dark:border-white/10 dark:bg-white/[.03]" data-testid="empty-recommendation">
-                  {(() => {
-                    const recommendations = [
-                      { title: 'Chatgram for Windows and Android', body: 'Use Chatgram on your desktop and phone.', cta: 'See downloads', icon: Download, action: () => window.open('/docs#downloads', '_blank', 'noopener') },
-                      { title: 'Ask Chatgram AI anything', body: 'General questions, writing, translations and code help.', cta: 'Open Chatgram AI', icon: Sparkles, action: () => setTab('ai') },
-                      { title: 'Add a profile photo', body: 'Help people recognise you in chats.', cta: 'Edit profile', icon: Camera, action: () => setTab('settings') },
-                      { title: 'Invite a friend', body: 'Share your Chatgram link and start chatting.', cta: 'Invite', icon: Share2, action: () => { const url = window.location.origin + '/web/'; if (navigator.share) void navigator.share({ title: 'Chatgram', url }); else void navigator.clipboard?.writeText(url); } },
-                    ];
-                    const pick = recommendations[(new Date().getHours() % recommendations.length) as number]!;
-                    const Icon = pick.icon;
-                    return (
-                      <div className="flex items-start gap-3">
+                {/* Item 4: one rotating recommendation from the server, dismissible. */}
+                {(() => {
+                  const recommendations = recommendationsQuery.data?.recommendations ?? [];
+                  if (recommendations.length === 0) return null;
+                  const pick = recommendations[new Date().getHours() % recommendations.length]!;
+                  const Icon = pick.action === 'downloads' ? Download : pick.action === 'profile' ? Camera : pick.action === 'invite' ? Share2 : Sparkles;
+                  return (
+                    <div className="relative mt-4 rounded-2xl border border-ink-200 bg-white p-3 text-left dark:border-white/10 dark:bg-white/[.03]" data-testid="empty-recommendation">
+                      <button
+                        type="button"
+                        className="absolute right-2 top-2 rounded-md p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700 dark:hover:bg-white/10 dark:hover:text-white"
+                        aria-label="Dismiss this recommendation"
+                        title="Dismiss"
+                        data-testid="dismiss-recommendation"
+                        disabled={dismissingRecommendation}
+                        onClick={() => void dismissRecommendation(pick.key)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                      <div className="flex items-start gap-3 pr-6">
                         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-600/10 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><Icon className="h-5 w-5" /></span>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold">{pick.title}</p>
                           <p className="mt-0.5 text-[12.5px] text-ink-500 dark:text-ink-300">{pick.body}</p>
-                          <button type="button" className="btn-primary mt-2 !h-8 !px-3 !text-[12px]" onClick={pick.action}>{pick.cta}</button>
+                          <button type="button" className="btn-primary mt-2 !h-8 !px-3 !text-[12px]" onClick={() => runRecommendation(pick)} data-testid="recommendation-cta">{pick.ctaLabel}</button>
                         </div>
                       </div>
-                    );
-                  })()}
-                </div>
+                    </div>
+                  );
+                })()}
 
-                {/* Quick actions row (item 4). */}
+                {/* Quick actions row (item 4): document, contact, invite, group, AI. */}
+                <input ref={emptyDocRef} type="file" multiple className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) setEmptyDocument(file); }} />
                 <div className="mt-4 grid grid-cols-5 gap-1.5" data-testid="empty-quick-actions">
                   {[
-                    { label: 'New chat', icon: MessageSquarePlus, action: () => openChat('') },
+                    { label: 'Send document', icon: FileText, action: () => emptyDocRef.current?.click() },
                     { label: 'Add contact', icon: UserPlus, action: () => setTab('contacts') },
-                    { label: 'Invite friend', icon: Share2, action: () => { const url = window.location.origin + '/web/'; if (navigator.share) void navigator.share({ title: 'Chatgram', url }); else void navigator.clipboard?.writeText(url); } },
+                    { label: 'Invite a friend', icon: Share2, action: shareInvite },
                     { label: 'New group', icon: FolderUp, action: () => setTab('groups') },
                     { label: 'Chatgram AI', icon: Sparkles, action: () => setTab('ai') },
                   ].map((action) => (
@@ -990,6 +1059,28 @@ function Shell() {
                     </button>
                   ))}
                 </div>
+
+                {emptyDocument ? (
+                  <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={() => setEmptyDocument(null)}>
+                    <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-ink-800" onClick={(event) => event.stopPropagation()} role="dialog" aria-label="Send document">
+                      <div className="mb-2 flex items-center justify-between">
+                        <h3 className="min-w-0 truncate font-bold">Send “{emptyDocument.name}” to…</h3>
+                        <button type="button" className="btn-ghost !px-2" onClick={() => setEmptyDocument(null)} aria-label="Close"><X className="h-4 w-4" /></button>
+                      </div>
+                      {(chats.data ?? []).length === 0 ? <p className="text-sm text-ink-500">Start a chat first, then attach the document there.</p> : null}
+                      <ul className="max-h-72 overflow-y-auto">
+                        {(chats.data ?? []).map((target) => (
+                          <li key={target.id}>
+                            <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-ink-100 dark:hover:bg-white/5" onClick={() => void sendEmptyDocument(target.id)}>
+                              <span className="truncate text-sm">{chatTitle(target, meId)}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                ) : null}
+
               </div>
             </section>
           )}
