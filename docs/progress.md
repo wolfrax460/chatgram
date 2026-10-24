@@ -997,3 +997,15 @@ DB `chatgram-backups/20261024-105120.tgz`, nginx `.bak-20261024`. Recorded in
   client gate in `lib/notify.ts` (`isDoNotDisturbActive`, wrap-over-midnight aware) silences both
   desktop notifications and the message chime; loaded on sign-in.
 - Verified: `notificationPrefs.test.js` 14/14 + Playwright persistence test.
+
+
+### Session 7 deploy (2026-10-24) — do-not-disturb
+- Deployed commit `ef8d69b` to API (backup `20261024-114214`, src backup
+  `src.bak-20261024-114214`) and web (Vercel `chatgram-24mhshntt`).
+- Gate before deploy: unit 22, integration 365 assertions, AI 36, Playwright 55,
+  typecheck + build — all green.
+- After deploy: health ok (database/socket/cloudinary), `/`, `/web/`, `/docs/`,
+  `/web/admin` 200, auth layout verified on production, new notifications endpoint
+  401 unauthenticated, PM2 online with no unstable restarts.
+- Rollback: previous Vercel deployment, `src.bak-20261024-114214`,
+  `chatgram-backups/20261024-114214.tgz`.

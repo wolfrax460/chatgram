@@ -169,6 +169,7 @@ If a health check or the smoke test fails: roll back immediately (section 5) and
 
 Always record the current commit and the Vercel deployment URL before deploying so
 rollback is unambiguous.
+| 2026-10-24 (evening) | \`ef8d69b\` | Do-not-disturb notification preferences (User.notificationPrefs, GET/PUT /api/users/me/notifications, Settings UI switch + From/To times, client gate silencing desktop notifications and the chime, wrap-over-midnight aware). Gate: 365 integration assertions + 22 unit + 36 AI + 55 Playwright. | **Green.** DB backup \`20261024-114214\` (28K, statuses 0), src backup \`src.bak-20261024-114214\`, deps installed then PM2 \`--update-env\` → health ok. Web deployment \`chatgram-24mhshntt\`; /, /web/, /docs/, /web/admin 200; auth layout re-verified. New endpoint 401 unauthenticated. |
 
 ## 6. Deploy record
 
