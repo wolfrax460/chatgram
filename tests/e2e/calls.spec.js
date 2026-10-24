@@ -27,7 +27,7 @@ test('a direct call rings the other user and can be declined', async ({ browser 
     await openDirectChat(a.page, bob.user.displayName);
 
     const callDialog = b.page.getByRole('dialog', { name: 'Call' });
-    await a.page.getByRole('button', { name: 'Call', exact: true }).click();
+    await a.page.getByRole('button', { name: 'Voice call' }).click();
     await expect(b.page.getByTestId('call-title')).toContainText(`${alice.user.displayName} is calling`, {
       timeout: 20_000,
     });
@@ -53,7 +53,7 @@ test('the other user can accept a call and either side can hang up', async ({ br
   const b = await newSession(browser, bob);
   try {
     await openDirectChat(a.page, bob.user.displayName);
-    await a.page.getByRole('button', { name: 'Call', exact: true }).click();
+    await a.page.getByRole('button', { name: 'Voice call' }).click();
 
     await expect(b.page.getByRole('button', { name: 'Accept call' })).toBeVisible({ timeout: 20_000 });
     await b.page.getByRole('button', { name: 'Accept call' }).click();
