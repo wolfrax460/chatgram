@@ -85,84 +85,91 @@ function AuthShell({ children }: { children: React.ReactNode }) {
   const [langOpen, setLangOpen] = useState(false);
 
   return (
-    <div className="no-scrollbar relative h-full overflow-y-auto overflow-x-hidden overscroll-contain">
-      <div className="flex min-h-full flex-col items-center justify-center px-4 py-6">
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+    <div
+      className="auth-page relative h-full overflow-y-auto overflow-x-hidden overscroll-contain"
+      data-testid="auth-page"
+    >
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden>
         <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-brand-500/20 blur-3xl" />
         <div className="absolute -bottom-32 -right-16 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" />
       </div>
 
-      <div className="w-full max-w-md animate-fade-up">
-        <div className="mb-4 flex flex-col items-center gap-1.5 text-center">
-          <img
-            src="/web/chatgram-icon.svg"
-            alt="Chatgram"
-            width={96}
-            height={96}
-            className="h-16 w-16 drop-shadow-lg sm:h-20 sm:w-20"
-          />
-          <div>
-            <h1 className="text-2xl font-extrabold tracking-tight">Chatgram</h1>
-            <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">{t('tagline')}</p>
-          </div>
-        </div>
+      <div className="auth-layout">
+        {/* Wide, tall screens: brand panel beside the form. */}
+        <aside className="auth-brand-panel" aria-hidden>
+          <img src="/web/chatgram-icon.svg" alt="" width={112} height={112} className="h-24 w-24 drop-shadow-xl" />
+          <h1 className="mt-4 text-3xl font-extrabold tracking-tight">Chatgram</h1>
+          <p className="mt-2 max-w-xs text-sm text-ink-600 dark:text-ink-300">{t('tagline')}</p>
+          <ul className="mt-6 space-y-2 text-[13px] text-ink-600 dark:text-ink-300">
+            <li>✓ Fast, private messaging</li>
+            <li>✓ Photos, videos and voice notes</li>
+            <li>✓ Groups, status updates and help</li>
+          </ul>
+        </aside>
 
-        {children}
-
-        <footer className="mt-4 space-y-1.5 text-center text-[11.5px] text-ink-600 dark:text-ink-300">
-          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-            <a href="/docs/#privacy" className="hover:underline">{t('privacy')}</a>
-            <span aria-hidden>·</span>
-            <a href="/docs/#terms" className="hover:underline">{t('terms')}</a>
-            <span aria-hidden>·</span>
-            <a href="mailto:support@chatgram.local" className="hover:underline">{t('help')}</a>
-          </div>
-
-          {WINDOWS_URL || ANDROID_URL ? (
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              {WINDOWS_URL ? (
-                <a href={WINDOWS_URL} className="hover:underline">{t('downloadWindows')}</a>
-              ) : null}
-              {ANDROID_URL ? (
-                <a href={ANDROID_URL} className="hover:underline">{t('downloadAndroid')}</a>
-              ) : null}
+        <div className="auth-main">
+          {/* Short screens: logo inline with the name, tagline hidden by CSS. */}
+          <div className="auth-brand-inline">
+            <img src="/web/chatgram-icon.svg" alt="Chatgram" width={64} height={64} className="auth-logo drop-shadow-lg" />
+            <div className="text-left">
+              <h1 className="text-2xl font-extrabold leading-tight tracking-tight">Chatgram</h1>
+              <p className="auth-tagline text-[12.5px] text-ink-600 dark:text-ink-300">{t('tagline')}</p>
             </div>
-          ) : null}
-
-          <div className="flex items-center justify-center gap-2">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setLangOpen((v) => !v)}
-                className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] font-semibold hover:bg-ink-200/60 dark:hover:bg-white/5"
-                aria-haspopup="listbox"
-                aria-expanded={langOpen}
-                aria-label={t('language')}
-              >
-                <Globe className="h-3.5 w-3.5" />
-                {LOCALE_LABELS[locale]}
-              </button>
-              {langOpen ? (
-                <div className="absolute bottom-full left-1/2 z-30 mb-1 w-40 -translate-x-1/2 overflow-hidden rounded-xl border border-ink-200 bg-white py-1 shadow-xl dark:border-white/10 dark:bg-ink-700">
-                  {LOCALES.map((code: Locale) => (
-                    <button
-                      key={code}
-                      type="button"
-                      onClick={() => { setLocale(code); setLangOpen(false); }}
-                      className={`block w-full px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10 ${
-                        code === locale ? 'font-bold text-brand-700 dark:text-brand-300' : ''
-                      }`}
-                    >
-                      {LOCALE_LABELS[code]}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            <span aria-hidden>·</span>
-            <span>{t('version')} {APP_VERSION}</span>
           </div>
-        </footer>
+
+          {children}
+
+          <footer className="auth-footer" data-testid="auth-footer">
+            <div className="flex items-center justify-center gap-x-2">
+              <a href="/docs/#privacy" className="hover:underline">{t('privacy')}</a>
+              <span aria-hidden>·</span>
+              <a href="/docs/#terms" className="hover:underline">{t('terms')}</a>
+              <span aria-hidden>·</span>
+              <a href="mailto:support@chatgram.local" className="hover:underline">{t('help')}</a>
+            </div>
+
+            {WINDOWS_URL || ANDROID_URL ? (
+              <div className="auth-downloads flex items-center gap-x-3">
+                {WINDOWS_URL ? <a href={WINDOWS_URL} className="hover:underline">{t('downloadWindows')}</a> : null}
+                {ANDROID_URL ? <a href={ANDROID_URL} className="hover:underline">{t('downloadAndroid')}</a> : null}
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-center gap-1.5">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setLangOpen((v) => !v)}
+                  className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[11.5px] font-semibold hover:bg-ink-200/60 dark:hover:bg-white/5"
+                  aria-haspopup="listbox"
+                  aria-expanded={langOpen}
+                  aria-label={t('language')}
+                  data-testid="auth-language"
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  {LOCALE_LABELS[locale]}
+                </button>
+                {langOpen ? (
+                  <div className="absolute bottom-full left-1/2 z-30 mb-1 w-40 -translate-x-1/2 overflow-hidden rounded-xl border border-ink-200 bg-white py-1 shadow-xl dark:border-white/10 dark:bg-ink-700">
+                    {LOCALES.map((code: Locale) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => { setLocale(code); setLangOpen(false); }}
+                        className={`block w-full px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10 ${
+                          code === locale ? 'font-bold text-brand-700 dark:text-brand-300' : ''
+                        }`}
+                      >
+                        {LOCALE_LABELS[code]}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <span aria-hidden>·</span>
+              <span data-testid="auth-version" className="whitespace-nowrap">{t('version')} {APP_VERSION}</span>
+            </div>
+          </footer>
         </div>
       </div>
     </div>
@@ -397,7 +404,7 @@ function SignIn({ onGo }: { onGo: (screen: Screen) => void }) {
         </Field>
       ) : null}
 
-      <button type="submit" className="btn-primary h-11 w-full" disabled={busy || retryAfter !== null}>
+      <button type="submit" className="btn-primary h-11 w-full" data-testid="auth-primary" disabled={busy || retryAfter !== null}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
         {busy ? t('signIn') + '…' : t('signIn')}
       </button>
@@ -418,7 +425,7 @@ function SignIn({ onGo }: { onGo: (screen: Screen) => void }) {
         type="button"
         onClick={googleSignIn}
         disabled={googleBusy || busy}
-        className="btn h-11 w-full border border-ink-300 bg-white font-semibold text-ink-800 hover:bg-ink-50 dark:border-white/15 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+        data-testid="auth-google" className="btn h-11 w-full border border-ink-300 bg-white font-semibold text-ink-800 hover:bg-ink-50 dark:border-white/15 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
       >
         {googleBusy ? (
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -435,7 +442,7 @@ function SignIn({ onGo }: { onGo: (screen: Screen) => void }) {
 
       <p className="pt-3 text-center text-[13px] text-ink-600 dark:text-ink-300">
         {t('newToChatgram')}{' '}
-        <button type="button" onClick={() => onGo('signup')} className="font-semibold text-brand-700 hover:underline dark:text-brand-300">
+        <button type="button" data-testid="go-signup" onClick={() => onGo('signup')} className="font-semibold text-brand-700 hover:underline dark:text-brand-300">
           {t('createAccountLink')}
         </button>
       </p>
@@ -611,22 +618,24 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
             </div>
           </Field>
 
-          <Field id="signup-password" label={t('password')} error={errors.password}>
-            <div className="relative">
-              <input id="signup-password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" className="field h-11 pr-11" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={Boolean(errors.password)} />
-              <button type="button" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? t('hidePassword') : t('showPassword')} className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-ink-500 hover:bg-ink-200/60 dark:hover:bg-white/10">
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-            <StrengthMeter password={password} />
-          </Field>
+          <div className="grid gap-x-3 sm:grid-cols-2">
+            <Field id="signup-password" label={t('password')} error={errors.password}>
+              <div className="relative">
+                <input id="signup-password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" className="field h-11 pr-11" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={Boolean(errors.password)} />
+                <button type="button" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? t('hidePassword') : t('showPassword')} className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-ink-500 hover:bg-ink-200/60 dark:hover:bg-white/10">
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <StrengthMeter password={password} />
+            </Field>
 
-          <Field id="signup-confirm" label={t('confirmPassword')} error={errors.confirm}>
-            <input id="signup-confirm" type={showPassword ? 'text' : 'password'} autoComplete="new-password" className="field h-11" value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-invalid={Boolean(errors.confirm)} />
-          </Field>
+            <Field id="signup-confirm" label={t('confirmPassword')} error={errors.confirm}>
+              <input id="signup-confirm" type={showPassword ? 'text' : 'password'} autoComplete="new-password" className="field h-11" value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-invalid={Boolean(errors.confirm)} />
+            </Field>
+          </div>
 
-          <label className="mb-1 flex cursor-pointer items-start gap-2 text-[12.5px] text-ink-700 dark:text-ink-200">
-            <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-600" />
+          <label className="auth-terms mb-1 flex cursor-pointer items-center gap-2 text-[12.5px] text-ink-700 dark:text-ink-200">
+            <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="h-4 w-4 shrink-0 rounded border-ink-300 text-brand-600 focus:ring-brand-600" />
             <span>
               {t('agreeTerms')}{' '}
               <a href="/docs/#terms" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">{t('terms')}</a>{' '}
@@ -637,7 +646,7 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
           <p role="alert" aria-live="polite" className="min-h-[14px] text-[12px] font-medium text-rose-600 dark:text-rose-400">{errors.agree ?? ''}</p>
 
 
-      <button type="submit" className="btn-primary h-11 w-full" disabled={busy}>
+      <button type="submit" className="btn-primary h-11 w-full" data-testid="auth-primary" disabled={busy}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
             {busy ? t('sendCode') + '…' : t('sendCode')}
           </button>
@@ -651,7 +660,7 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
             <input id="signup-code" className="field h-11 text-center text-lg tracking-[.4em]" inputMode="numeric" maxLength={6} autoFocus value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" />
           </Field>
 
-          <button type="submit" className="btn-primary h-11 w-full" disabled={busy}>
+          <button type="submit" className="btn-primary h-11 w-full" data-testid="auth-primary" disabled={busy}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             {busy ? t('signUp') + '…' : t('verifyAndCreate')}
           </button>
@@ -684,7 +693,7 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
             type="button"
             onClick={googleSignUp}
             disabled={googleBusy || busy}
-            className="btn h-11 w-full border border-ink-300 bg-white font-semibold text-ink-800 hover:bg-ink-50 dark:border-white/15 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+            data-testid="auth-google" className="btn h-11 w-full border border-ink-300 bg-white font-semibold text-ink-800 hover:bg-ink-50 dark:border-white/15 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
           >
             {googleBusy ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -704,7 +713,7 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
       {step === 'details' ? (
         <p className="pt-2 text-center text-[12.5px] text-ink-600 dark:text-ink-300">
           {t('alreadyHaveAccount')}{' '}
-          <button type="button" onClick={() => onGo('signin')} className="font-semibold text-brand-700 hover:underline dark:text-brand-300">
+          <button type="button" data-testid="go-signin" onClick={() => onGo('signin')} className="font-semibold text-brand-700 hover:underline dark:text-brand-300">
             {t('signIn')}
           </button>
         </p>
@@ -770,7 +779,7 @@ function Forgot({ onGo, onSent }: { onGo: (s: Screen) => void; onSent: (identifi
         </div>
       </Field>
 
-      <button type="submit" className="btn-primary h-11 w-full" disabled={busy}>
+      <button type="submit" className="btn-primary h-11 w-full" data-testid="auth-primary" disabled={busy}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
         {busy ? t('sendCode') + '…' : t('sendCode')}
       </button>
@@ -864,7 +873,7 @@ function Reset({
         <input id="reset-confirm" type="password" autoComplete="new-password" className="field h-11" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
       </Field>
 
-      <button type="submit" className="btn-primary h-11 w-full" disabled={busy}>
+      <button type="submit" className="btn-primary h-11 w-full" data-testid="auth-primary" disabled={busy}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
         {busy ? t('resetPassword') + '…' : t('resetPassword')}
       </button>

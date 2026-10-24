@@ -292,3 +292,20 @@ validation for admin-entered endpoints (https-only except allow-listed local mod
 `/test` and the admin panel; migrating the widget's AI calls to it is a follow-up (see
 docs/progress.md "next session starts here"). This was deliberate: switching live AI paths in
 the same session as the help-centre rebuild would have made rollback harder.
+
+---
+
+## D17 - Deploy policy: deploy-after-green (2026-10-24)
+
+**Decision (owner):** finished, tested work is deployed to production after the full
+gate passes (typecheck, build, integration, Playwright, AI tests). Procedure and
+rollback commands live in `docs/deploy.md`.
+
+**Rules that stay:** run tsc + build after every edit; no blanket find-and-replace;
+timeout every command; never print or commit secrets; never run `server.js` just to
+"test" something; small commits; never delete user data; migrations must be
+additive/re-runnable; security must not be weakened.
+
+**Order:** backend first (backup → read-only status-cleanup count → deps install →
+PM2 restart `--update-env` → health check), then web (Vercel), then smoke test with
+throwaway test accounts which are deleted afterwards.
