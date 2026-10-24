@@ -104,6 +104,16 @@ export default function AiChat() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    function onAsk(event: Event) {
+      const text = String((event as CustomEvent<{ text?: string }>).detail?.text || '').trim();
+      if (text) void send(text);
+    }
+    window.addEventListener('chatgram-ai-ask', onAsk);
+    return () => window.removeEventListener('chatgram-ai-ask', onAsk);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function send(text: string) {
     const body = text.trim();
     if (!body || busy) return;

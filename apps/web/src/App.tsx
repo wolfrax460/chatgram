@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Moon, Sun, Monitor, MessageCircle, LogOut, Users, BookUser, CircleDashed,
-  Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy, Sparkles,
+  Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy, Sparkles, BadgeCheck,
 } from 'lucide-react';
 import {
   chatPartner,
@@ -849,7 +849,26 @@ function Shell() {
           <aside
             className={`${selected ? 'hidden lg:flex' : 'flex'} w-full shrink-0 flex-col border-r border-ink-200 dark:border-white/10 sm:w-[330px]`}
           >
+            <button
+              type="button"
+              onClick={() => setTab('ai')}
+              className="flex w-full items-center gap-3 border-b border-ink-200 px-3 py-2.5 text-left hover:bg-ink-100/70 dark:border-white/10 dark:hover:bg-white/[.04]"
+              data-testid="ai-pinned-entry"
+            >
+              <span className="relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-brand-600 text-white">
+                <img src="/web/assistant-avatar.svg" alt="" className="h-full w-full object-cover" />
+                <BadgeCheck className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-white text-brand-600 dark:bg-ink-800 dark:text-brand-300" aria-label="Official Chatgram AI" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold">Chatgram AI</span>
+                <span className="block truncate text-[11.5px] text-ink-500 dark:text-ink-400">Official · Ask anything</span>
+              </span>
+            </button>
             <ChatList
+              onAskAi={(text: string) => {
+                window.dispatchEvent(new CustomEvent('chatgram-ai-ask', { detail: { text } }));
+                setTab('ai');
+              }}
               chats={chats.data ?? []}
               meId={meId}
               selectedId={selectedId}

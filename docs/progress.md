@@ -91,7 +91,8 @@ Legend: ✅ done + deployed · ◐ partial (missing parts listed) · ✗ not sta
     silent by default. Tests 7/7. Missing: type (e) support-timeout trigger, in-app socket push.
 •   AI policy (admin-editable blocked topics + limits) — ✅ deployed: settings-backed, validated,
     audited, effective immediately; tests 7/7. Alerts toggle stored but digest delivery not built.
-•   Change 1 (Meta-AI-style conversation) — ◐ partial: disclaimer banner, intro bubble, pills
+•   Change 1 (Meta-AI-style conversation) — ◐ partial: pinned "Chatgram AI" row with avatar +
+    verified badge, "Ask Chatgram AI" search row (sends the typed query), disclaimer banner, intro bubble, pills
     above the composer, verified badge, typing dots, copy/good/bad/regenerate actions and thumbs
     feedback are deployed. Still missing: standard ChatWindow component, share-to-chat,
     image/pasted input, group @Chatgram AI, unread badge/preview, "Ask Chatgram AI" search row.
@@ -1236,3 +1237,9 @@ authenticated AI test, then the Groq key replacement through the admin providers
 - Backend deployed (DB backup 20261024-151502, src backup src.bak-20261024-151502, health ok).
   Tests: server/test/ai/alerts.test.js 7/7 (off by default, instant once, instant rate-limited,
   digest when due, counter reset, digest not repeated within the hour).
+
+
+### Session 21 (2026-10-24) — Change 1: pinned row + Ask-AI search
+- Web deployed chatgram-gkizpo8ia (backend unchanged). Built with tsc + Vite green; /web/ and
+  /web/admin 200. Pinned row and search handoff are build-verified; a signed-in production
+  smoke of the new row was not run this round (no test account created).

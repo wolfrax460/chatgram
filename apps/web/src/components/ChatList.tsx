@@ -1,6 +1,6 @@
 import { onlineNow, usePresenceView } from '../lib/presence';
 import { useMemo, useState } from 'react';
-import { Search, SquarePen, Check, CheckCheck } from 'lucide-react';
+import { Search, SquarePen, Check, CheckCheck, Sparkles } from 'lucide-react';
 import type { Chat } from '@chatgram/core';
 import { chatTitle, chatPartner } from '@chatgram/core';
 import { avatarGradient, formatTime, initialsFor, previewText, type TimeFormat } from '../lib/ui';
@@ -18,6 +18,7 @@ export function ChatList({
   onSelect,
   onNewChat,
   onOpenProfile,
+  onAskAi,
 }: {
   chats: Chat[];
   meId: string;
@@ -28,6 +29,8 @@ export function ChatList({
   onNewChat: () => void;
   /** Open a direct chat partner's profile from their avatar. */
   onOpenProfile?: (userId: string, chatId: string) => void;
+  /** Send the search text to Chatgram AI (WhatsApp-style "Ask Meta AI" row). */
+  onAskAi?: (text: string) => void;
 }) {
   const presenceView = usePresenceView();
   const [query, setQuery] = useState('');
@@ -65,9 +68,24 @@ export function ChatList({
       </div>
 
       <div className="flex-1 overflow-y-auto">
+        {query.trim() && onAskAi ? (
+          <button
+            type="button"
+            data-testid="ask-ai-row"
+            onClick={() => onAskAi(query.trim())}
+            className="flex w-full items-center gap-3 border-b border-ink-200 px-3 py-2.5 text-left hover:bg-ink-100/70 dark:border-white/10 dark:hover:bg-white/[.04]"
+          >
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand-600 text-white"><Sparkles className="h-5 w-5" /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold">Ask Chatgram AI</span>
+              <span className="block truncate text-[12.5px] text-ink-500 dark:text-ink-300">"{query.trim().slice(0, 70)}"</span>
+            </span>
+          </button>
+        ) : null}
+
         {visible.length === 0 ? (
           <p className="p-4 text-sm text-ink-600 dark:text-ink-300">
-            {query ? 'No matches.' : 'No conversations yet.'}
+            {query ? 'No chat matches — try the Chatgram AI row above.' : 'No conversations yet.'}
           </p>
         ) : null}
 

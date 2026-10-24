@@ -510,3 +510,18 @@ tab, `AI_UNKNOWN_NOTIFY` digests/9e alerts, moderation topics list, and the
 - Still not implemented (crossed): instant alerts for individual non-degraded provider failures,
   type (e) "support message unanswered for 60s", and any in-app admin-socket push (the Inbox
   tab already updates on load/refresh).
+
+
+---
+
+## D27 - Change 1: pinned AI row avatar + "Ask Chatgram AI" search row (2026-10-24)
+
+- Restored the **pinned "Chatgram AI" conversation** at the top of the chat list with the real
+  `/web/assistant-avatar.svg` round avatar and an official/verified badge overlay (the earlier
+  row had regressed to a generic sparkle icon and then disappeared during the presence work).
+- Chat search now shows an **"Ask Chatgram AI" row** with the typed text whenever a query is
+  present; clicking it opens the AI thread and sends the query automatically through the same
+  streaming endpoint (WhatsApp "Ask Meta AI or search" behaviour).
+- Still crossed for Change 1: the AI thread is not yet the shared ChatWindow component, no
+  share-to-chat, image/pasted-text input, group @Chatgram AI toggle, unread badge/last-message
+  preview for AI replies, and reply-to-specific-message.

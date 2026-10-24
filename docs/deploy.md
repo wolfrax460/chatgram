@@ -201,6 +201,8 @@ rollback is unambiguous.
 
 | 2026-10-24 (17:16) | 9e alert delivery | server/src/ai/alerts.js: instant AI-degraded alert (once/10 min) + hourly failure digest behind aiPolicy.alertsEnabled (off by default), delivered via the Support notifier (Telegram/email), sanitized reasons. Wired into normal + streaming AI failure paths. Backend first (DB backup 20261024-151502, src backup src.bak-20261024-151502, health ok). | Green. Health ok; tests 7/7. Rollback: src.bak-20261024-151502, DB dump 20261024-151502. Web bundle unchanged. |
 
+| 2026-10-24 (17:24) | Change 1: pinned AI row + Ask-AI search | Restored pinned "Chatgram AI" row with assistant avatar + verified badge at the top of the chat list; added the "Ask Chatgram AI" row in chat search that sends the typed query via the streaming endpoint. Web only: build green, deployed chatgram-gkizpo8ia; /web/ and /web/admin 200. | Green (build + page checks). UI smoke with a signed-in test account not run this round. Rollback: previous Vercel deployment. |
+
 ## 6. Deploy record
 
 | Date | Commit | Deployed | Result / rollback |
