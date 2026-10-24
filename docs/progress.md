@@ -971,3 +971,15 @@ DB `chatgram-backups/20261024-105120.tgz`, nginx `.bak-20261024`. Recorded in
   members tab (admins), invite page "Request sent" state.
 - Verified: `server/test/integration/joinRequests.test.js` **26/26** and a Playwright
   approval-flow test (enable switch → outside request → approve → member listed).
+
+
+### Session 6 deploy (2026-10-24) — join-request approval
+- Deployed commit `2fb2bde` to API (backup `20261024-112539`, src backup
+  `src.bak-20261024-112539`) and web (Vercel `chatgram-p3lsvk26d`).
+- Gate before deploy: typecheck, build, 351 integration assertions (incl. 26 new
+  join-request checks), 36 AI tests, 54 Playwright tests — all green.
+- After deploy: `/api/status/health` ok, `/`, `/web/`, `/docs/`, `/web/admin` 200,
+  new join-request endpoint returns 401 unauthenticated, auth layout verified on
+  production at all target sizes.
+- Rollback: previous Vercel deployment, `src.bak-20261024-112539`,
+  `chatgram-backups/20261024-112539.tgz`.
