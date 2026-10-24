@@ -114,6 +114,15 @@ function publicView(doc) {
  * take effect immediately without a restart, while staying persistent in Mongo.
  */
 function applyToEnv(doc) {
+  // Keep the previous (server env) AI key as a fallback so a stale/invalid
+  // dashboard key can never make the assistant silently stop working.
+  if (doc && doc.aiApiKey) {
+    const current = String(process.env.AI_API_KEY || '').trim();
+    const incoming = String(doc.aiApiKey || '').trim();
+    if (current && incoming && current !== incoming && !process.env.AI_API_KEY_FALLBACK) {
+      process.env.AI_API_KEY_FALLBACK = current;
+    }
+  }
   if (!doc) return;
   const map = {
     aiEnabled: ['SUPPORT_AI_ENABLED', (v) => String(Boolean(v))],

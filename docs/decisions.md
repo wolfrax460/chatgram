@@ -309,3 +309,40 @@ additive/re-runnable; security must not be weakened.
 **Order:** backend first (backup → read-only status-cleanup count → deps install →
 PM2 restart `--update-env` → health check), then web (Vercel), then smoke test with
 throwaway test accounts which are deleted afterwards.
+
+
+---
+
+## D18 - Chatgram Support went silent: root cause and fix (2026-10-24)
+
+**Root cause (production, verified read-only):**
+1. The SupportSettings document held a stale dashboard API key (70 characters, not a
+   `gsk_` key) from 2026-10-20. At boot `support/settings.loadIntoEnv()` copies the DB
+   key into `AI_API_KEY`, so it overrode the valid 56-character server env key and Groq
+   answered **401 Invalid API Key** on every request.
+2. `supportAgentReply.answerSupportChat()` returned early whenever any SupportTicket was
+   linked to the conversation (`ticketForChat`). An earlier escalation creates exactly
+   that ticket, so after the first escalation every later message got **no reply at all**.
+3. It also returned silently when the AI was disabled/not configured (`if (!info.enabled) return`),
+   and a reasoning model (`openai/gpt-oss-20b`) can return empty content when the token
+   budget is consumed by hidden reasoning, which was treated as "not confident" (escalate)
+   but combined with (2) produced silence in ticket-linked chats.
+
+**Fix:**
+- `support/settings.applyToEnv()` keeps the previous env key as `AI_API_KEY_FALLBACK` when a
+  DB key is applied. `support/aiProvider` retries once with that fallback on an auth
+  failure and records `stored_key_invalid`; empty answers are retried once with double the
+  token cap; every failure is classified and stored as `getLastError()`.
+- `answerSupportChat` now answers when a ticket already exists (desk chat is still excluded
+  via the `support-desk` email) and, when the AI is disabled or fails, posts the holding
+  message and opens the silent ticket instead of returning.
+- Admin dashboard: `GET /api/support/admin/settings` returns `status.aiError`;
+  `POST /api/support/admin/test-ai` returns `code`, `error` and `lastError`. /web/admin shows
+  a red banner and a red Test AI result with plain-language instructions
+  (`invalid_key`, `quota`, `model_not_found`, `empty_answer`, `timeout`, `bad_request`).
+- Production data fix (settings only, no user data): cleared the stale `SupportSettings.aiApiKey`
+  so the valid server env key is used. Verified: direct AI test OK in 323 ms, and an
+  end-to-end message to Chatgram Support answered by the assistant in **2.8 s**.
+
+**Owner step:** paste a fresh Groq key in /web/admin → **AI model** → *API key* field (write-only)
+and press **Test AI**. The panel now shows a red explanation if the key/quota/model is wrong.

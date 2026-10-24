@@ -23,6 +23,43 @@
 
 const PROVIDERS = ['anthropic', 'openai', 'gemini', 'openai-compatible', 'none'];
 
+/** Last provider failure, safe to show in the admin dashboard (never the key). */
+let lastError = null;
+
+function classifyError(message) {
+  const text = String(message || '');
+  if (/\b401\b|invalid api key|unauthoriz|authentication/i.test(text)) return 'invalid_key';
+  if (/\b403\b|forbidden/i.test(text)) return 'invalid_key';
+  if (/\b429\b|rate limit|quota|too many requests/i.test(text)) return 'quota';
+  if (/\b404\b|model.*(not found|does not exist)|decommissioned/i.test(text)) return 'model_not_found';
+  if (/\b400\b|bad request|tool choice/i.test(text)) return 'bad_request';
+  if (/abort|timeout|timed out/i.test(text)) return 'timeout';
+  if (/empty|no content/i.test(text)) return 'empty_answer';
+  return 'network';
+}
+
+function setLastError(code, message) {
+  lastError = {
+    code,
+    message: String(message || '').slice(0, 300),
+    at: new Date().toISOString(),
+  };
+}
+
+function getLastError() {
+  return lastError;
+}
+
+function clearLastError() {
+  lastError = null;
+}
+
+/** Keys that would never be valid: whitespace, absurd length. */
+function looksLikeKey(value) {
+  const key = String(value || '');
+  return key.length >= 20 && key.length <= 500 && key.trim() === key && !/\s/.test(key);
+}
+
 function resolveConfig() {
   const explicit = (process.env.AI_PROVIDER || '').trim().toLowerCase();
   const model = (process.env.SUPPORT_AI_MODEL || '').trim();
@@ -205,17 +242,50 @@ async function askAssistant({ system, messages, maxTokens }) {
     text: String(m.text || '').slice(0, 1500),
   }));
 
-  try {
-    let answer;
-    if (cfg.provider === 'anthropic') answer = await callAnthropic(cfg, system, trimmed);
-    else if (cfg.provider === 'gemini') answer = await callGemini(cfg, system, trimmed);
-    else answer = await callOpenAiSchema(cfg, system, trimmed);
+  const fallbackKey = process.env.AI_API_KEY_FALLBACK;
+  const canFallBack = Boolean(fallbackKey) && fallbackKey !== cfg.apiKey && looksLikeKey(fallbackKey);
 
-    const clean = String(answer || '').trim();
-    if (!clean) return null;
-    // Cap output so a misbehaving model cannot flood the widget.
+  const callOnce = async (activeCfg) => {
+    if (activeCfg.provider === 'anthropic') return callAnthropic(activeCfg, system, trimmed);
+    if (activeCfg.provider === 'gemini') return callGemini(activeCfg, system, trimmed);
+    return callOpenAiSchema(activeCfg, system, trimmed);
+  };
+
+  try {
+    let answer = await callOnce(cfg);
+    let clean = String(answer || '').trim();
+
+    // Reasoning models can spend the whole budget on hidden tokens and return
+    // an empty answer; give them one chance with a bigger cap.
+    if (!clean && cfg.maxTokens < 1600) {
+      const bigger = { ...cfg, maxTokens: Math.min(cfg.maxTokens * 2, 1600) };
+      answer = await callOnce(bigger);
+      clean = String(answer || '').trim();
+    }
+
+    if (!clean) {
+      setLastError('empty_answer', 'The provider returned an empty answer.');
+      return null;
+    }
+    clearLastError();
     return clean.slice(0, cfg.maxTokens * 6);
   } catch (error) {
+    let code = classifyError(error.message);
+    if (code === 'invalid_key' && canFallBack) {
+      // The stored dashboard key is dead but the server env key still works.
+      try {
+        const retryCfg = { ...cfg, apiKey: fallbackKey };
+        const answer = await callOnce(retryCfg);
+        const clean = String(answer || '').trim();
+        if (clean) {
+          setLastError('stored_key_invalid', 'The saved API key was rejected; the server environment key is being used.');
+          return clean.slice(0, cfg.maxTokens * 6);
+        }
+      } catch (retryError) {
+        code = classifyError(retryError.message);
+      }
+    }
+    setLastError(code, error.message);
     console.warn('Support AI error:', error.message);
     return null;
   }
@@ -227,4 +297,13 @@ function assistantInfo() {
   return { enabled: cfg.enabled, provider: cfg.provider, model: cfg.enabled ? cfg.model : null };
 }
 
-module.exports = { askAssistant, assistantInfo, resolveConfig, PROVIDERS, useNewLayer };
+module.exports = {
+  askAssistant,
+  assistantInfo,
+  resolveConfig,
+  PROVIDERS,
+  useNewLayer,
+  classifyError,
+  getLastError,
+  clearLastError,
+};

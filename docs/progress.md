@@ -1052,7 +1052,15 @@ Legend: ✅ done + vs deployed · ✗ not started · ◐ partial.
    the signed-in app and opened from a new sidebar "Help" button (still floating on auth
    pages). Playwright `theme.spec.js` checks scrollbar tracks are not light and launchers
    do not overlap. **Deployed** (web `chatgram-4us7nqyix`).
-2. ✗ Support outage root cause + AI answer test — not started.
+2. ✅ Support outage root cause + AI answer test — **fixed and deployed**. Root cause:
+   a stale 70-char dashboard AI key overriding the valid env Groq key (401), plus
+   `answerSupportChat` returning early for chats with an existing ticket and returning
+   silently when the AI was disabled. Fixes: env-key fallback with `stored_key_invalid`,
+   empty-answer retry, ticket no longer silences, holding reply on every failure, error
+   classification + red banner/Test-AI errors in /web/admin, stale production key cleared.
+   Verified by `server/test/integration/supportReply.test.js` (9/9), all other integration
+   suites, and a production smoke: **Support answered a test user in 2.8 s**, test account
+   and chat deleted afterwards.
 9a. ✗ Admin password gate / sessions / TOTP / brute force — not started.
 9c. ✗ Model provider switching tab — not started (existing providers panel remains).
 3.  ✗ Chatgram AI (sidebar entry, general assistant, streaming, silent learning loop,
@@ -1070,3 +1078,12 @@ Legend: ✅ done + vs deployed · ✗ not started · ◐ partial.
 Root causes/steps for the next session are the queue text above; the support outage (item 2)
 was NOT diagnosed — it needs the production PM2 logs, SupportSettings document and an
 authenticated AI test, then the Groq key replacement through the admin providers panel.
+
+
+### Session 10 (2026-10-24) — Support/AI outage fixed
+- Backend deployed (DB backup `20261024-124018`, src backup `src.bak-20261024-124018`,
+  `npm ci --omit=dev`, PM2 `--update-env`); web deployed `chatgram-eus3b6wu3` (admin red
+  error UI). `/api/status/health` ok, all pages 200.
+- Production verification: AI test OK (323 ms, no last error); end-to-end Support message
+  answered in 2.8 s; temporary test account/chat deleted.
+- Remaining queue from the new plan: items 9a, 9c, 3, 4, 9e, 9b, 9d, 5, 6, 7 — all still ✗.

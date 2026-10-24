@@ -181,6 +181,8 @@ rollback is unambiguous.
 
 | 2026-10-24 (14:35) | 9a0c1e2-ish (web) | Item 1: thin dark themed scrollbars + dark-theme divider fixes + help launcher moved into the sidebar (hidden floating launcher inside the app). New Playwright theme test. | Web deployment `chatgram-4us7nqyix`; /, /web/, /docs/, /web/admin 200. Rollback: previous Vercel deployment. |
 
+| 2026-10-24 (14:45) | support AI fix (see git) | Item 2: support assistant silence fixed (env-key fallback + `stored_key_invalid`, ticket no longer silences, holding reply on AI-disabled/failure, empty-answer retry, error classification), admin red AI error banner/Test-AI red result. Backend deployed first (DB backup `20261024-124018`, src backup `src.bak-20261024-124018`, health ok), then web `chatgram-eus3b6wu3`. Production smoke: Support answered in 2.8 s; test account deleted. Rollback: `src.bak-20261024-124018`, `chatgram-backups/20261024-124018.tgz`, previous Vercel deployment. |
+
 ## 6. Deploy record
 
 | Date | Commit | Deployed | Result / rollback |

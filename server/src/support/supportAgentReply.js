@@ -174,25 +174,27 @@ async function answerSupportChat(message, io) {
     const isDeskChat = participants.some((p) => p.email === DESK_EMAIL);
     if (isDeskChat) return;
 
-    const ticketForChat = await SupportTicket.exists({ chatId: chat._id });
-    if (ticketForChat) return;
-
-    const info = ai.assistantInfo();
-    if (!info.enabled) return;
-
+    // NOTE: an existing ticket for this chat must NOT silence the assistant.
+    // Earlier versions returned here, so once an escalation opened a ticket the
+    // user could write to Support forever and never get a reply.
     const sender = participants.find((p) => String(p._id) === senderId);
     const senderName = sender?.displayName || 'there';
     const history = await historyFor(chat._id, supportId);
     if (history.length === 0) return;
 
-    const raw = await ai.askAssistant({
-      system: systemPrompt(senderName),
-      messages: history,
-      maxTokens: 400,
-    });
+    const info = ai.assistantInfo();
+    const raw = info.enabled
+      ? await ai.askAssistant({
+          system: systemPrompt(senderName),
+          messages: history,
+          maxTokens: 600,
+        })
+      : null;
     const verdict = parseVerdict(raw);
 
     if (!verdict.confident) {
+      // AI unavailable/empty/unsure: the holding message + silent ticket keep
+      // the user informed and the owner in the loop.
       await escalateToOwner(senderName, String(message.content || '').slice(0, 500), history, {
         chatId: chat._id,
         senderId,

@@ -83,6 +83,7 @@ function Overview({ settingsQuery }: { settingsQuery: any }) {
   const [form, setForm] = useState<Record<string, any>>({});
   const [notice, setNotice] = useState('');
   const [testResult, setTestResult] = useState('');
+  const [testOk, setTestOk] = useState(true);
 
   useEffect(() => {
     if (settingsQuery.data?.settings) setForm(settingsQuery.data.settings);
@@ -93,11 +94,40 @@ function Overview({ settingsQuery }: { settingsQuery: any }) {
     onSuccess: (d) => { setNotice(d?.message ?? 'Saved.'); qc.invalidateQueries({ queryKey: ['admin-settings'] }); },
     onError: (e: any) => setNotice(e?.message ?? 'Could not save.'),
   });
+  function explainAiError(code?: string, fallback?: string): string {
+    switch (code) {
+      case 'invalid_key':
+        return 'The API key was rejected (invalid, revoked or expired). Paste a new Groq key in the field below and save.';
+      case 'stored_key_invalid':
+        return 'The saved key was rejected; the server environment key is being used. Paste a fresh key below.';
+      case 'quota':
+        return 'Quota or rate limit exceeded for this provider. Wait, or upgrade the plan / raise the budget.';
+      case 'model_not_found':
+        return 'The model id does not exist for this account. Pick a model your provider lists.';
+      case 'empty_answer':
+        return 'The model returned an empty answer (reasoning models can do this). Try a different model or raise max tokens.';
+      case 'timeout':
+        return 'The provider timed out. Check the base URL and network.';
+      case 'bad_request':
+        return 'The provider rejected the request. Check the model id and provider settings.';
+      default:
+        return fallback ? `AI test failed: ${fallback}` : 'AI test failed. Check the provider settings.';
+    }
+  }
+
   const testAi = useMutation({
     mutationFn: () => api.request<any>('/api/support/admin/test-ai', { method: 'POST' }),
-    onSuccess: (d) => setTestResult(d?.ok ? `AI replied: ${String(d.answer).slice(0, 100)}` : `AI failed: ${d?.error ?? 'no answer'}`),
-    onError: (e: any) => setTestResult(e?.message ?? 'Test failed'),
+    onSuccess: (d) => {
+      setTestOk(Boolean(d?.ok));
+      setTestResult(d?.ok ? `AI replied: ${String(d.answer).slice(0, 100)}` : explainAiError(d?.code, d?.error));
+    },
+    onError: (e: any) => {
+      setTestOk(false);
+      setTestResult(e?.message ?? 'Test failed');
+    },
   });
+
+  const lastAiError = settingsQuery.data?.status?.aiError as { code?: string; message?: string; at?: string } | undefined;
 
   const status = settingsQuery.data?.status;
   const presets: Preset[] = settingsQuery.data?.presets ?? [];
@@ -105,6 +135,13 @@ function Overview({ settingsQuery }: { settingsQuery: any }) {
   return (
     <div className="space-y-4">
       {notice ? <p className="rounded-xl bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">{notice}</p> : null}
+
+      {lastAiError && ['invalid_key', 'stored_key_invalid', 'quota', 'model_not_found', 'empty_answer'].includes(String(lastAiError.code)) ? (
+        <p role="alert" data-testid="admin-ai-error" className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-[13px] font-medium text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300">
+          AI provider problem: {explainAiError(lastAiError.code, lastAiError.message)}
+          {lastAiError.at ? ` (last attempt ${new Date(lastAiError.at).toLocaleString()})` : ''}
+        </p>
+      ) : null}
 
       <section className="card p-4">
         <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-ink-500">Live status</h2>
@@ -142,7 +179,15 @@ function Overview({ settingsQuery }: { settingsQuery: any }) {
           <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 rounded border-ink-300 text-brand-600" checked={Boolean(form.agentEnabled)} onChange={(e) => setForm((f) => ({ ...f, agentEnabled: e.target.checked }))} /> Agent replies in-app</label>
           <button type="button" onClick={() => testAi.mutate()} className="btn-ghost inline-flex h-9 items-center gap-1.5 px-3">{testAi.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />} Test AI</button>
         </div>
-        {testResult ? <p className="mt-2 rounded-lg bg-ink-100 px-3 py-2 text-[12.5px] dark:bg-white/10">{testResult}</p> : null}
+        {testResult ? (
+          <p
+            role="status"
+            data-testid="admin-ai-test-result"
+            className={`mt-2 rounded-lg px-3 py-2 text-[12.5px] font-medium ${testOk ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300' : 'border border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300'}`}
+          >
+            {testResult}
+          </p>
+        ) : null}
       </section>
 
       <section className="card p-4">

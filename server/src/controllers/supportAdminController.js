@@ -26,6 +26,7 @@ const getAdminSettings = async (req, res) => {
       settings: settings.publicView(doc),
       status: {
         ai: ai.assistantInfo(),
+        aiError: ai.getLastError ? ai.getLastError() : null,
         channels: notifier.channelStatus(),
       },
       presets: PROVIDER_PRESETS,
@@ -107,10 +108,14 @@ const testAi = async (req, res) => {
       messages: [{ role: 'user', text: 'ping' }],
       maxTokens: 20,
     });
+    const lastError = ai.getLastError ? ai.getLastError() : null;
     return res.json({
       ok: Boolean(answer),
       answer: answer || '',
       info: ai.assistantInfo(),
+      code: answer ? null : lastError?.code || 'unknown',
+      error: answer ? null : lastError?.message || 'The provider did not answer.',
+      lastError,
     });
   } catch (error) {
     return res.json({ ok: false, error: error.message });

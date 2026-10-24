@@ -172,3 +172,18 @@ async function myVendor({ config, system, messages, temperature, maxTokens, sign
   deleted by the person from the widget (`Delete` action).
 - Admin-saved API keys are encrypted at rest and never leave the server; logs
   never include request bodies or keys.
+
+
+## Troubleshooting the support assistant
+
+- The dashboard-configured key is applied at boot. If it is rejected, the server falls
+  back to the key in `server/.env` (`AI_API_KEY_FALLBACK`) and reports
+  `stored_key_invalid` so /web/admin shows a red warning; paste a fresh key there.
+- Reasoning models (e.g. `openai/gpt-oss-20b` on Groq) may spend the whole token budget on
+  hidden reasoning and return an empty answer. The assistant retries once with double the
+  token cap, then escalates; the dashboard reports `empty_answer`.
+- Support chats are never silenced: if the AI is disabled, fails or is unsure, the user gets
+  a holding reply ("I'm asking the admin") and a silent ticket is opened.
+- Error codes surfaced by `POST /api/support/admin/test-ai` and `status.aiError`:
+  `invalid_key`, `stored_key_invalid`, `quota`, `model_not_found`, `empty_answer`,
+  `timeout`, `bad_request`, `network`.
