@@ -26,6 +26,16 @@ const SUGGESTIONS = [
 
 const DISCLAIMER = 'Chatgram AI can make mistakes. Messages are processed by a third-party AI provider.';
 
+/**
+ * The hidden `[[CHATGRAM_UNKNOWN: …]]` learning marker is stripped on the server,
+ * but it becomes visible while the answer is still streaming. Hide it here too so
+ * it can never flash in the bubble (and never be copied or shared).
+ */
+const LEARNING_MARKER = /\[\[CHATGRAM_UNKNOWN:[\s\S]*?\]\]/gi;
+function visibleText(content: string): string {
+  return String(content || '').replace(LEARNING_MARKER, '').trimEnd();
+}
+
 type AiMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -533,7 +543,7 @@ export function AiThread({
   async function shareTo(chatId: string, title: string) {
     if (!shareFor) return;
     try {
-      await api.sendMessage({ chatId, type: 'text', content: `Chatgram AI answer:\n\n${shareFor.content}` });
+      await api.sendMessage({ chatId, type: 'text', content: `Chatgram AI answer:\n\n${visibleText(shareFor.content)}` });
       setShareFor(null);
       setNotice(`Answer shared to ${title}.`);
     } catch (err) {
@@ -647,7 +657,7 @@ export function AiThread({
                         <button
                           type="button"
                           className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-                          onClick={() => setReplyTo({ id: message.id, name: userName, preview: message.content.slice(0, 120) })}
+                          onClick={() => setReplyTo({ id: message.id, name: userName, preview: visibleText(message.content).slice(0, 120) })}
                           aria-label="Reply to this message"
                         >
                           <Reply className="h-3 w-3" />
@@ -664,7 +674,7 @@ export function AiThread({
                       <div className="min-w-0">
                         <div className="rounded-2xl rounded-bl-md border border-ink-200 bg-white px-3.5 py-2 text-ink-800 shadow-sm dark:border-white/10 dark:bg-ink-700 dark:text-ink-100">
                           {message.content ? (
-                            <Markdown text={message.content} />
+                            <Markdown text={visibleText(message.content)} />
                           ) : (
                             <span className="flex items-center gap-1 py-1">
                               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-400" />
@@ -681,7 +691,7 @@ export function AiThread({
                               className="inline-flex items-center gap-1 hover:text-ink-700 dark:hover:text-ink-100"
                               aria-label="Copy answer"
                               onClick={() => {
-                                void navigator.clipboard?.writeText(message.content);
+                                void navigator.clipboard?.writeText(visibleText(message.content));
                                 setNotice('Answer copied.');
                               }}
                             >
@@ -715,7 +725,7 @@ export function AiThread({
                               type="button"
                               className="inline-flex items-center gap-1 hover:text-ink-700 dark:hover:text-ink-100"
                               aria-label="Reply to this message"
-                              onClick={() => setReplyTo({ id: message.id, name: 'Chatgram AI', preview: message.content.slice(0, 120) })}
+                              onClick={() => setReplyTo({ id: message.id, name: 'Chatgram AI', preview: visibleText(message.content).slice(0, 120) })}
                             >
                               <Reply className="h-3 w-3" /> Reply
                             </button>
