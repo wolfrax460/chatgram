@@ -127,6 +127,23 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
     void queryClient.invalidateQueries({ queryKey: ['chats'] });
   }, [chat.id, queryClient]);
 
+  // While this conversation is open and the window is focused, incoming
+  // messages must be marked read — otherwise the sender never gets blue ticks.
+  useEffect(() => {
+    const list = messages.data;
+    if (!list || list.length === 0) return undefined;
+    if (document.visibilityState !== 'visible') return undefined;
+    const hasUnread = list.some((message) => message.senderId !== meId && !message.readBy.includes(meId));
+    if (!hasUnread) return undefined;
+    const timer = window.setTimeout(() => {
+      api
+        .markChatRead(chat.id)
+        .then(() => queryClient.invalidateQueries({ queryKey: ['messages', chat.id] }))
+        .catch(() => undefined);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [messages.data, meId, chat.id, queryClient]);
+
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }));
   }, []);

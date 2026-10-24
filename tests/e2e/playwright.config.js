@@ -30,8 +30,9 @@ module.exports = defineConfig({
     viewport: { width: 1280, height: 800 },
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'mobile', use: { ...devices['iPhone 13'] }, testMatch: '**/mobile.spec.js' },
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: '**/mobile.spec.js' },
+    // Chromium-based mobile emulation (WebKit is not installed in this environment).
+    { name: 'mobile', use: { ...devices['Pixel 5'] }, testMatch: '**/mobile.spec.js' },
   ],
   webServer: process.env.E2E_SKIP_WEBSERVER
     ? undefined

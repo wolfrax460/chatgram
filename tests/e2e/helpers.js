@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Shared helpers for the Playwright suite.
  *
  * Accounts are created through the real API (verification is disabled on the
@@ -61,7 +61,7 @@ async function signIn(page, account) {
     [account.accessToken, account.refreshToken || '', JSON.stringify(account.user)],
   );
   await page.goto('/');
-  await page.waitForSelector('nav', { timeout: 20_000 });
+  await page.waitForSelector('nav', { state: 'attached', timeout: 20_000 });
 }
 
 /** Navigate using the left rail's aria-label. */
@@ -129,3 +129,4 @@ module.exports = {
   createDirectChat,
   sendMessage,
 };
+
