@@ -101,6 +101,18 @@ function resolveChain(settings) {
   return chain;
 }
 
+let providersModule = null;
+function providerRegistry() {
+  if (!providersModule) {
+    try {
+      providersModule = require('./providers');
+    } catch {
+      providersModule = null;
+    }
+  }
+  return providersModule;
+}
+
 async function callProvider(entry, { system, messages, temperature, maxTokens, timeoutMs, signal }) {
   const adapter = adapterFor(entry.provider);
   const controller = new AbortController();
@@ -140,7 +152,13 @@ async function chat(options = {}) {
 
   if (!messages.length) throw new AiError(ERROR_CODES.NOT_CONFIGURED, 'A message is required.');
 
-  const chain = resolveChain(settings);
+  let chain = [];
+  if (options.feature) {
+    const registry = providerRegistry();
+    const featureChain = registry ? await registry.resolveFeatureChain(options.feature) : null;
+    if (featureChain && featureChain.length > 0) chain = featureChain;
+  }
+  if (chain.length === 0) chain = resolveChain(settings);
   if (!settings.enabled || chain.length === 0) {
     if (kbFallback) {
       return {
@@ -179,6 +197,7 @@ async function chat(options = {}) {
     }
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      const attemptStarted = Date.now();
       try {
         const result = await callProvider(entry, {
           system,
@@ -190,7 +209,13 @@ async function chat(options = {}) {
           signal: options.signal,
         });
         noteSuccess(entry.provider);
+        const registry = providerRegistry();
         const usage = result.usage || { inputTokens: 0, outputTokens: 0 };
+        registry?.recordHealth?.(entry.key, {
+          ok: true,
+          latencyMs: Date.now() - attemptStarted,
+          tokens: (usage.inputTokens || 0) + (usage.outputTokens || 0),
+        });
         const total =
           (usage.inputTokens || 0) + (usage.outputTokens || 0) ||
           estimateTokens(messages.map((m) => m.text).join(' ')) + estimateTokens(result.text);
@@ -198,12 +223,14 @@ async function chat(options = {}) {
         return {
           text: String(result.text || ''),
           provider: entry.provider,
+          providerKey: entry.key || entry.provider,
           model: entry.model,
           kbOnly: false,
           usage,
         };
       } catch (error) {
         lastError = error instanceof AiError ? error : new AiError(ERROR_CODES.UNAVAILABLE, error.message);
+        providerRegistry()?.recordHealth?.(entry.key, { ok: false, latencyMs: Date.now() - attemptStarted, error: lastError.code });
         if (options.signal?.aborted) throw new AiError(ERROR_CODES.TIMEOUT, 'Request aborted.');
         if (!RETRYABLE.has(lastError.code) || attempt >= MAX_ATTEMPTS) break;
         await sleep(250 * attempt);

@@ -19,6 +19,26 @@ type SessionInfo = {
 };
 type SessionRow = { id: string; current: boolean; createdAt: string; lastSeenAt: string; expiresAt: string; ip: string; userAgent: string };
 type AuditRow = { action: string; detail: string; ip: string; at: string };
+type ProviderRow = {
+  key: string;
+  label: string;
+  provider: string;
+  model: string;
+  baseUrl: string;
+  enabled: boolean;
+  timeoutMs: number;
+  dailyTokenBudget: number;
+  hasKey: boolean;
+  keyLast4: string;
+  health: { requests: number; successes: number; failures: number; tokens: number; averageLatencyMs: number | null; lastErrorCode: string | null; errorRate: number; lastSuccessAt: string | null } | null;
+};
+type FeatureAssignment = { label: string; primary: string | null; fallbacks: string[] };
+type ProvidersPayload = {
+  providers: ProviderRow[];
+  features: Record<string, FeatureAssignment>;
+  availableProviders: { id: string; label: string; needsKey: boolean; defaultBaseUrl: string }[];
+  canUndo: boolean;
+};
 
 async function adminFetch(path: string, options: { method?: string; body?: unknown; csrf?: string } = {}) {
   const response = await fetch(path, {
@@ -40,6 +60,16 @@ async function adminFetch(path: string, options: { method?: string; body?: unkno
   return { status: response.status, body: json };
 }
 
+const FEATURE_FALLBACK: Record<string, FeatureAssignment> = {
+  chatgramAI: { label: 'Chatgram AI assistant', primary: null, fallbacks: [] },
+  support: { label: 'Chatgram Support replies', primary: null, fallbacks: [] },
+  help: { label: 'Help widget assistant', primary: null, fallbacks: [] },
+};
+
+function featuresPreview(data: ProvidersPayload | null): Record<string, FeatureAssignment> {
+  return data?.features ?? FEATURE_FALLBACK;
+}
+
 export default function AdminGate() {
   const [loading, setLoading] = useState(true);
   const [unconfigured, setUnconfigured] = useState(false);
@@ -50,6 +80,10 @@ export default function AdminGate() {
   const [notice, setNotice] = useState('');
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [audit, setAudit] = useState<AuditRow[]>([]);
+  const [providersData, setProvidersData] = useState<ProvidersPayload | null>(null);
+  const [providerForm, setProviderForm] = useState<Record<string, any>>({ provider: 'groq', label: '', model: '', baseUrl: '', apiKey: '', timeoutMs: 20000, dailyTokenBudget: 200000, enabled: true });
+  const [providerNotice, setProviderNotice] = useState('');
+  const [featureDraft, setFeatureDraft] = useState<Record<string, { primary: string; fallback: string }>>({});
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
@@ -79,8 +113,22 @@ export default function AdminGate() {
     refreshSession().finally(() => setLoading(false));
   }, []);
 
+  async function refreshProviders(csrf: string) {
+    const result = await adminFetch('/api/admin/providers', { csrf });
+    if (result.status === 200) {
+      setProvidersData(result.body as ProvidersPayload);
+      const draft: Record<string, { primary: string; fallback: string }> = {};
+      for (const [feature, assignment] of Object.entries((result.body as ProvidersPayload).features || {}) as [string, FeatureAssignment][]) {
+        draft[feature] = { primary: assignment.primary ?? '', fallback: assignment.fallbacks?.[0] ?? '' };
+      }
+      setFeatureDraft(draft);
+    }
+  }
+
   useEffect(() => {
-    if (session?.csrfToken) void refreshLists(session.csrfToken);
+    if (!session?.csrfToken) return;
+    void refreshLists(session.csrfToken);
+    void refreshProviders(session.csrfToken);
   }, [session?.csrfToken]);
 
   async function signIn(event: React.FormEvent) {
@@ -143,6 +191,93 @@ export default function AdminGate() {
         setNotice('Admin password changed.');
       } else {
         setError(result.body?.message ?? 'Could not change the password.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveProvider(event: React.FormEvent) {
+    event.preventDefault();
+    if (!session) return;
+    setBusy(true);
+    setError('');
+    try {
+      const key = String(providerForm.key || providerForm.label || providerForm.provider || '').trim();
+      const result = await adminFetch('/api/admin/providers/' + encodeURIComponent(key), {
+        method: 'PUT',
+        csrf: session.csrfToken,
+        body: { ...providerForm, key },
+      });
+      if (result.status === 200) {
+        setProviderNotice('Provider saved.');
+        setProviderForm({ ...providerForm, apiKey: '', key: '' });
+        await refreshProviders(session.csrfToken);
+      } else {
+        setError(result.body?.message ?? 'Could not save the provider.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function testProvider(key: string) {
+    if (!session) return;
+    setBusy(true);
+    setProviderNotice('');
+    try {
+      const result = await adminFetch('/api/admin/providers/' + encodeURIComponent(key) + '/test', {
+        method: 'POST',
+        csrf: session.csrfToken,
+        body: {},
+      });
+      if (result.status === 200) {
+        setProviderNotice(result.body?.ok ? `${key}: connection OK in ${result.body.latencyMs} ms` : `${key}: ${result.body?.code || 'failed'} — ${result.body?.message || 'no answer'}`);
+      } else {
+        setProviderNotice(`${key}: ${result.body?.message || 'test failed'}`);
+      }
+      await refreshProviders(session.csrfToken);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyFeatures(event: React.FormEvent) {
+    event.preventDefault();
+    if (!session || !providersData) return;
+    setBusy(true);
+    setError('');
+    try {
+      const features: Record<string, { primary: string; fallbacks: string[] }> = {};
+      for (const [feature, draft] of Object.entries(featureDraft)) {
+        features[feature] = { primary: draft.primary || '', fallbacks: draft.fallback ? [draft.fallback] : [] };
+      }
+      const result = await adminFetch('/api/admin/providers/features', {
+        method: 'PUT',
+        csrf: session.csrfToken,
+        body: { features },
+      });
+      if (result.status === 200) {
+        setProviderNotice('Feature routing saved — takes effect immediately.');
+        setProvidersData(result.body as ProvidersPayload);
+      } else {
+        setError(result.body?.message ?? 'Could not save feature routing.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function undoFeatures() {
+    if (!session) return;
+    setBusy(true);
+    try {
+      const result = await adminFetch('/api/admin/providers/undo', { method: 'POST', csrf: session.csrfToken, body: {} });
+      if (result.status === 200) {
+        setProvidersData(result.body as ProvidersPayload);
+        setProviderNotice('Restored the previous provider routing.');
+      } else {
+        setError(result.body?.message ?? 'Nothing to undo.');
       }
     } finally {
       setBusy(false);
@@ -260,6 +395,132 @@ export default function AdminGate() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="card p-4" data-testid="model-providers">
+        <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-ink-500">Model providers</h2>
+        <p className="mb-3 text-[12.5px] text-ink-500 dark:text-ink-300">
+          Switch providers without a redeploy. Keys are encrypted, write-only and shown only as their last 4 characters.
+        </p>
+        {providerNotice ? <p className="mb-2 rounded-lg bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">{providerNotice}</p> : null}
+        {providersData?.providers?.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[12.5px]">
+              <thead className="text-[11px] uppercase tracking-wide text-ink-500">
+                <tr>
+                  <th className="py-1 pr-2">Provider</th>
+                  <th className="py-1 pr-2">Model</th>
+                  <th className="py-1 pr-2">Key</th>
+                  <th className="py-1 pr-2">Health</th>
+                  <th className="py-1">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-200 dark:divide-white/10">
+                {providersData.providers.map((row) => (
+                  <tr key={row.key}>
+                    <td className="py-1.5 pr-2">
+                      <strong>{row.label}</strong>
+                      <span className="block text-[11px] text-ink-500">{row.provider}{row.enabled ? '' : ' · disabled'}</span>
+                    </td>
+                    <td className="py-1.5 pr-2 font-mono text-[11.5px]">{row.model}</td>
+                    <td className="py-1.5 pr-2">{row.hasKey ? `••••${row.keyLast4}` : 'not set'}</td>
+                    <td className="py-1.5 pr-2">
+                      {row.health
+                        ? `${row.health.successes}/${row.health.requests} ok · ${row.health.averageLatencyMs ?? '–'} ms · ${row.health.tokens} tok${row.health.lastErrorCode ? ` · last error ${row.health.lastErrorCode}` : ''}`
+                        : 'no requests yet'}
+                    </td>
+                    <td className="py-1.5">
+                      <button type="button" className="btn-ghost !px-2 !py-1 text-[11.5px]" disabled={busy} onClick={() => void testProvider(row.key)}>
+                        Test
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-[12.5px] text-ink-500">No providers configured yet. Add one below.</p>
+        )}
+
+        <form onSubmit={saveProvider} className="mt-3 grid gap-2 rounded-xl border border-ink-200 p-3 dark:border-white/10 sm:grid-cols-2">
+          <label className="block">
+            <span className="label">Provider</span>
+            <select
+              className="field h-9"
+              value={providerForm.provider}
+              onChange={(event) => {
+                const found = providersData?.availableProviders.find((row) => row.id === event.target.value);
+                setProviderForm((prev) => ({ ...prev, provider: event.target.value, baseUrl: found?.defaultBaseUrl || '' }));
+              }}
+            >
+              {(providersData?.availableProviders ?? [{ id: 'groq', label: 'Groq', defaultBaseUrl: '' }]).map((row) => (
+                <option key={row.id} value={row.id}>{row.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="label">Label / key</span>
+            <input className="field h-9" value={providerForm.label ?? ''} onChange={(event) => setProviderForm((prev) => ({ ...prev, label: event.target.value, key: event.target.value }))} placeholder="e.g. groq-primary" />
+          </label>
+          <label className="block">
+            <span className="label">Model</span>
+            <input className="field h-9" value={providerForm.model ?? ''} onChange={(event) => setProviderForm((prev) => ({ ...prev, model: event.target.value }))} placeholder="model id" />
+          </label>
+          <label className="block">
+            <span className="label">Base URL</span>
+            <input className="field h-9" value={providerForm.baseUrl ?? ''} onChange={(event) => setProviderForm((prev) => ({ ...prev, baseUrl: event.target.value }))} placeholder="https://…" />
+          </label>
+          <label className="block sm:col-span-2">
+            <span className="label">API key (write-only; leave blank to keep the saved key)</span>
+            <input type="password" className="field h-9" value={providerForm.apiKey ?? ''} onChange={(event) => setProviderForm((prev) => ({ ...prev, apiKey: event.target.value }))} autoComplete="off" />
+          </label>
+          <label className="block">
+            <span className="label">Timeout (ms)</span>
+            <input type="number" className="field h-9" value={providerForm.timeoutMs ?? 20000} onChange={(event) => setProviderForm((prev) => ({ ...prev, timeoutMs: Number(event.target.value) }))} />
+          </label>
+          <label className="block">
+            <span className="label">Daily token budget</span>
+            <input type="number" className="field h-9" value={providerForm.dailyTokenBudget ?? 200000} onChange={(event) => setProviderForm((prev) => ({ ...prev, dailyTokenBudget: Number(event.target.value) }))} />
+          </label>
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <label className="flex items-center gap-2 text-[12.5px]">
+              <input type="checkbox" checked={Boolean(providerForm.enabled)} onChange={(event) => setProviderForm((prev) => ({ ...prev, enabled: event.target.checked }))} /> Enabled
+            </label>
+            <button type="submit" className="btn-primary h-9 px-3 text-[12.5px]" disabled={busy}>Save provider</button>
+          </div>
+        </form>
+
+        <form onSubmit={applyFeatures} className="mt-3 rounded-xl border border-ink-200 p-3 dark:border-white/10">
+          <p className="mb-2 text-[12px] font-bold uppercase tracking-wide text-ink-500">Feature routing</p>
+          {(Object.entries(featuresPreview(providersData)) as [string, FeatureAssignment][]).map(([feature, assignment]) => (
+            <div key={feature} className="mb-2 grid gap-2 sm:grid-cols-3">
+              <span className="text-[12.5px] font-medium">{assignment.label}</span>
+              <select
+                className="field h-9"
+                value={featureDraft[feature]?.primary ?? ''}
+                onChange={(event) => setFeatureDraft((prev) => ({ ...prev, [feature]: { primary: event.target.value, fallback: prev[feature]?.fallback ?? '' } }))}
+                aria-label={`${assignment.label} primary provider`}
+              >
+                <option value="">(not set)</option>
+                {(providersData?.providers ?? []).map((row) => <option key={row.key} value={row.key}>{row.label}</option>)}
+              </select>
+              <select
+                className="field h-9"
+                value={featureDraft[feature]?.fallback ?? ''}
+                onChange={(event) => setFeatureDraft((prev) => ({ ...prev, [feature]: { primary: prev[feature]?.primary ?? '', fallback: event.target.value } }))}
+                aria-label={`${assignment.label} fallback provider`}
+              >
+                <option value="">(no fallback)</option>
+                {(providersData?.providers ?? []).map((row) => <option key={row.key} value={row.key}>{row.label}</option>)}
+              </select>
+            </div>
+          ))}
+          <div className="mt-1 flex flex-wrap gap-2">
+            <button type="submit" className="btn-primary h-9 px-3 text-[12.5px]" disabled={busy}>Apply routing</button>
+            <button type="button" className="btn-ghost h-9 px-3 text-[12.5px]" disabled={busy || !providersData?.canUndo} onClick={() => void undoFeatures()}>Undo last change</button>
+          </div>
+        </form>
       </section>
 
       <section className="card p-4">

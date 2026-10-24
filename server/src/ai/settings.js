@@ -24,6 +24,29 @@ const aiSettingsSchema = new mongoose.Schema(
     maxOutputTokens: { type: Number, default: null },
     timeoutMs: { type: Number, default: null },
     dailyTokenBudget: { type: Number, default: null },
+    // Multi-provider registry used by the "Model providers" tab (item 9c).
+    providers: {
+      type: [
+        new mongoose.Schema(
+          {
+            key: { type: String, required: true },
+            label: { type: String, default: '' },
+            provider: { type: String, required: true },
+            model: { type: String, required: true },
+            baseUrl: { type: String, default: '' },
+            apiKeyEncrypted: { type: String, default: null },
+            apiKeyLast4: { type: String, default: null },
+            enabled: { type: Boolean, default: true },
+            timeoutMs: { type: Number, default: 20000 },
+            dailyTokenBudget: { type: Number, default: 200000 },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
+    features: { type: mongoose.Schema.Types.Mixed, default: {} },
+    lastFeatureChange: { type: mongoose.Schema.Types.Mixed, default: null },
     fallbacks: {
       type: [
         new mongoose.Schema(
@@ -260,6 +283,8 @@ async function updateSettings(input = {}) {
 
 module.exports = {
   AiSettings,
+  encrypt,
+  decrypt,
   getEffectiveSettings,
   updateSettings,
   maskedSettings,
