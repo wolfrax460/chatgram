@@ -175,7 +175,7 @@ rollback is unambiguous.
 | Date | Commit | Deployed | Result / rollback |
 |---|---|---|---|
 | 2026-10-19 | (pre-session) | Flutter app + landing + API | live |
-| 2026-10-24 | (this session) | auth scroll fix, session work pending | see progress.md |
+| 2026-10-24 | `180c867` | API: help centre (10 collections/37 articles, widget endpoints, handoff), status media (video/audio/upload/cleanup), profile panel + blocking/mute/report, group permissions/invites/pin/mentions/photo, account settings/change password/sessions/delete account, read receipts, message edit/star/forward/report, AI layer (inactive behind `SUPPORT_AI_LAYER=false`). Web: all of the above UI + compact auth screens for short viewports. nginx `client_max_body_size` 25m → 60m. | **Green.** Health ok (database/socket/cloudinary). Smoke test 24/24 functional checks (sign-in, messages both ways, photo+real video+real audio statuses via Cloudinary, profile, group members + leave, help widget, change password). Auth layout verified on production at 1366x600 / 1280x600 / 1440x700 / 390x700. Vercel deployment `chatgram-fqux4ip0s`; rollback: previous Vercel deployment + `src.bak-20261024-105120` + `chatgram-backups/20261024-105120.tgz`. |
 
 > Update this table after every deploy. The rollback for a code deploy is the previous
 > row's commit plus the backup archive recorded at deploy time.

@@ -58,3 +58,8 @@ Thumbs.db
 # Playwright artefacts
 test-results/
 playwright-report/
+
+# Vercel local link/token files
+client/landing/.vercel/
+**/.vercel/
+client/landing/.env.local

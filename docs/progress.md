@@ -912,3 +912,52 @@ Fix (no scrollbar hiding, content never clipped):
   in `authController.js` and `.env.example`.
 - New `docs/deploy.md` (procedure + rollback + record) and decision D17
   (`deploy-after-green`).
+
+
+---
+
+## Production deploy (2026-10-24) — DONE
+
+All work committed locally up to `180c867` was deployed under the new
+`deploy-after-green` policy (owner authorised deploys).
+
+**Backend** (api https://chatgram.duckdns.org)
+- Database backup: `~/chatgram-backups/20261024-105120.tgz` (also pulled to `backups/`).
+- Read-only status-cleanup check before first boot: `total=0 olderThan24h=0` (nothing
+  real to delete).
+- Dependencies installed before restart (`npm ci --omit=dev`), PM2 restarted with
+  `--update-env`; previous API source kept at `~/chatgram/server/src.bak-20261024-105120`.
+- `GET /api/status/health` → `{ok:true, database:"connected", socket:"connected", storage:"cloudinary"}`.
+- nginx: `client_max_body_size` raised **25m → 60m** (status videos up to 50 MB);
+  backup of the site file at `/etc/nginx/sites-available/chatgram.duckdns.org.bak-20261024`,
+  `nginx -t` + reload OK.
+- Error log after deploy: only expected `Socket auth error: jwt expired` lines; no crashes,
+  PM2 online with no unstable restarts.
+
+**Web** (Vercel project `chatgram` → https://chatgram-xi.vercel.app)
+- Deployed prebuilt static output: landing + `/docs` + React app at `/web/`
+  (deployment `chatgram-fqux4ip0s`). All of `/`, `/web/`, `/docs/`, `/web/admin` return 200
+  and `/web/` serves the new bundle (`index-EFZc5UmR.js`).
+- Auth layout checked **on production** at 1366x600, 1280x600, 1440x700 and 390x700:
+  zero vertical overflow on laptops for sign-in and sign-up; primary/Google/footer/
+  language/version all inside the viewport; the phone view scrolls normally and every
+  action is reachable.
+
+**Production smoke test** (two clearly-named TEST accounts, created and deleted):
+24/24 functional checks passed — sign-in both accounts, direct chat + messages both ways,
+photo + real video + real audio status uploads through Cloudinary, status feed visibility,
+profile panel, group create/members/leave, help-widget conversation + assistant reply,
+change password + re-login. All test statuses deleted; test accounts removed (verified 0
+remaining, 0 statuses). Deletion via the API hit the per-IP change-password rate limit after
+the password-change check, so the final account removal was done directly in the database
+and verified with a count query (test accounts only, by their exact test identifiers).
+
+**Sign-up note:** production requires an emailed verification code, so the UI sign-up form
+was verified at the target viewports but the actual production registration was not
+exercised with a real inbox (codes go to owner-controlled email). Sign-in, messages,
+uploads, groups, help, password change and account deletion were all exercised through the
+public API.
+
+**Rollback:** previous Vercel deployment (promote in dashboard), API `src.bak-20261024-105120`,
+DB `chatgram-backups/20261024-105120.tgz`, nginx `.bak-20261024`. Recorded in
+`docs/deploy.md`.
