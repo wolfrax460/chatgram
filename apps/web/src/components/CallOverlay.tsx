@@ -24,23 +24,24 @@ function initials(name?: string): string {
 function PeerTile({
   participant,
   video,
-  streamTick,
   large,
 }: {
   participant: CallParticipant;
   video: boolean;
-  streamTick: number;
   large: boolean;
 }) {
   const media = useRef<HTMLVideoElement>(null);
   const stream = getPeerStream(participant.id);
 
+  // No dependency array on purpose: a MediaStream mutates in place as tracks
+  // arrive, and React can recreate the element between renders. Re-attaching on
+  // every render is cheap and guarantees the video is never left black.
   useEffect(() => {
-    if (media.current && stream) {
+    if (media.current && stream && media.current.srcObject !== stream) {
       media.current.srcObject = stream;
-      void media.current.play().catch(() => {});
     }
-  }, [stream, streamTick]);
+    if (media.current && stream) void media.current.play().catch(() => {});
+  });
 
   if (video) {
     return (
@@ -101,11 +102,13 @@ export function CallOverlay({ call }: { call: CallState }) {
     return () => window.clearInterval(id);
   }, [call.status]);
 
+  // Re-attach on every render for the same reason as the peer tiles.
   useEffect(() => {
-    if (localVideo.current && call.video && call.cameraOn) {
-      localVideo.current.srcObject = getLocalStream();
+    const stream = getLocalStream();
+    if (localVideo.current && call.video && call.cameraOn && stream && localVideo.current.srcObject !== stream) {
+      localVideo.current.srcObject = stream;
     }
-  }, [call.video, call.cameraOn, call.streamTick]);
+  });
 
   if (call.status === 'idle') return null;
 
@@ -133,7 +136,7 @@ export function CallOverlay({ call }: { call: CallState }) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex flex-col bg-ink-900/97 text-white"
+      className="fixed inset-0 z-[70] flex flex-col bg-ink-900/95 text-white backdrop-blur-sm"
       role="dialog"
       aria-label={call.isGroup ? 'Group call' : 'Call'}
     >
@@ -161,7 +164,7 @@ export function CallOverlay({ call }: { call: CallState }) {
       </div>
 
       {/* participants */}
-      <div className="relative flex-1 overflow-y-auto px-3 pb-3">
+      <div className="relative min-h-0 flex-1 px-3 pb-3">
         {remoteCount === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <div className="grid h-20 w-20 place-items-center rounded-full bg-brand-600 text-2xl font-bold">
@@ -178,25 +181,22 @@ export function CallOverlay({ call }: { call: CallState }) {
                 key={participant.id}
                 participant={participant}
                 video={showVideo}
-                streamTick={call.streamTick}
                 large={large}
               />
             ))}
           </div>
         )}
 
-        {/* local preview */}
+        {/* local preview — floating so it never disturbs the participant grid */}
         {showVideo ? (
           <video
             ref={localVideo}
             autoPlay
             muted
             playsInline
-            className={
-              large
-                ? 'mt-2 h-40 w-28 rounded-xl border border-white/20 object-cover'
-                : 'absolute bottom-3 right-3 h-28 w-20 rounded-xl border border-white/20 object-cover shadow-lg'
-            }
+            className={`absolute bottom-4 right-4 rounded-xl border border-white/20 object-cover shadow-lg ${
+              large ? 'h-40 w-28' : 'h-28 w-20'
+            }`}
             aria-label="Your camera"
           />
         ) : null}

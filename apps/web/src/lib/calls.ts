@@ -395,6 +395,7 @@ export async function handleOffer(payload: {
     const exists = state.participants.some((p) => p.id === payload.from.id);
     if (!exists) setState({ participants: [...state.participants, payload.from] });
   } catch {
+    // A failed answer means this peer is not reachable; drop it.
     removePeer(payload.from.id);
   }
 }
