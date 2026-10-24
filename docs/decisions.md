@@ -374,3 +374,23 @@ There is no email recovery; the server script is the only reset path.
 - Not implemented yet: TOTP enrolment screen, optional IP allowlist, and removal
   of the legacy support-account guard on `/api/support/admin/*` (kept until the
   new dashboard tabs land in 9b/9d).
+
+
+---
+
+## D20 - Model providers + per-feature routing (2026-10-24, item 9c)
+
+**Design:** providers live in the AiSettings document (encrypted keys, AES-256-GCM),
+with a feature map for Chatgram AI, Support replies and the help widget.
+`service.chat({ feature })` resolves the feature chain first (primary + fallbacks,
+disabled providers skipped) and records per-provider health in memory (requests,
+successes, failures, tokens, average latency, last error code). The admin tab is
+served by `/api/admin/providers` behind the new admin session + CSRF gate, so keys
+are never readable by a user JWT. Provider saves, routing changes and test
+connections are audited. One undo step is kept for routing changes; SSRF and
+unknown-provider assignments are rejected server-side. Keys are write-only and
+only the last 4 characters are returned.
+
+**Not done yet:** cost estimates, per-provider budget enforcement, a "switch all"
+one-click action, circuit-breaker state in the UI, and UI support for more than
+one fallback (the server accepts up to 5).

@@ -185,6 +185,8 @@ rollback is unambiguous.
 
 | 2026-10-24 (15:05) | item 9a admin gate | Admin panel password gate: bcrypt hash in ADMIN_PANEL_PASSWORD_HASH, set-admin-password script, server sessions + CSRF + lockout + audit, sessions/change-password UI, /web/admin gate screen, Vercel /api proxy route. Backend first (DB backup `20261024-130018`, src backup `src.bak-20261024-130018`, health ok), then web `chatgram-kashovb0o`. | **Green.** /, /web/, /docs/, /web/admin 200; /api proxy through the Vercel domain verified; admin session 503 until the owner sets a password (by design). Rollback: previous Vercel deployment, `src.bak-20261024-130018`, DB dump `20261024-130018`. |
 
+| 2026-10-24 (15:35) | item 9c | Model providers tab + per-feature AI routing: /api/admin/providers (admin session+CSRF), encrypted write-only keys, Test connection, feature primary/fallback routing with undo, health counters, audit; UI tab in /web/admin. Backend first (DB backup `20261024-133230`, src backup `src.bak-20261024-133230`, health ok), web `chatgram-9j152ftlv`. | **Green.** Admin login + providers endpoint verified in production; no provider configured yet (owner adds the Groq key in the tab). Rollback: previous Vercel deployment, `src.bak-20261024-133230`, DB dump `20261024-133230`. |
+
 ## 6. Deploy record
 
 | Date | Commit | Deployed | Result / rollback |

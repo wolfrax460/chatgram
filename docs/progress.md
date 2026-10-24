@@ -1105,3 +1105,11 @@ authenticated AI test, then the Groq key replacement through the admin providers
 - Production currently answers `503 ADMIN_NOT_CONFIGURED` for the admin session until the
   owner runs `node scripts/set-admin-password.js` on the server — this is intentional (the
   server never ships a default admin password).
+
+
+### Session 13 (2026-10-24) — item 9c deployed
+- Backend first (DB backup `20261024-133230`, src backup `src.bak-20261024-133230`, health ok),
+  then web `chatgram-9j152ftlv`. Production verified: admin login 200,
+  `/api/admin/providers` 200 with `providers=0, features=3` (owner adds the first provider in
+  the tab), logout 200; page routes 200 and the /api proxy works.
+- Item 3 (Chatgram AI) **not started** — next in the queue.
