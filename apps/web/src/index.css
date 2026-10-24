@@ -92,6 +92,70 @@ html.dark hr {
 }
 
 /* ---------------------------------------------------------------------------
+   Native form controls (Change 3).
+   Chromium paints a <select> option list from the element's `color-scheme`
+   plus the option background/colour. Without these rules the dark theme opened
+   a white popup with white text, so every option except the highlighted one was
+   invisible. Light theme stays on the browser default (readable).
+--------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+html.dark select,
+html.dark select option,
+html.dark select optgroup {
+  background-color: #202c33;
+  color: #e9edef;
+}
+html.dark select option:checked {
+  background-color: #2a3a45;
+  color: #ffffff;
+}
+html.dark select option:disabled {
+  color: #667781;
+}
+html.dark select:disabled {
+  color: #8696a0;
+  opacity: 0.7;
+}
+/* Date/time/colour pickers: dark chrome, readable value. */
+html.dark input[type='date'],
+html.dark input[type='datetime-local'],
+html.dark input[type='month'],
+html.dark input[type='week'],
+html.dark input[type='time'],
+html.dark input[type='color'] {
+  color-scheme: dark;
+  color: #e9edef;
+}
+html.dark input[type='date']::-webkit-calendar-picker-indicator,
+html.dark input[type='datetime-local']::-webkit-calendar-picker-indicator,
+html.dark input[type='month']::-webkit-calendar-picker-indicator,
+html.dark input[type='week']::-webkit-calendar-picker-indicator,
+html.dark input[type='time']::-webkit-calendar-picker-indicator {
+  filter: invert(0.85);
+}
+/* Autofill must never paint a white/yellow box behind dark inputs. */
+html.dark input:-webkit-autofill,
+html.dark input:-webkit-autofill:hover,
+html.dark input:-webkit-autofill:focus,
+html.dark textarea:-webkit-autofill,
+html.dark select:-webkit-autofill {
+  -webkit-text-fill-color: #e9edef;
+  -webkit-box-shadow: 0 0 0 1000px #202c33 inset;
+  box-shadow: 0 0 0 1000px #202c33 inset;
+  caret-color: #e9edef;
+  transition: background-color 9999s ease-out 0s;
+}
+/* Native checkboxes/radios and range sliders follow the accent, not system blue. */
+html.dark {
+  accent-color: #008069;
+}
+
+/* ---------------------------------------------------------------------------
    Auth pages: fit the viewport without scrolling whenever possible.
    - Unlayered rules below intentionally beat Tailwind utilities so the same
      markup can compress on short screens without duplicating every class.

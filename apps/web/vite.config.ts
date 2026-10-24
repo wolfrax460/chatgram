@@ -31,6 +31,10 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      // Bind IPv4 loopback so the dev app and the API are the SAME site
+      // (127.0.0.1:<port>): the admin session cookie is SameSite=Strict and is
+      // otherwise dropped between `localhost` and `127.0.0.1`.
+      host: '127.0.0.1',
       port: 5174,
       proxy: {
         '/uploads': { target: apiUrl, changeOrigin: true },

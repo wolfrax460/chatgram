@@ -11,7 +11,7 @@
 const { defineConfig, devices } = require('@playwright/test');
 
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:5000';
-const WEB_URL = process.env.E2E_WEB_URL || 'http://localhost:5174';
+const WEB_URL = process.env.E2E_WEB_URL || 'http://127.0.0.1:5174';
 
 module.exports = defineConfig({
   testDir: __dirname,
