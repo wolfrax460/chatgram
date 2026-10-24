@@ -52,8 +52,13 @@ function check(n, c, d) { if (c) { passed++; console.log('  PASS  ' + n); } else
     await ai.AiConversation.deleteMany({ userId: user._id });
     await ai.AdminInbox.deleteMany({ askerId: user._id });
     await User.deleteMany({ _id: user._id });
-    if (snapshot) { const { _id, ...rest } = snapshot; await AiSettings.updateOne({ key: 'global' }, { $set: rest }, { upsert: true }); }
+    // Restore the settings document EXACTLY: a `$set` of a snapshot that had no
+    // aiPolicy leaves the test policy behind (undefined fields are stripped by
+    // Mongoose), which then rate-limits every later AI test. replaceOne does not.
+    if (snapshot) await AiSettings.replaceOne({ key: 'global' }, snapshot);
     else await AiSettings.deleteOne({ key: 'global' });
+    const restored = await policy.getPolicy();
+    check('the stored policy is restored after the run', restored.source === 'environment', restored.source);
     await mongoose.disconnect();
   }
   console.log('\n' + passed + ' passed, ' + failures.length + ' failed\n');

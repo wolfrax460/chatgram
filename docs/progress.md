@@ -1,4 +1,102 @@
+## Round 1 (fresh session, 2026-10-24 evening) — starts here
+
+### STEP 0 verification (done against code + production)
+
+(a) **Item 4 empty-screen recommendations** — the branded card + quick-actions row ARE built and
+live: production `/web/` served it to a real signed-in browser (temporary probe account, deleted
+afterwards): `empty-recommendation` card ("Ask Chatgram AI anything") and `empty-quick-actions`
+render, no console/page errors. NOT tested by Playwright, and the server-driven parts are still
+missing (`GET /api/app/recommendations`, dismiss, completed-item hiding, admin editor).
+
+(b) **Item 2 Support outage** — Chatgram Support answers in production: a real question sent from
+a temporary account to the Support conversation got a reply in **3.1 s** ("How do I turn on
+two-step verification?"), then the account/chat/ticket/messages were deleted. Regression test
+`server/test/integration/supportReply.test.js` passes **9/9** (AI disabled still replies, existing
+ticket does not silence, provider failure replies + classified 401/429/404/timeout).
+
+(c) **Signed-in pinned AI row + search row** — verified in a real browser on production with a
+temporary test account (deleted): pinned row visible with avatar/badge, search row appears for a
+non-matching query and opens the AI view, no runtime errors. 9/9 checks passed.
+
+### Change 3 — white native dropdowns (DONE, deployed with this round)
+
+- `apps/web/src/index.css`: `color-scheme: dark` under `html.dark` (light stays light), dark
+  `select/option/optgroup` surface + readable text + checked/disabled states, date/time pickers,
+  `-webkit-autofill` guard, dark `accent-color`.
+- Guard test `server/test/unit/nativeSelectGuard.test.js` (in `test:unit`): fails when a new bare
+  `<select>` appears outside the five pinned legacy screens (and never in the new admin dashboard),
+  and asserts the CSS rules stay.
+- Playwright `tests/e2e/selects.dark.spec.js` (4 tests): auth country select, settings select,
+  admin Model-providers + feature-routing selects at 1366x600 and 1920x1080 — asserts
+  `color-scheme: dark`, non-white option background and >= 4.5:1 option contrast.
+- `apps/web/vite.config.ts` dev server now binds `127.0.0.1` and the Playwright base URL is
+  `http://127.0.0.1:5174`, so app + API are the same site and the SameSite=Strict admin cookie
+  works locally (as it does through the Vercel proxy in production).
+
+### Change 1 core — Chatgram AI is a normal conversation (DONE in this round)
+
+- **Production bug found and fixed:** `service.js` exposed `streamForFeature` only as a named
+  export, while `chatgram.js` holds `const { service } = require('./service')` captured at load
+  time. `service.streamForFeature` was therefore `undefined` and **every streamed Chatgram AI
+  answer fell back to "Chatgram AI is unavailable right now."** (SSE plumbing and provider were
+  fine). Fixed by attaching the streamer to the `service` object; regression test
+  `server/test/ai/streaming.test.js` (8 checks, in `test:ai`) fails without the fix.
+- New `apps/web/src/components/AiThread.tsx` renders inside the normal two-column shell with the
+  **shared ChatHeader and Composer**; header is avatar + "Chatgram AI" + subtitle "AI" + search +
+  three-dot menu, **no call buttons**; three-dot menu = New conversation / Previous conversations /
+  Search in chat / Mute / Pin / Clear chat; attach + mic hidden with the on-screen reason ("text
+  only"); disclaimer is one system banner at the top of the thread, not under the composer; intro
+  system message + 4 suggestion pills that disappear after the first message; typing indicator;
+  streamed safe markdown (bold, italic, inline code, lists, code blocks with copy button); per
+  answer actions Copy / Good / Bad / Share to another chat / Reply / Regenerate; reply quotes the
+  chosen message; XSS rendered as text; Clear chat aborts an in-flight stream.
+- Pinned chat-list row now shows last-answer preview, time and an unread badge
+  (`apps/web/src/lib/aiThread.ts`, persisted preview/mute/pin); left-rail AI button moved below a
+  divider at the bottom of the rail; the dedicated `pages/AiChat.tsx` page is deleted.
+- The "Ask Chatgram AI" search row hands the query to the thread (prop handoff, not a CustomEvent
+  that the not-yet-mounted thread would miss).
+- Playwright `tests/e2e/aiThread.spec.js` (6 tests) with a deterministic mock provider
+  (`tests/e2e/mockAiProvider.js`, port 5099, allowed via `AI_ALLOWED_LOCAL_HOSTS` in
+  `scripts/start-staging.ps1`): pinned row + standard header no calls, typing/streaming/markdown/
+  XSS-as-text, copy + good/bad + reply, clear chat, search handoff, list preview.
+- Still missing from Change 1: **group "@Chatgram AI" mentions** (toggle off by default, rate
+  limit, only mentioning messages sent to the provider).
+
+### Change 1 group mentions (DONE in this round)
+
+- Group settings gained `aiMentions` (off by default) with an admin toggle in Groups → Settings
+  (`data-testid="ai-mentions-toggle"`), also exposed by `PATCH /api/chats/:id`.
+- `server/src/ai/groupMentions.js`: only text messages that match `@Chatgram AI` are sent to the
+  provider; answers are posted into the group thread by a dedicated **Chatgram AI system account**
+  (`server/src/utils/aiAccount.js`, `isAiAccount`), which never appears in people search
+  (`/api/users/search`, `/api/contacts/search`) and has no password (cannot be signed into).
+  Rate limit: 3 answers / 10 minutes per group and a 20 s gap, reserved before the provider call
+  so five rapid mentions produce one answer. Blocked topics apply. Failures are silent + logged.
+- Hooked into both message paths (REST `messageController` and Socket.IO `socketHandler`).
+- Integration test `server/test/integration/groupAiMentions.test.js` (14 checks, in
+  `test:integration`): off by default, toggle works and persists, one reply per mention, plain
+  messages ignored, rapid mentions rate limited to one, AI not searchable, toggle-off stops replies.
+
+### Test isolation fix found during the gate
+
+`policy.test.js` restored the AiSettings document with `$set` of a snapshot that had no
+`aiPolicy`, which Mongoose silently strips — so its test limits (hourlyLimit 2) leaked into the
+staging DB and later AI suites hit "you have reached the Chatgram AI limit". Restore now uses
+`replaceOne` plus a "policy restored after the run" check; the staging policy was cleared.
+
+### Queue after this round
+
+1. 9e tail: support-no-reply-60s Inbox record, low-confidence/duplicate records, live Inbox push.
+2. Change 2: route-based admin dashboard shell + Overview/Users/Inbox/Providers, then 9b pages + 9d
+   oversight (the main remaining work item).
+3. 9a remainder: TOTP, IP allowlist, remove the legacy role-based admin guard, sign out all sessions.
+4. Item 4 completion: `/api/app/recommendations`, dismissal, completed hiding, admin editor.
+5. Items 5/6/7: Windows installer rebuild, Android APK, landing Features/Downloads.
+
+---
+
 ## Next session starts here (updated 2026-10-24, end of round 16)
+
 
 Read this file and docs/deploy.md first. Nothing is mid-flight: the last deploy is green and
 every change is committed. Do NOT rebuild what already exists; continue the queue below.
