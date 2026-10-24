@@ -10,6 +10,7 @@ const mongoose = require('mongoose');
 const { service } = require('./service');
 const { redact } = require('./redact');
 const { getPolicy } = require('./policy');
+const alerts = require('./alerts');
 
 const MAX_INPUT = 4000;
 const HISTORY_LIMIT = 12;
@@ -307,6 +308,7 @@ async function sendMessage({ userId, conversationId, text }) {
     // Every provider failed: polite message, never a raw error, and record it.
     const polite = 'Chatgram AI is unavailable right now. Please try again in a moment.';
     recordProviderFailure();
+    await alerts.onProviderFailure({ degraded: aiHealth().degraded, reason: error.message });
     await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: polite, providerKey: null });
     await recordUnknown(userId, body, `provider failures: ${error.message}`, null);
     return { conversationId: String(conversation._id), reply: polite, providerKey: null, unknown: false, unavailable: true, conversation };
@@ -402,6 +404,7 @@ async function streamMessage({ userId, conversationId, text, onDelta }) {
   } catch (error) {
     const polite = 'Chatgram AI is unavailable right now. Please try again in a moment.';
     recordProviderFailure();
+    await alerts.onProviderFailure({ degraded: aiHealth().degraded, reason: error.message });
     await onDelta(polite);
     await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: polite });
     await recordUnknown(userId, body, `provider failures: ${error.message}`, null);

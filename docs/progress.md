@@ -86,6 +86,9 @@ Legend: ✅ done + deployed · ◐ partial (missing parts listed) · ✗ not sta
 6.  ◐ Android — the earlier build is sideload-only and was NOT rebuilt with this session's
     features; no release keystore (by design).
 7.  ✗ Landing Features/Downloads tab with checksums and QR code.
+•   9e alert delivery — ✅ deployed (2026-10-24): instant degraded alert (once/10 min) + hourly
+    failure digest behind the admin settings toggle, via the existing Telegram/email notifier;
+    silent by default. Tests 7/7. Missing: type (e) support-timeout trigger, in-app socket push.
 •   AI policy (admin-editable blocked topics + limits) — ✅ deployed: settings-backed, validated,
     audited, effective immediately; tests 7/7. Alerts toggle stored but digest delivery not built.
 •   Change 1 (Meta-AI-style conversation) — ◐ partial: disclaimer banner, intro bubble, pills
@@ -1227,3 +1230,9 @@ authenticated AI test, then the Groq key replacement through the admin providers
 - Backend deployed (DB backup 20261024-151218, src backup src.bak-20261024-151218, health ok),
   web chatgram-d980jqxf4. Tests: server/test/ai/policy.test.js 7/7 (env defaults, stored values,
   invalid limits rejected, stored blocked topic refused, max input enforced, stored hourly cap).
+
+
+### Session 20 (2026-10-24) — 9e alert delivery
+- Backend deployed (DB backup 20261024-151502, src backup src.bak-20261024-151502, health ok).
+  Tests: server/test/ai/alerts.test.js 7/7 (off by default, instant once, instant rate-limited,
+  digest when due, counter reset, digest not repeated within the hour).

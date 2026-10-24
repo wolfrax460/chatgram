@@ -199,6 +199,8 @@ rollback is unambiguous.
 
 | 2026-10-24 (17:13) | AI policy (blocked topics + limits) | AiSettings.aiPolicy, GET/PUT /api/admin/ai/policy (admin session + CSRF, audited), Chatgram AI reads blocked topics/caps/max-input immediately (normal + streaming), dashboard "AI safety & limits" panel. Backend first (DB backup 20261024-151218, src backup src.bak-20261024-151218, health ok), web chatgram-d980jqxf4. | Green. /api/admin/ai/policy 401 unauthenticated; pages 200; tests 7/7. Rollback: previous Vercel deployment, src.bak-20261024-151218, DB dump 20261024-151218. |
 
+| 2026-10-24 (17:16) | 9e alert delivery | server/src/ai/alerts.js: instant AI-degraded alert (once/10 min) + hourly failure digest behind aiPolicy.alertsEnabled (off by default), delivered via the Support notifier (Telegram/email), sanitized reasons. Wired into normal + streaming AI failure paths. Backend first (DB backup 20261024-151502, src backup src.bak-20261024-151502, health ok). | Green. Health ok; tests 7/7. Rollback: src.bak-20261024-151502, DB dump 20261024-151502. Web bundle unchanged. |
+
 ## 6. Deploy record
 
 | Date | Commit | Deployed | Result / rollback |

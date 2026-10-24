@@ -492,3 +492,21 @@ tab, `AI_UNKNOWN_NOTIFY` digests/9e alerts, moderation topics list, and the
   written to the admin audit log. Dashboard: an "AI safety & limits" panel on /web/admin.
 - The alerts toggle is stored for the 9e digest work; the digest/instant delivery itself is NOT
   implemented yet (crossed in the ledger).
+
+
+---
+
+## D26 - 9e alert delivery: hourly digest + instant all-providers-down (2026-10-24)
+
+- New `server/src/ai/alerts.js`: failures on the Chatgram AI path call
+  `onProviderFailure({ degraded, reason })`. Against the admin-editable policy toggle
+  (`aiPolicy.alertsEnabled`, off by default):
+  - **instant alert** when AI becomes degraded (5+ all-provider failures / 10 min), at most once
+    per 10-minute window;
+  - **digest** of pending failures at most once per hour, then the counter resets.
+- Delivery goes through the existing Support notifier (`notifyAlert` → Telegram/email
+  channels). Messages contain only counts and a sanitized reason — no user identity, no keys.
+  If the toggle is off, nothing is sent (silent default).
+- Still not implemented (crossed): instant alerts for individual non-degraded provider failures,
+  type (e) "support message unanswered for 60s", and any in-app admin-socket push (the Inbox
+  tab already updates on load/refresh).
