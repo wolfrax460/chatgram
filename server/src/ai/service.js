@@ -325,3 +325,109 @@ function diagnostics() {
 const service = { chat, streamChat, testConnection, diagnostics };
 
 module.exports = { service, chat, streamChat, testConnection, diagnostics, AiError, ERROR_CODES };
+
+
+/**
+ * Stream an answer for a feature through the provider chain.
+ * OpenAI-compatible providers stream tokens (SSE); other adapters yield one chunk.
+ */
+async function* streamForFeature(options = {}) {
+  const settings = await getEffectiveSettings();
+  let chain = [];
+  if (options.feature) {
+    const registry = require('./providers');
+    const featureChain = await registry.resolveFeatureChain(options.feature);
+    if (featureChain && featureChain.length > 0) chain = featureChain;
+  }
+  if (chain.length === 0) chain = resolveChain(settings);
+  if (chain.length === 0) throw new AiError(ERROR_CODES.NOT_CONFIGURED, 'No AI provider is configured.');
+  if (tokensUsedToday() >= settings.dailyTokenBudget) {
+    throw new AiError(ERROR_CODES.BUDGET_EXCEEDED, 'The daily AI token budget is used up.');
+  }
+  const messages = normalizeMessages(options.messages);
+  const system = options.system ? redact(options.system, { allowContact: true }) : undefined;
+  const maxTokens = options.maxTokens || settings.maxOutputTokens;
+
+  for (const entry of chain) {
+    if (!entry.baseUrl || breakerOpen(entry.provider)) continue;
+    const openAiCompatible = entry.provider === 'openai-compatible' || PROVIDERS[entry.provider]?.adapter === 'openai-compatible';
+    if (!openAiCompatible) {
+      // Adapters without native streaming: one chunk through the regular path.
+      const result = await callProvider(entry, {
+        system,
+        messages: redactMessages(messages),
+        temperature: settings.temperature,
+        maxTokens,
+        timeoutMs: settings.timeoutMs,
+        signal: options.signal,
+      });
+      addTokens((result.usage?.inputTokens || 0) + (result.usage?.outputTokens || 0));
+      yield { delta: String(result.text || ''), providerKey: entry.key || entry.provider };
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), settings.timeoutMs);
+    const onAbort = () => controller.abort();
+    if (options.signal) options.signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      const response = await fetch(`${entry.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${entry.apiKey}` },
+        body: JSON.stringify({
+          model: entry.model,
+          stream: true,
+          max_tokens: maxTokens,
+          temperature: settings.temperature,
+          messages: [
+            ...(system ? [{ role: 'system', content: system }] : []),
+            ...redactMessages(messages).map((message) => ({ role: message.role, content: message.text })),
+          ],
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw mapHttpError(response.status, payload);
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let tokens = 0;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const payload = trimmed.slice(5).trim();
+          if (!payload || payload === '[DONE]') continue;
+          try {
+            const json = JSON.parse(payload);
+            const delta = json?.choices?.[0]?.delta?.content;
+            if (delta) {
+              tokens += 1;
+              yield { delta: String(delta), providerKey: entry.key || entry.provider };
+            }
+          } catch {
+            /* ignore malformed keep-alive lines */
+          }
+        }
+      }
+      addTokens(tokens);
+      return;
+    } catch (error) {
+      noteFailure(entry.provider);
+      if (options.signal?.aborted) throw new AiError(ERROR_CODES.TIMEOUT, 'Request aborted.');
+      // Try the next provider in the chain.
+    } finally {
+      clearTimeout(timer);
+      if (options.signal) options.signal.removeEventListener('abort', onAbort);
+    }
+  }
+  throw new AiError(ERROR_CODES.UNAVAILABLE, 'No AI provider answered.');
+}
+
+module.exports = { ...module.exports, streamForFeature };

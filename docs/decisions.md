@@ -419,3 +419,27 @@ without calling the provider (token-overlap match).
 conversation in the chat list, Chatgram Admin account inbox delivery, admin inbox UI
 tab, `AI_UNKNOWN_NOTIFY` digests/9e alerts, moderation topics list, and the
 "Answer this user" action.
+
+
+---
+
+## D22 - Chatgram AI streaming + web UI + silent inbox delivery (2026-10-24)
+
+- **Streaming:** `POST /api/ai/messages/stream` (SSE) streams tokens from
+  OpenAI-compatible providers through `service.streamForFeature(feature)`; adapters
+  without SSE yield one chunk. The final event carries `conversationId`, the stored
+  reply, provider key and the unknown flag. History/limits/KB checks run before
+  streaming; the hidden `[[CHATGRAM_UNKNOWN: …]]` marker is stripped after the
+  stream completes and recorded in the admin inbox.
+- **Web UI:** sidebar "Chatgram AI" entry, a pinned "Chatgram AI" row at the top of the
+  chat list, and a dedicated `/pages/AiChat.tsx` page: streaming answers, safe markdown
+  (React text nodes, no innerHTML), suggestion chips, copy, conversation history
+  selector, new chat and delete. Disclaimer states the answer may be wrong and that
+  messages are processed by a third-party AI provider.
+- **Admin inbox tab:** inside /web/admin — list unanswered/answered/ignored questions,
+  answer (saves an approved KB entry so the next user is answered automatically) and
+  ignore.
+- **Silent delivery:** when `CHATGRAM_ADMIN_EMAIL` is set and that user exists, a
+  Chatgram AI inbox message is also posted into their conversation with the Support
+  account (sender: Chatgram Support), so the admin sees unknown questions in-app.
+  Notifications remain off by default.

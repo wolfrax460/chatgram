@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Moon, Sun, Monitor, MessageCircle, LogOut, Users, BookUser, CircleDashed,
-  Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy,
+  Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy, Sparkles,
 } from 'lucide-react';
 import {
   chatPartner,
@@ -23,6 +23,7 @@ import { ChatHeader } from './components/ChatHeader';
 import { MessageBubble } from './components/MessageBubble';
 import Composer from './components/Composer';
 import { CallOverlay } from './components/CallOverlay';
+import { useIsOnline } from './lib/presence';
 import { getCallState, startCall, subscribeCalls } from './lib/calls';
 import Groups from './pages/Groups';
 import Contacts from './pages/Contacts';
@@ -31,12 +32,13 @@ import SettingsPage from './pages/Settings';
 import Auth from './pages/Auth';
 import SupportWidget from './components/SupportWidget';
 import AdminGate from './pages/AdminGate';
+import AiChat from './pages/AiChat';
 import JoinGroup from './pages/JoinGroup';
 import { ProfilePanel } from './components/ProfilePanel';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, sameDay, statusOf } from './lib/ui';
 
-type Tab = 'chats' | 'status' | 'groups' | 'contacts' | 'settings';
+type Tab = 'chats' | 'status' | 'groups' | 'contacts' | 'settings' | 'ai';
 
 /* --------------------------------------------------------------- favicon */
 
@@ -87,7 +89,6 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
   const profilePanel = useProfilePanel();
   const timeFormat = usePrefs((s) => s.timeFormat);
   const typingByChat = useRealtime((s) => s.typing);
-  const online = useRealtime((s) => s.online);
   const connected = useRealtime((s) => s.connected);
 
   const [draft, setDraft] = useState('');
@@ -166,7 +167,8 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
   const partner = chatPartner(chat, meId);
   const participantIds = chat.participants.map((p) => p.id);
   const typing = Boolean(typingByChat[chat.id]);
-  const isOnline = partner ? (online[partner.id] ?? partner.isOnline ?? false) : false;
+  // Presence comes from live sockets (never a stale REST snapshot).
+  const isOnline = useIsOnline(partner?.id, partner?.isOnline);
 
   /** First message I have not read — drives the "New messages" divider. */
   const firstUnreadId = useMemo(() => {
@@ -717,6 +719,7 @@ const NAV: { key: Tab; label: string; Icon: typeof MessageCircle }[] = [
   { key: 'status', label: 'Status', Icon: CircleDashed },
   { key: 'groups', label: 'Groups', Icon: Users },
   { key: 'contacts', label: 'Contacts', Icon: BookUser },
+  { key: 'ai', label: 'Chatgram AI', Icon: Sparkles },
   { key: 'settings', label: 'Settings', Icon: SettingsIcon },
 ];
 
@@ -727,7 +730,6 @@ function Shell() {
   const timeFormat = usePrefs((s) => s.timeFormat);
   const connected = useRealtime((s) => s.connected);
   const typing = useRealtime((s) => s.typing);
-  const online = useRealtime((s) => s.online);
 
   const [tab, setTab] = useState<Tab>('chats');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -852,7 +854,6 @@ function Shell() {
               meId={meId}
               selectedId={selectedId}
               typingByChat={typing}
-              online={online}
               timeFormat={timeFormat}
               onSelect={setSelectedId}
               onNewChat={() => setTab('contacts')}
@@ -873,6 +874,8 @@ function Shell() {
             </section>
           )}
         </>
+      ) : tab === 'ai' ? (
+        <AiChat />
       ) : tab === 'status' ? (
         <Status />
       ) : tab === 'groups' ? (

@@ -165,6 +165,33 @@ function stripMarker(text) {
   };
 }
 
+async function deliverToAdminInbox(question, askerHash) {
+  const email = String(process.env.CHATGRAM_ADMIN_EMAIL || '').toLowerCase().trim();
+  if (!email) return;
+  try {
+    const User = mongoose.models.User || require('../models/User');
+    const Chat = mongoose.models.Chat || require('../models/Chat');
+    const Message = mongoose.models.Message || require('../models/Message');
+    const adminUser = await User.findOne({ email }).select('_id');
+    const supportUser = await User.findOne({ isSupportAccount: true }).select('_id');
+    if (!adminUser || !supportUser) return;
+    let chat = await Chat.findOne({ type: 'direct', participants: { $all: [adminUser._id, supportUser._id] } });
+    if (!chat) chat = await Chat.create({ type: 'direct', participants: [supportUser._id, adminUser._id] });
+    await Message.create({
+      chatId: chat._id,
+      senderId: supportUser._id,
+      type: 'text',
+      content: `Chatgram AI inbox (anon ${askerHash}) — ${String(question).slice(0, 900)}`,
+      sentAt: new Date(),
+      deliveredTo: [],
+      readBy: [],
+    });
+    await Chat.updateOne({ _id: chat._id }, { updatedAt: new Date() });
+  } catch (error) {
+    console.warn('Admin inbox delivery skipped:', error.message);
+  }
+}
+
 async function recordUnknown(userId, question, replyText, providerKey) {
   const normalized = normalizeQuestion(question);
   const existing = await AdminInbox.findOne({ normalized, status: { $in: ['new', 'answered'] } });
@@ -174,13 +201,15 @@ async function recordUnknown(userId, question, replyText, providerKey) {
     await existing.save();
     return existing;
   }
-  return AdminInbox.create({
+  const created = await AdminInbox.create({
     question: redact(question, { allowContact: false }).slice(0, 500),
     normalized,
     askerHash: askerHash(userId),
     providerKey,
     redactedContext: redact(replyText, { allowContact: false }).slice(0, 800),
   });
+  await deliverToAdminInbox(created.question, created.askerHash);
+  return created;
 }
 
 /**
@@ -274,6 +303,77 @@ async function sendMessage({ userId, conversationId, text }) {
   return { conversationId: String(conversation._id), reply: finalText, providerKey: answer.providerKey, unknown, conversation };
 }
 
+/** Streaming variant: yields deltas, then returns the same result shape. */
+async function streamMessage({ userId, conversationId, text, onDelta }) {
+  const body = String(text || '').trim();
+  if (!body) {
+    const error = new Error('Message is required.');
+    error.code = 'EMPTY';
+    throw error;
+  }
+  if (body.length > MAX_INPUT) {
+    const error = new Error(`Messages are limited to ${MAX_INPUT} characters.`);
+    error.code = 'TOO_LONG';
+    throw error;
+  }
+  const limits = await limitsFor(userId);
+  if (limits.hour >= HOURLY_LIMIT || limits.day >= DAILY_LIMIT) {
+    const error = new Error('You have reached the Chatgram AI limit for now. Try again later.');
+    error.code = 'RATE_LIMITED';
+    throw error;
+  }
+  const conversation = await ensureConversation(userId, conversationId);
+  await AiMessage.create({ conversationId: conversation._id, userId, role: 'user', content: body });
+  if (conversation.title === 'New chat') {
+    conversation.title = body.slice(0, 60);
+    conversation.updatedAt = new Date();
+    await conversation.save();
+  }
+
+  const known = await lookupKnowledge(body);
+  if (known && isChatgramQuestion(body)) {
+    known.entry.uses += 1;
+    await known.entry.save();
+    await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: known.entry.answer });
+    await onDelta(known.entry.answer);
+    return { conversationId: String(conversation._id), reply: known.entry.answer, providerKey: 'knowledge-base', unknown: false };
+  }
+
+  const history = await AiMessage.find({ conversationId: conversation._id }).sort({ createdAt: -1 }).limit(HISTORY_LIMIT);
+  const messages = history.reverse().map((message) => ({ role: message.role, text: message.content }));
+  let full = '';
+  let providerKey = null;
+  try {
+    for await (const chunk of service.streamForFeature({
+      feature: 'chatgramAI',
+      system: `${SYSTEM_PROMPT}${await knowledgePrompt()}`,
+      messages,
+      maxTokens: 700,
+    })) {
+      full += chunk.delta;
+      providerKey = chunk.providerKey || providerKey;
+      await onDelta(chunk.delta);
+    }
+  } catch (error) {
+    const polite = 'Chatgram AI is unavailable right now. Please try again in a moment.';
+    await onDelta(polite);
+    await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: polite });
+    await recordUnknown(userId, body, `provider failures: ${error.message}`, null);
+    return { conversationId: String(conversation._id), reply: polite, providerKey: null, unknown: false, unavailable: true };
+  }
+
+  const { text: cleanText, unknownQuestion } = stripMarker(full);
+  const finalText = cleanText || "I don't have a confirmed answer on that yet, I've noted it for the team.";
+  let unknown = false;
+  if (unknownQuestion) {
+    unknown = true;
+    await recordUnknown(userId, unknownQuestion || body, finalText, providerKey);
+  }
+  await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: finalText, providerKey, unknown });
+  await AiConversation.updateOne({ _id: conversation._id }, { updatedAt: new Date() });
+  return { conversationId: String(conversation._id), reply: finalText, providerKey, unknown };
+}
+
 async function listConversations(userId) {
   const rows = await AiConversation.find({ userId }).sort({ updatedAt: -1 }).limit(50);
   return Promise.all(
@@ -358,6 +458,7 @@ async function ignoreInboxItem(id) {
 
 module.exports = {
   sendMessage,
+  streamMessage,
   listConversations,
   getMessages,
   deleteConversation,

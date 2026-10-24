@@ -189,6 +189,8 @@ rollback is unambiguous.
 
 | 2026-10-24 (15:57) | Chatgram AI MVP | `/api/ai` (conversations, messages, delete, send with history/limits/redaction), silent `AdminInbox` records + admin answer → KB learning, provider feature routing for `chatgramAI`, polite provider-failure reply. Backend first (DB backup `20261024-135355`, src backup `src.bak-20261024-135355`, health ok). | **Green (backend).** `/api/ai/*` and `/api/admin/ai/inbox` 401 unauthenticated; tests 19/19. UI/streaming not deployed yet. Rollback: `src.bak-20261024-135355`, DB dump `20261024-135355`. |
 
+| 2026-10-24 (16:06) | Chatgram AI streaming + UI | SSE `/api/ai/messages/stream`, web Chatgram AI page (sidebar entry, pinned chat-list row, streaming, safe markdown, suggestions, copy, history, new chat/delete), admin AI inbox tab (answer→KB, ignore), silent inbox delivery via `CHATGRAM_ADMIN_EMAIL`. Backend first (DB backup `20261024-140451`, src backup `src.bak-20261024-140451`, health ok), then web `chatgram-6s6iqov0n`. | **Green.** Admin inbox endpoint verified in production; AI stream endpoint 401 unauthenticated; pages 200. Rollback: previous Vercel deployment, `src.bak-20261024-140451`, DB dump `20261024-140451`. |
+
 ## 6. Deploy record
 
 | Date | Commit | Deployed | Result / rollback |

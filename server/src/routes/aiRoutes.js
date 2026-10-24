@@ -59,4 +59,27 @@ router.post('/messages', async (req, res) => {
   }
 });
 
+router.post('/messages/stream', async (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  const send = (payload) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  try {
+    const result = await ai.streamMessage({
+      userId: req.user._id,
+      conversationId: req.body?.conversationId,
+      text: req.body?.text ?? req.body?.message,
+      onDelta: async (delta) => send({ delta }),
+    });
+    send({ done: true, conversationId: result.conversationId, reply: result.reply, providerKey: result.providerKey, unknown: result.unknown === true });
+  } catch (error) {
+    send({ error: error.message || 'Chatgram AI failed.', code: error.code || 'AI_ERROR' });
+  } finally {
+    res.end();
+  }
+});
+
 module.exports = router;

@@ -1122,3 +1122,11 @@ authenticated AI test, then the Groq key replacement through the admin providers
 - Chatgram AI answers through the existing env-configured Groq provider when no
   "Chatgram AI" feature routing is set (owners can override in Model providers).
 - UI, streaming and the Chatgram Admin account inbox delivery are still ✗.
+
+
+### Session 15 (2026-10-24) — Chatgram AI streaming + UI
+- Backend deployed (DB backup `20261024-140451`, src backup `src.bak-20261024-140451`, health
+  ok); `CHATGRAM_ADMIN_EMAIL` set on the server only. Web deployed `chatgram-6s6iqov0n`.
+- Tests before deploy: ai 29, layer 7, providers 14, chatgramAi 19 — all pass.
+- Production verified: admin login + `/api/admin/ai/inbox?status=all` 200, `/web/` and
+  `/web/admin` 200, stream endpoint 401 unauthenticated.

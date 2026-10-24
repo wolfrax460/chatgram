@@ -19,6 +19,7 @@ type SessionInfo = {
 };
 type SessionRow = { id: string; current: boolean; createdAt: string; lastSeenAt: string; expiresAt: string; ip: string; userAgent: string };
 type AuditRow = { action: string; detail: string; ip: string; at: string };
+type InboxRow = { id: string; type: string; question: string; count: number; status: string; providerKey: string | null; errorReason: string | null; answer: string; lastSeenAt: string };
 type ProviderRow = {
   key: string;
   label: string;
@@ -84,6 +85,10 @@ export default function AdminGate() {
   const [providerForm, setProviderForm] = useState<Record<string, any>>({ provider: 'groq', label: '', model: '', baseUrl: '', apiKey: '', timeoutMs: 20000, dailyTokenBudget: 200000, enabled: true });
   const [providerNotice, setProviderNotice] = useState('');
   const [featureDraft, setFeatureDraft] = useState<Record<string, { primary: string; fallback: string }>>({});
+  const [inbox, setInbox] = useState<InboxRow[]>([]);
+  const [inboxTotal, setInboxTotal] = useState(0);
+  const [inboxDraft, setInboxDraft] = useState<Record<string, string>>({});
+  const [inboxStatus, setInboxStatus] = useState('new');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
@@ -113,6 +118,47 @@ export default function AdminGate() {
     refreshSession().finally(() => setLoading(false));
   }, []);
 
+  async function refreshInbox() {
+    const result = await adminFetch('/api/admin/ai/inbox?status=' + encodeURIComponent(inboxStatus));
+    if (result.status === 200) {
+      setInbox(result.body.items ?? []);
+      setInboxTotal(result.body.total ?? 0);
+    }
+  }
+
+  async function answerInbox(id: string) {
+    if (!session) return;
+    const answer = String(inboxDraft[id] || '').trim();
+    if (!answer) return;
+    setBusy(true);
+    try {
+      const result = await adminFetch('/api/admin/ai/inbox/' + encodeURIComponent(id) + '/answer', {
+        method: 'POST',
+        csrf: session.csrfToken,
+        body: { answer },
+      });
+      if (result.status === 200) {
+        setProviderNotice('Answer saved to the knowledge base.');
+        await refreshInbox();
+      } else {
+        setError(result.body?.message ?? 'Could not save the answer.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function ignoreInbox(id: string) {
+    if (!session) return;
+    setBusy(true);
+    try {
+      await adminFetch('/api/admin/ai/inbox/' + encodeURIComponent(id) + '/ignore', { method: 'POST', csrf: session.csrfToken, body: {} });
+      await refreshInbox();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function refreshProviders(csrf: string) {
     const result = await adminFetch('/api/admin/providers', { csrf });
     if (result.status === 200) {
@@ -129,7 +175,8 @@ export default function AdminGate() {
     if (!session?.csrfToken) return;
     void refreshLists(session.csrfToken);
     void refreshProviders(session.csrfToken);
-  }, [session?.csrfToken]);
+    void refreshInbox();
+  }, [session?.csrfToken, inboxStatus]);
 
   async function signIn(event: React.FormEvent) {
     event.preventDefault();
@@ -521,6 +568,47 @@ export default function AdminGate() {
             <button type="button" className="btn-ghost h-9 px-3 text-[12.5px]" disabled={busy || !providersData?.canUndo} onClick={() => void undoFeatures()}>Undo last change</button>
           </div>
         </form>
+      </section>
+
+      <section className="card p-4" data-testid="ai-inbox">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-ink-500">Chatgram AI inbox ({inboxTotal})</h2>
+          <select className="field h-8 w-[130px] text-[12px]" value={inboxStatus} onChange={(event) => setInboxStatus(event.target.value)} aria-label="Inbox filter">
+            <option value="new">New</option>
+            <option value="answered">Answered</option>
+            <option value="ignored">Ignored</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+        <p className="mb-2 text-[12px] text-ink-500 dark:text-ink-300">
+          Questions the AI could not answer. Saving an answer adds it to the knowledge base so the next user is answered automatically.
+        </p>
+        {inbox.length === 0 ? <p className="text-[12.5px] text-ink-500">Nothing here.</p> : null}
+        <ul className="space-y-2">
+          {inbox.map((item) => (
+            <li key={item.id} className="rounded-xl border border-ink-200 p-2 dark:border-white/10">
+              <p className="text-[13px] font-medium">{item.question}</p>
+              <p className="text-[11px] text-ink-500">
+                {item.count}× · {item.providerKey || 'no provider'} · {new Date(item.lastSeenAt).toLocaleString()} · {item.status}
+              </p>
+              {item.status === 'answered' ? (
+                <p className="mt-1 rounded bg-emerald-50 px-2 py-1 text-[12px] text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">{item.answer}</p>
+              ) : (
+                <div className="mt-1 flex flex-col gap-1 sm:flex-row">
+                  <input
+                    className="field h-8 flex-1 text-[12.5px]"
+                    placeholder="Approved answer (saved to the knowledge base)…"
+                    value={inboxDraft[item.id] ?? ''}
+                    onChange={(event) => setInboxDraft((prev) => ({ ...prev, [item.id]: event.target.value }))}
+                    aria-label="Inbox answer"
+                  />
+                  <button type="button" className="btn-primary h-8 px-3 text-[12px]" disabled={busy} onClick={() => void answerInbox(item.id)}>Answer</button>
+                  <button type="button" className="btn-ghost h-8 px-3 text-[12px]" disabled={busy} onClick={() => void ignoreInbox(item.id)}>Ignore</button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="card p-4">
