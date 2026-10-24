@@ -1,63 +1,36 @@
-# Migration Progress
+## Next session starts here (updated 2026-10-24, end of round 16)
 
-Running log. Updated as phases/queue tasks complete.
+Read this file and docs/deploy.md first. Nothing is mid-flight: the last deploy is green and
+every change is committed. Do NOT rebuild what already exists; continue the queue below.
 
-Last updated: 2026-10-24 (session 3)
+### Order of work from here
+1. **Change 2 — admin dashboard shell** (biggest win, do first in a fresh context):
+   route-based lazy-loaded /web/admin app shell + Overview, Users, Inbox, Model providers.
+   Keep the existing password gate, providers, inbox and AI policy panels (move, don't rewrite).
+   Deploy shell+Overview+Users+Inbox, then add the remaining 9b/9d pages one at a time.
+2. **Finish Change 1**: move the AI thread into the shared ChatWindow component; add
+   share-to-chat, reply-to-message, group @Chatgram AI + settings toggle, unread badge/preview;
+   attach stays hidden (text-only provider) and must be explained on screen. Add the Playwright
+   specs named in the Change 1 spec (pinned row, pills vanish, streaming, XSS-as-text, copy/thumbs,
+   clear chat, search handoff).
+3. **Item 4 completion**: GET /api/app/recommendations (server-driven, hides completed items),
+   dismissible card, admin editor in the Announcements area.
+4. **9e tail**: type (e) support-no-reply-60s trigger; in-app admin socket / 15s polling push.
+5. **Items 5/6/7**: rebuild Windows NSIS installer with the current web build; rebuild the
+   Android APK (JDK 17 + Android SDK; see docs/android-build.md); landing Features + Downloads tab
+   with real screenshots, checksums and QR, data from the App releases admin tab.
+6. **Finish**: final report + deploy records.
 
----
-
-## SESSION 5 - NEXT SESSION STARTS HERE
-
-Last updated: 2026-10-24 (session 4) — session 3 header kept below for history.
-
-Branch: master. Production is deployed and green (see "Production deploy" at the bottom).
-Work from earlier sessions is committed locally in small commits.
-Deploy policy: **deploy-after-green** (owner authorised production deploys on 2026-10-24).
-Deploy record + rollback commands: `docs/deploy.md`.
-
-### 2026-10-24 � Presence bug (Janvier / Samuel always "online") � DONE
-
-**Symptom:** Janvier Yedid and Samuel FX showed a permanent green dot / "online" even when not using the app.
-
-**Cause (b in the brief): the DB flag was the source of truth.** `User.isOnline` was set to true by
-any REST login (password or Google) and only cleared by a clean socket disconnect. Every PM2 restart or
-crash killed the sockets without running those handlers, so the flag stayed true. Evidence before the fix:
-3 users flagged `isOnline=true` while the API had only 2 established TCP connections, 67 PM2 restarts,
-and the two reported users last seen on 19 Oct / 20 Oct. Presence events themselves were fine; the
-REST payloads (chat list, group roster, profile, contacts) trusted the column.
-
-**Fix**
-- presence = live sockets only: `utils/realtime` keeps `userId -> Set<socketId>`; a user is online iff the set is non-empty
-- every REST read path now asks the registry (chats, groups, rosters, profiles, contacts, search, own payload)
-- login/OAuth no longer mark a user online
-- heartbeat: client `presence:ping` every 25 s, per-socket `lastPing`, sweeper disconnects sockets silent for
-  `PRESENCE_STALE_MS` (60 s prod). Normal disconnect then updates lastSeen, clears the flag on the last device,
-  and emits `presence:offline` with lastSeen
-- every boot runs `resetStuckPresence()` (flags cleared, lastSeen preserved); `server/scripts/reset-presence.js`
-  is the one-off cleanup (dry run by default, `--apply`)
-- `/api/status/health` now exposes `presence: { usersOnline, sockets, staleMs }`
-- client: `apps/web/src/lib/presence.ts` � live value wins, and while the socket is down presence is unknown so
-  everyone renders offline instead of falling back to a stale REST snapshot. Chat list dot, chat header,
-  contacts, group members and the profile panel all share that one source; the map is cleared on disconnect
-- incidental: the presence hook was first called inside the chat-list map, which crashed the app as soon as a
-  user had =1 chat ("Rendered more hooks than during the previous render"); hoisted to the component. Caught by
-  the new Playwright test.
-
-**Verified on production (2026-10-24)**
-- pre-fix dry run: 2 flagged (Janvier Yedid, SAMUEL FX) � 0 smoke accounts involved
-- restart boot log: `Presence: reset 2/2 stuck online flag(s) on startup e.g. Janvier Yedid, SAMUEL FX`
-- after the fix: `users isOnline=true: 0`; Janvier false lastSeen 2026-10-19T17:48Z, Samuel false lastSeen 2026-10-20T21:03Z
-- production smoke test with 2 throwaway accounts (created and deleted by exact id, 0 left): 7/7 � stuck flag
-  does not read as online; connected reads online; disconnect emits offline + lastSeen; disconnected reads offline
-- health: `presence: {usersOnline: 0, sockets: 0, staleMs: 60000}`
-
-**Tests added:** `server/test/unit/presence.test.js` (14), `server/test/integration/presenceReset.test.js` (12),
-`server/test/integration/presence.test.js` (16), `tests/e2e/presence.spec.js` (Playwright: B closes the tab,
-A sees "last seen"). Full gate on the local stack: 460 integration + 50 unit + 36 AI assertions green;
-typecheck and build clean.
-
-**Deploy:** backend `src.bak-20261024-143333`, DB dump `~/chatgram-backups/20261024-143333.tgz`, web
-`chatgram-8jiknwnkc`. Recorded in `docs/deploy.md`.
+### Known constraints / gotchas for the next session
+- Windows CRLF files: patch scripts must normalise \r\n before string-matching or edits silently miss.
+- Staging API: restart it (scripts/start-staging.ps1) before integration tests that hit new routes.
+- Verified production state: /api/status/health ok; /web/ and /web/admin 200; live web bundle
+  chatgram-qzvhilsac (item 4 partial); latest backend deploy 20261024-151502 (9e alerts).
+- Provider list in the dashboard is empty until the owner pastes a Groq key; AI works via the env
+  Groq key meanwhile. The no-provider banner shows on /web/admin.
+- Chatgram Admin account (terminal123b@gmail.com) exists, queued inbox delivered once. The owner
+  must change both passwords and delete C:\\Users\\mugis\\documents\\chatgram\\.secrets\\admin-credentials.txt.
+- Never commit .secrets/, never print keys/passwords, no blanket find-and-replace, keep small commits.
 
 ### Where the work queue stands (audited 2026-10-24)
 
