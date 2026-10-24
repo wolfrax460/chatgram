@@ -44,12 +44,19 @@ export interface RealtimeHandlers {
   onMessageDeleted?: (payload: { messageId: string; chatId: string; scope: string }) => void;
   /** The sender edited the text of a message. */
   onMessageEdited?: (payload: { messageId: string; chatId: string; content: string; editedAt: string }) => void;
-  /** WebRTC call signalling. */
+  /** WebRTC call signalling (1:1 and group, voice and video). */
   onCallIncoming?: (payload: CallIncoming) => void;
-  onCallRinging?: (payload: { callId: string; chatId: string }) => void;
+  onCallRinging?: (payload: CallRinging) => void;
+  /** I joined a call: connect to everyone already in it. */
+  onCallJoined?: (payload: CallJoined) => void;
+  onCallParticipantJoined?: (payload: CallParticipantJoined) => void;
+  onCallParticipantLeft?: (payload: CallParticipantLeft) => void;
+  onCallParticipantDeclined?: (payload: CallParticipantDeclined) => void;
+  onCallOffer?: (payload: CallOffer) => void;
   onCallAnswer?: (payload: CallAnswer) => void;
   onCallIce?: (payload: CallIce) => void;
-  onCallEnd?: (payload: CallEnd) => void;
+  /** The whole call is over (missed, or everybody left). */
+  onCallEnded?: (payload: CallEnd) => void;
   onCallUnavailable?: (payload: CallUnavailable) => void;
   onCallError?: (payload: { message: string; code?: string }) => void;
   /** A group member list changed (add/remove/leave/promote). */
@@ -63,36 +70,93 @@ export interface RealtimeHandlers {
   }) => void;
 }
 
+/** A person taking part in a call (or being rung by one). */
+export interface CallParticipantInfo {
+  id: string;
+  displayName?: string;
+  avatarUrl?: string | null;
+}
+
+/** Somebody rang me. Carries no SDP: offers arrive per peer once I accept. */
 export interface CallIncoming {
   callId: string;
   chatId: string;
   video: boolean;
-  sdp: unknown;
-  from: { id: string; displayName?: string; avatarUrl?: string };
+  /** True when the call belongs to a group chat (multi-party). */
+  isGroup: boolean;
+  /** Group name, or the caller's display name for a direct call. */
+  title: string;
+  /** How many people are being rung, including the caller. */
+  participantCount: number;
+  from: CallParticipantInfo;
+}
+
+/** My outgoing call is now ringing on at least one device. */
+export interface CallRinging {
+  callId: string;
+  chatId: string;
+  video: boolean;
+  isGroup: boolean;
+  title: string;
+  participants: CallParticipantInfo[];
+  ringCount: number;
+}
+
+/** I accepted and am now in the call; these people are already connected. */
+export interface CallJoined {
+  callId: string;
+  chatId: string;
+  video: boolean;
+  isGroup: boolean;
+  title: string;
+  participants: CallParticipantInfo[];
+}
+
+export interface CallParticipantJoined {
+  callId: string;
+  participant: CallParticipantInfo;
+}
+
+export interface CallParticipantLeft {
+  callId: string;
+  userId: string;
+  reason: string;
+}
+
+export interface CallParticipantDeclined {
+  callId: string;
+  userId: string;
+  isGroup: boolean;
 }
 
 export interface CallAnswer {
   callId: string;
-  chatId: string;
+  from: CallParticipantInfo;
+  sdp: unknown;
+}
+
+export interface CallOffer {
+  callId: string;
+  from: CallParticipantInfo;
   sdp: unknown;
 }
 
 export interface CallIce {
   callId: string;
-  chatId: string;
+  from?: CallParticipantInfo;
   candidate: unknown;
 }
 
 export interface CallEnd {
   callId: string;
-  chatId: string;
+  chatId?: string;
   reason: string;
 }
 
 export interface CallUnavailable {
   callId: string;
   chatId: string;
-  toUserId: string;
+  isGroup: boolean;
 }
 
 export interface RealtimeOptions {
@@ -195,10 +259,16 @@ export class RealtimeClient {
       h.onMessageEdited?.(data),
     );
     socket.on('call:incoming', (data: CallIncoming) => h.onCallIncoming?.(data));
-    socket.on('call:ringing', (data: { callId: string; chatId: string }) => h.onCallRinging?.(data));
+    socket.on('call:ringing', (data: CallRinging) => h.onCallRinging?.(data));
+    socket.on('call:joined', (data: CallJoined) => h.onCallJoined?.(data));
+    socket.on('call:participant-joined', (data: CallParticipantJoined) => h.onCallParticipantJoined?.(data));
+    socket.on('call:participant-left', (data: CallParticipantLeft) => h.onCallParticipantLeft?.(data));
+    socket.on('call:participant-declined', (data: CallParticipantDeclined) => h.onCallParticipantDeclined?.(data));
+    socket.on('call:offer', (data: CallOffer) => h.onCallOffer?.(data));
     socket.on('call:answer', (data: CallAnswer) => h.onCallAnswer?.(data));
     socket.on('call:ice', (data: CallIce) => h.onCallIce?.(data));
-    socket.on('call:end', (data: CallEnd) => h.onCallEnd?.(data));
+    socket.on('call:ended', (data: CallEnd) => h.onCallEnded?.(data));
+    socket.on('call:end', (data: CallEnd) => h.onCallEnded?.(data));
     socket.on('call:unavailable', (data: CallUnavailable) => h.onCallUnavailable?.(data));
     socket.on('call:error', (data: { message: string; code?: string }) => h.onCallError?.(data));
     socket.on('message:mention', (data: unknown) => {

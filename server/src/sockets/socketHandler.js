@@ -14,6 +14,7 @@ const User = require('../models/User');
 const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const realtime = require('../utils/realtime');
+const callRegistry = require('../utils/callRegistry');
 const { blockedBetween } = require('../utils/blocks');
 const groupSystem = require('../utils/groupSystem');
 
@@ -276,89 +277,227 @@ function registerSocketHandlers(io) {
 
     // ---------------------------------------------------------------- calls
     //
-    // 1:1 WebRTC calls. The server never touches media; it validates that the
-    // two users share the chat (and are not blocked) and forwards the
-    // offer/answer/ICE/end payloads to the other user's personal room.
-    async function callTarget(data = {}) {
-      const { toUserId, chatId } = data;
-      if (!socket.userId || !toUserId || !mongoose.Types.ObjectId.isValid(String(toUserId))) return null;
-      if (String(toUserId) === socket.userId) return null;
-      if (chatId) {
-        if (!mongoose.Types.ObjectId.isValid(String(chatId))) return null;
-        const shared = await Chat.exists({ _id: chatId, participants: { $all: [socket.userId, toUserId] } });
-        if (!shared) return null;
-      }
-      if (await blockedBetween(socket.userId, toUserId)) return null;
-      return String(toUserId);
+    // Multi-party WebRTC calls (voice and video, up to 20 people). The server
+    // never touches media: it validates that a socket belongs to the chat and
+    // the call, keeps the participant list in utils/callRegistry, and routes
+    // SDP/ICE between the peers of that call only.
+    const MAX_CALL_PARTICIPANTS = callRegistry.MAX_PARTICIPANTS;
+
+    async function chatForCaller(chatId) {
+      if (!socket.userId) return null;
+      if (!mongoose.Types.ObjectId.isValid(String(chatId))) return null;
+      return Chat.findOne({ _id: chatId, participants: socket.userId });
     }
 
-    socket.on('call:offer', async (data = {}) => {
+    async function callerIdentity() {
+      const me = await User.findById(socket.userId).select('displayName avatarUrl');
+      return {
+        id: socket.userId,
+        displayName: me?.displayName || 'Chatgram user',
+        avatarUrl: me?.avatarUrl || null,
+      };
+    }
+
+    function callPeers(callId, exceptUserId) {
+      return callRegistry
+        .participants(callId)
+        .map((p) => p.id)
+        .filter((id) => id !== String(exceptUserId));
+    }
+
+    function relayCallEvent(event, data) {
+      const call = callRegistry.get(data.callId);
+      if (!call || !socket.userId) {
+        socket.emit('call:error', { message: 'This call has ended.', code: 'CALL_GONE' });
+        return;
+      }
+      if (!callRegistry.isParticipant(call.callId, socket.userId)) {
+        socket.emit('call:error', { message: 'You are not in this call.', code: 'CALL_FORBIDDEN' });
+        return;
+      }
+      const to = String(data.toUserId || '');
+      // Only route to someone who is actually in the same call.
+      if (!to || !callRegistry.isParticipant(call.callId, to) || to === String(socket.userId)) return;
+      realtime.emitToUser(to, event, { ...data, callId: call.callId, from: { id: String(socket.userId) } });
+    }
+
+    socket.on('call:start', async (data = {}) => {
       try {
-        const target = await callTarget(data);
-        if (!target) return socket.emit('call:error', { message: 'Cannot call this person.', code: 'CALL_FORBIDDEN' });
-        if (!realtime.isUserOnline(target)) {
-          return socket.emit('call:unavailable', { chatId: data.chatId, callId: data.callId, toUserId: target });
+        if (!socket.userId) {
+          return socket.emit('call:error', { message: 'Sign in to make calls.', code: 'CALL_UNAUTHENTICATED' });
         }
-        const me = await User.findById(socket.userId).select('displayName avatarUrl');
-        realtime.emitToUser(target, 'call:incoming', {
+        const chat = await chatForCaller(data.chatId);
+        if (!chat) {
+          return socket.emit('call:error', { message: 'You cannot call this chat.', code: 'CALL_FORBIDDEN' });
+        }
+
+        const me = await callerIdentity();
+        const others = chat.participants.map(String).filter((id) => id !== String(socket.userId));
+        if (others.length === 0) {
+          return socket.emit('call:error', { message: 'There is nobody else in this chat.', code: 'CALL_EMPTY' });
+        }
+        if (chat.type === 'direct' && (await blockedBetween(socket.userId, others[0]))) {
+          return socket.emit('call:error', { message: 'You cannot call this person.', code: 'CALL_FORBIDDEN' });
+        }
+
+        const isGroup = chat.type === 'group';
+        const title = isGroup ? chat.groupName || 'Group call' : me.displayName;
+        const created = callRegistry.create({
           callId: data.callId,
-          chatId: data.chatId,
+          chatId: chat._id,
           video: data.video === true,
-          sdp: data.sdp,
-          from: me ? { id: socket.userId, displayName: me.displayName, avatarUrl: me.avatarUrl } : { id: socket.userId },
+          isGroup,
+          title,
+          initiator: me,
+          invitees: others,
         });
-        socket.emit('call:ringing', { chatId: data.chatId, callId: data.callId });
+        if (!created.ok) {
+          return socket.emit('call:error', { message: created.error, code: created.code });
+        }
+
+        // Ring everyone who is online, capped at the participant limit.
+        const ringable = others
+          .filter((id) => realtime.isUserOnline(id))
+          .slice(0, MAX_CALL_PARTICIPANTS - 1);
+
+        if (ringable.length === 0) {
+          callRegistry.destroy(created.call.callId);
+          return socket.emit('call:unavailable', {
+            chatId: String(chat._id),
+            callId: created.call.callId,
+            isGroup,
+          });
+        }
+
+        for (const userId of ringable) {
+          realtime.emitToUser(userId, 'call:incoming', {
+            callId: created.call.callId,
+            chatId: String(chat._id),
+            video: created.call.video,
+            isGroup,
+            title,
+            participantCount: ringable.length + 1,
+            from: me,
+          });
+        }
+
+        socket.emit('call:ringing', {
+          callId: created.call.callId,
+          chatId: String(chat._id),
+          video: created.call.video,
+          isGroup,
+          title,
+          participants: callRegistry.participants(created.call.callId),
+          ringCount: ringable.length,
+        });
       } catch (error) {
-        console.error('Call offer error:', error.message);
+        console.error('Call start error:', error.message);
         socket.emit('call:error', { message: 'Could not start the call.' });
       }
     });
 
-    socket.on('call:answer', async (data = {}) => {
+    socket.on('call:accept', async (data = {}) => {
       try {
-        const target = await callTarget(data);
-        if (!target) return;
-        realtime.emitToUser(target, 'call:answer', { chatId: data.chatId, callId: data.callId, sdp: data.sdp });
+        if (!socket.userId) return;
+        const call = callRegistry.get(data.callId);
+        if (!call) {
+          return socket.emit('call:ended', { callId: data.callId, reason: 'missed' });
+        }
+        const me = await callerIdentity();
+        const joined = callRegistry.join(call.callId, me);
+        if (!joined.ok) {
+          return socket.emit('call:error', { message: joined.error, code: joined.code });
+        }
+
+        socket.emit('call:joined', {
+          callId: call.callId,
+          chatId: call.chatId,
+          video: call.video,
+          isGroup: call.isGroup,
+          title: call.title,
+          participants: joined.existing,
+        });
+
+        for (const peerId of joined.existing.map((p) => p.id)) {
+          realtime.emitToUser(peerId, 'call:participant-joined', {
+            callId: call.callId,
+            participant: me,
+          });
+        }
+      } catch (error) {
+        console.error('Call accept error:', error.message);
+      }
+    });
+
+    socket.on('call:decline', (data = {}) => {
+      try {
+        const call = callRegistry.get(data.callId);
+        if (!call || !socket.userId) return;
+        // Tell whoever rang (the initiator) so their UI shows "declined".
+        const initiator = call.initiatorId;
+        if (initiator && initiator !== String(socket.userId)) {
+          realtime.emitToUser(initiator, 'call:participant-declined', {
+            callId: call.callId,
+            userId: String(socket.userId),
+            isGroup: call.isGroup,
+          });
+        }
+        // A declined 1:1 call is over. Without this the caller stays "busy"
+        // and cannot place another call until they hang up manually.
+        if (!call.isGroup && call.participants.size <= 1) {
+          callRegistry.destroy(call.callId);
+          if (initiator) {
+            realtime.emitToUser(initiator, 'call:ended', { callId: call.callId, reason: 'declined' });
+          }
+        }
+      } catch (error) {
+        console.error('Call decline error:', error.message);
+      }
+    });
+
+    socket.on('call:offer', (data = {}) => {
+      try {
+        relayCallEvent('call:offer', data);
+      } catch (error) {
+        console.error('Call offer error:', error.message);
+      }
+    });
+
+    socket.on('call:answer', (data = {}) => {
+      try {
+        relayCallEvent('call:answer', data);
       } catch (error) {
         console.error('Call answer error:', error.message);
       }
     });
 
-    socket.on('call:ice', async (data = {}) => {
+    socket.on('call:ice', (data = {}) => {
       try {
-        const target = await callTarget(data);
-        if (!target) return;
-        realtime.emitToUser(target, 'call:ice', { chatId: data.chatId, callId: data.callId, candidate: data.candidate });
+        relayCallEvent('call:ice', data);
       } catch (error) {
         console.error('Call ICE error:', error.message);
       }
     });
 
-    socket.on('call:end', async (data = {}) => {
+    socket.on('call:end', (data = {}) => {
       try {
-        const target = await callTarget(data);
-        if (!target) return;
-        realtime.emitToUser(target, 'call:end', {
-          chatId: data.chatId,
-          callId: data.callId,
-          reason: data.reason || 'hangup',
-        });
+        const call = callRegistry.get(data.callId);
+        if (!call || !socket.userId) return;
+        if (!callRegistry.isParticipant(call.callId, socket.userId)) return;
+
+        const peers = callPeers(call.callId, socket.userId);
+        const reason = data.reason || 'hangup';
+        callRegistry.leave(call.callId, socket.userId);
+
+        for (const peerId of peers) {
+          realtime.emitToUser(peerId, 'call:participant-left', {
+            callId: call.callId,
+            userId: String(socket.userId),
+            reason,
+          });
+        }
       } catch (error) {
         console.error('Call end error:', error.message);
-      }
-    });
-
-    socket.on('call:reject', async (data = {}) => {
-      try {
-        const target = await callTarget(data);
-        if (!target) return;
-        realtime.emitToUser(target, 'call:end', {
-          chatId: data.chatId,
-          callId: data.callId,
-          reason: 'declined',
-        });
-      } catch (error) {
-        console.error('Call reject error:', error.message);
       }
     });
 
@@ -371,6 +510,23 @@ function registerSocketHandlers(io) {
 
       const wentOffline = realtime.untrackSocket(socket.userId, socket.id);
       if (!wentOffline) return; // user still has another device connected
+
+      // Leaving the last device drops them out of any call they were in, so the
+      // remaining participants see the tile disappear immediately.
+      try {
+        for (const { call } of callRegistry.removeUserFromAll(socket.userId)) {
+          if (!call) continue;
+          for (const peerId of call.participants.keys()) {
+            realtime.emitToUser(peerId, 'call:participant-left', {
+              callId: call.callId,
+              userId: String(socket.userId),
+              reason: 'disconnected',
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Call cleanup on disconnect failed:', error.message);
+      }
 
       const lastSeen = new Date();
       try {

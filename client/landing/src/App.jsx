@@ -152,8 +152,9 @@ function Hero({ sizes }) {
           </h1>
           <p className="lead">
             Chatgram keeps you close to the people who matter — real-time chat, voice notes,
-            photos, groups and 24-hour status, with two-step verification and privacy you
-            actually control. On Android, Windows or right in your browser.
+            photos, groups, 24-hour status and voice or video calls with up to 20 people, with
+            two-step verification and privacy you actually control. On Android, Windows or right
+            in your browser.
           </p>
           <div className="hero-actions">
             <a className="btn btn-primary btn-lg" href="/web/">

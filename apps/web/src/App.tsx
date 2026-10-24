@@ -386,11 +386,32 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
         }}
         onOpenProfile={partner ? () => profilePanel.openProfile(partner.id, chat.id) : undefined}
         onCall={() => {
-          if (chat.type !== 'direct' || !partner) {
-            setNotice('Calls are available in one-to-one chats.');
+          if (chat.participants.length < 2) {
+            setNotice('There is nobody else in this chat to call.');
             return;
           }
-          void startCall(partner, chat.id, { video: false });
+          void startCall(
+            {
+              chatId: chat.id,
+              title: chat.type === 'group' ? chat.groupName || 'Group call' : partner?.displayName || 'Chat',
+              isGroup: chat.type === 'group',
+            },
+            { video: false },
+          );
+        }}
+        onVideoCall={() => {
+          if (chat.participants.length < 2) {
+            setNotice('There is nobody else in this chat to call.');
+            return;
+          }
+          void startCall(
+            {
+              chatId: chat.id,
+              title: chat.type === 'group' ? chat.groupName || 'Group call' : partner?.displayName || 'Chat',
+              isGroup: chat.type === 'group',
+            },
+            { video: true },
+          );
         }}
         menu={{
           onContactInfo: () => (partner ? profilePanel.openProfile(partner.id, chat.id) : undefined),

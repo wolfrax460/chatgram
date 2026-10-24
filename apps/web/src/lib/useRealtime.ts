@@ -6,9 +6,14 @@ import { api, realtime, SOCKET_URL } from './api';
 import {
   handleAnswer,
   handleCallError,
+  handleEnded,
   handleIce,
   handleIncoming,
-  handleRemoteEnd,
+  handleJoined,
+  handleOffer,
+  handleParticipantDeclined,
+  handleParticipantJoined,
+  handleParticipantLeft,
   handleUnavailable,
 } from './calls';
 
@@ -160,12 +165,17 @@ export function useRealtimeBridge(): void {
           void queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
         },
 
-        // ------------------------------------------------------ WebRTC calls
+        // ------------------------------------------- WebRTC calls (group+1:1)
         onCallIncoming: (payload) => handleIncoming(payload),
+        onCallJoined: (payload) => handleJoined(payload),
+        onCallParticipantJoined: (payload) => handleParticipantJoined(payload),
+        onCallParticipantLeft: (payload) => handleParticipantLeft(payload),
+        onCallParticipantDeclined: (payload) => handleParticipantDeclined(payload),
+        onCallOffer: (payload) => void handleOffer(payload),
         onCallAnswer: (payload) => void handleAnswer(payload),
         onCallIce: (payload) => void handleIce(payload),
-        onCallEnd: (payload) => handleRemoteEnd(payload.reason),
-        onCallUnavailable: () => handleUnavailable(),
+        onCallEnded: (payload) => handleEnded(payload.reason),
+        onCallUnavailable: (payload) => handleUnavailable(payload),
         onCallError: (payload) => handleCallError(payload.message),
 
         onUserUpdated: (updated) => {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Phone, MoreVertical, User, BellOff, Trash2, Ban, ChevronLeft, X } from 'lucide-react';
+import { Search, Phone, Video, MoreVertical, User, BellOff, Trash2, Ban, ChevronLeft, X } from 'lucide-react';
 import type { Chat, User as ChatUser } from '@chatgram/core';
 import { chatTitle } from '@chatgram/core';
 import { avatarGradient, initialsFor, lastSeenLabel, type TimeFormat } from '../lib/ui';
@@ -30,6 +30,7 @@ export function ChatHeader({
   onToggleSearch,
   onOpenProfile,
   onCall,
+  onVideoCall,
   menu,
   onBack,
 }: {
@@ -45,6 +46,7 @@ export function ChatHeader({
   /** Open the profile panel for the other participant. */
   onOpenProfile?: () => void;
   onCall: () => void;
+  onVideoCall: () => void;
   menu: HeaderMenuActions;
   onBack: () => void;
 }) {
@@ -110,8 +112,11 @@ export function ChatHeader({
       <button type="button" className="btn-ghost !px-2" title="Search in chat" onClick={onToggleSearch}>
         {inChatSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
       </button>
-      <button type="button" className="btn-ghost !px-2" title="Call" onClick={onCall}>
+      <button type="button" className="btn-ghost !px-2" title="Voice call" onClick={onCall}>
         <Phone className="h-5 w-5" />
+      </button>
+      <button type="button" className="btn-ghost !px-2" title="Video call" onClick={onVideoCall}>
+        <Video className="h-5 w-5" />
       </button>
       <button
         type="button"

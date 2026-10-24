@@ -24,7 +24,8 @@ backed by a Node.js + Socket.IO + MongoDB API.
 - **Voice notes**, photos, video and documents — uploads stream straight to
   Cloudinary with progress, cancel and retry
 - **Typing indicators**, presence and last-seen
-- **One-to-one voice calls** over WebRTC, with ringing, mute, a call timer and hang-up
+- **Voice and video calls** over WebRTC — one-to-one, or **group calls with up to 20 people**
+  (ring, mute, camera toggle, participant grid, call timer)
 - **Search** for people, start a chat instantly, **mute** or **clear** conversations
 - Works offline-ish: a cold or flaky connection recovers and re-syncs without losing the draft
 
@@ -37,6 +38,7 @@ backed by a Node.js + Socket.IO + MongoDB API.
 - **Invite links** that can be revoked, with a preview before joining
 - **System messages** for joins, leaves, renames and permission changes
 - **Shared media** browser and group **member list** with live updates
+- **Group calls** — voice or video, up to **20 participants** in one call, rung from the chat header
 
 ### Status (24-hour stories)
 - Post a **photo, video or audio** status with a caption
@@ -184,7 +186,7 @@ npm run test:all          # everything
 ```
 
 The integration suites expect the staging API from `npm run start:staging` on port 5000.
-Current gate: **22 unit · 365 integration assertions · 36 AI · 55 Playwright**.
+Current gate: **50 unit · 400 integration assertions · 36 AI · 57 Playwright**.
 
 ---
 
@@ -210,7 +212,8 @@ These are real gaps, not fine print:
 - **End-to-end encryption** — messages are encrypted in transit and at rest, but the
   server can read them. E2EE is the next major item.
 - **Push notifications** when the app is closed (FCM/APNs)
-- **Video and group calls** — one-to-one voice calling is live; video is next
+- **Calls larger than 20 people** — the current WebRTC mesh is capped at 20;
+  bigger rooms need a media server (SFU)
 - **Message search** across conversations, and conversation export/backup
 - **Android release build** — currently debug-signed with a placeholder application id
 - **Windows code signing** — the installer is unsigned, so SmartScreen warns

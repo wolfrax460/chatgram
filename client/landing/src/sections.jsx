@@ -217,8 +217,8 @@ const FEATURES = [
   },
   {
     icon: Icon.phone,
-    title: 'One-to-one voice calls',
-    body: 'Call a contact directly in the app over WebRTC — with ringing, mute, a call timer and a clean hang-up.',
+    title: 'Voice & video calls',
+    body: 'Call one person or a whole group — voice or video, up to 20 people at once, with mute, camera toggle and a call timer.',
   },
   {
     icon: Icon.users,
@@ -478,7 +478,7 @@ const RELEASES = [
     version: '1.1',
     date: 'October 2026',
     items: [
-      'One-to-one voice calls over WebRTC, with ringing, mute, timer and hang-up',
+      'Voice and video calls — one-to-one, or group calls with up to 20 people',
       'Two-step verification with an authenticator app and ten single-use recovery codes',
       'Change your password from Settings — every other device is signed out automatically',
       'Tap anyone to open their profile: photo, about, presence, common groups and shared media',
@@ -534,7 +534,7 @@ export function Changelog() {
 /* ----------------------------------------------------------------- roadmap */
 const ROADMAP = [
   { status: 'next', title: 'End-to-end encrypted messages', body: 'Encrypt message contents so only the two participants can read them — the server included.' },
-  { status: 'next', title: 'Group and video calls', body: 'Video and multi-person calls on top of the voice calling that shipped today.' },
+  { status: 'next', title: 'Calls beyond 20 people', body: 'Bigger rooms need a media server (an SFU) rather than peer-to-peer mesh — that is the next step for calls.' },
   { status: 'next', title: 'Push notifications', body: 'Get notified when the app is closed, on Android and Windows.' },
   { status: 'planned', title: 'Message search', body: 'Search across all of your conversations.' },
   { status: 'planned', title: 'Backup and export', body: 'Download your own conversation history at any time.' },
@@ -596,7 +596,7 @@ const FAQS = [
   },
   {
     q: 'Can I make calls?',
-    a: 'Yes — one-to-one voice calls are built in. Open a chat with a contact and tap the phone icon. Video and group calls are still on the roadmap.',
+    a: 'Yes — voice and video calls are built in. Tap the phone or video icon in a chat header. Direct chats call one person; group chats ring everyone online, and up to 20 people can be in a single call.',
   },
   {
     q: 'What happens to my photos and voice notes?',
