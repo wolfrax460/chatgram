@@ -183,8 +183,9 @@ async function chat(options = {}) {
         const result = await callProvider(entry, {
           system,
           messages,
-          temperature: settings.temperature,
-          maxTokens: settings.maxOutputTokens,
+          temperature: options.temperature !== undefined ? options.temperature : settings.temperature,
+          // Per-call override (the support agent replies with a smaller cap).
+          maxTokens: options.maxTokens !== undefined ? options.maxTokens : settings.maxOutputTokens,
           timeoutMs: settings.timeoutMs,
           signal: options.signal,
         });

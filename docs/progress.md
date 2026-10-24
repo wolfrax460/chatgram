@@ -6,9 +6,9 @@ Last updated: 2026-10-24 (session 3)
 
 ---
 
-## SESSION 3 - NEXT SESSION STARTS HERE
+## SESSION 4 - NEXT SESSION STARTS HERE
 
-**Read this first. Then docs/decisions.md, docs/ai-providers.md, docs/local-staging.md and the ledger below.**
+Last updated: 2026-10-24 (session 4) — session 3 header kept below for history.
 
 Branch: master. Session started at a5a325a; work is committed locally in small commits.
 Deploy policy: no-prod-deploy - **nothing has been deployed to production.**
@@ -20,32 +20,31 @@ Deploy policy: no-prod-deploy - **nothing has been deployed to production.**
    captions, 24h file cleanup (45 + 13 assertions, 9 Playwright tests).
 3. DONE D - profile panel with privacy rules, blocking, mute, report, shared groups/media
    (57 assertions, 8 Playwright tests).
-4. PARTIAL E (rest) - groups done except group-photo upload UI and join-request approval mode
+- 🟡 E (rest): groups done except join-request approval mode (2026-10-24). Permissions, system messages, invites, pin, mentions, seen-by, shared media, last-admin handoff, empty-group delete AND group photo upload (API + UI + live update) all built and tested (68 integration assertions + 6 Playwright tests). Only missing: join-request approval mode.
    (61 assertions, 5 Playwright tests).
 5. DONE F - full Settings audit (32 assertions, 4 Playwright tests).
-6. DONE A4 + suites - 31 Playwright tests + 238 integration assertions on the local stack.
-7. PARTIAL W - help centre backend + 3-tab widget + handoff + admin editor done; widget strings
+6. DONE A4 + suites - 41 Playwright tests + 325 integration assertions + 36 AI-layer tests on the local stack.
+7. 🟡 W — help centre backend + 3-tab widget + handoff + admin editor done; widget strings English-only, no widget voice recording, article icons not rendered.
    are English-only, no voice-note recording in the widget, article icons not rendered.
-8. PARTIAL P - provider-agnostic AI layer done (adapters, fallback chain, circuit breaker,
+8. ✅ P — provider-agnostic AI layer built, admin-wired and switchable into the live support assistant (`SUPPORT_AI_LAYER=true`); 36 tests.
    budget, redaction, SSRF, encrypted admin key, admin panel + test button, 29 unit tests).
    NOT YET SWITCHED: the support assistant/agent still use the legacy support/aiProvider.js.
-9. NOT STARTED Section 9 (remaining messaging: calls, edit/forward/star, push notifications,
+9. 🟡 Section 9 — message edit/forward/star/report done (+26 assertions, 4 Playwright tests); calls, push notifications, offline queue, virtualization, chat list pin/archive and Android APK still not built.
    offline queue, virtualization, ...). Read receipts and unread handling were fixed along the way.
-10. PARTIAL Quality gate - tsc/build green after every edit, tests green, docs updated.
-    Remaining: bundle ~550 KB (needs manualChunks/code-splitting), some dead legacy files,
+- 🟡 Quality gate: tsc/build green after every edit; tests green; docs updated; bundle split via manualChunks (main chunk 562 KB -> 265 KB, vendor chunks cached separately). Remaining: admin page any types, some dead legacy files, calls/push/offline/virtualization not built.
+
     admin page uses any types.
 
 ### Next session starts here (in order)
 
-1. Switch the support/help AI calls to the new server/src/ai service (feature-flagged), re-run
-   node server/test/ai/ai.test.js and the help-widget Playwright spec; retire
-   support/aiProvider.js once the admin test button exercises the new layer.
-2. Group photo upload UI (PATCH accepts groupAvatar; needs upload endpoint + picker) and decide
-   on join-request approval mode.
-3. Section 9: edit/forward/star first, then notifications (mentions + DND), then calls
-   (WebRTC + TURN; docs-only LiveKit plan for group calls), then offline queue/virtualization.
-4. Quality gate: manualChunks bundle split, remove any from the admin page, delete the stale
-   server/server/ legacy copy if unused, run the whole suite again.
+1. Section 9 remainder: chat-list pin/archive/mark-unread/delete, link previews, offline send
+   queue, list virtualization, @mention highlighting in the list.
+2. Calls: WebRTC voice/video with TURN credentials endpoint + incoming-call UI; document a
+   LiveKit plan for group calls (docs only for now).
+3. Notifications: FCM/Android push with deep links, taskbar badge verification, DND; then the
+   Android APK build (Gradle distribution is still blocked — use a mirror or document the step).
+4. Quality gate: remove `any` from the admin page, delete the stale server/server/ legacy copy if
+   unused, run the whole suite, and only then hand over for deployment.
 
 ### Working commands
 
@@ -110,9 +109,9 @@ Auth with 2FA + recovery codes, Google sign-in/up, support AI agent with Telegra
 
 **Features requested but not confirmed built (audit each, then mark âœ…/ðŸŸ¡/âŒ)** â€” audit result 2026-10-21:
 - 🟡 Help-center widget upgrade: 3-tab Home/Messages/Help widget + help-centre backend built (2026-10-24, commit: help): 10 collections / 37 seeded articles, Article+Collection models, search, conversations with assistant replies (/api/help/*), human handoff to a ticket, live agent reply bridge, transcript email, feedback, resolve/delete, admin article editor, GET /api/status/health status card. Gaps: widget strings English-only, no voice-note recording in the widget, article icons not rendered.
-- 🟡 Provider-agnostic AI layer: server/src/ai/ built (2026-10-24, commit: ai): one chat()/streamChat() interface; adapters for OpenAI-compatible (OpenAI, Azure, Groq, Together, OpenRouter, DeepSeek, xAI, Mistral, Ollama, LM Studio, llama.cpp, vLLM, custom), Anthropic, Gemini and Cohere; env-first config with encrypted admin keys; fallback chain + circuit breaker + retries/timeouts; daily token budget; redaction; SSRF checks; admin API + panel + Test connection; 29 mocked-server tests. NOT switched: support assistant/agent still use the legacy support/aiProvider.js.
+- ✅ Provider-agnostic AI layer: server/src/ai/ built AND wired in (2026-10-24, commit: ai + session-4): one chat()/streamChat() interface; adapters for OpenAI-compatible (OpenAI, Azure, Groq, Together, OpenRouter, DeepSeek, xAI, Mistral, Ollama, LM Studio, llama.cpp, vLLM, custom), Anthropic, Gemini and Cohere; env-first config with encrypted admin keys; fallback chain + circuit breaker + retries/timeouts; daily token budget; redaction; SSRF checks; admin API + panel + Test connection. The support assistant/help widget now delegate to it when `SUPPORT_AI_LAYER=true` (legacy `support/aiProvider.js` remains the default/fallback). Tests: 29 mocked-server + 7 switch tests.
 - âŒ Chatgram Assistant avatar: files `public/assistant-avatar.svg`, `assistant-512-circle.png` are NOT in `apps/web/public/`; create an original one.
-- 🟡 Chat basics: delivery/read ticks, date separators, unread divider, typing, drafts, emoji picker, search in chat, reply, delete me/everyone, reactions all work. Missing: edit, forward, star, generic pin (groups have a pinned message), link previews.
+- 🟡 Chat basics: delivery/read ticks, date separators, unread divider, typing, drafts, emoji picker, search in chat, reply, delete me/everyone, reactions, edit (with edited label), forward, star, report message, group pin all work (26 integration assertions + 4 Playwright tests for the new actions). Missing: generic per-chat pin, link previews, message search across chats (in-chat search exists).
 - 🟡 Chat list: unread badges, previews, search chats, new chat/new group, sorted by recent, mute (server + profile + Settings) work. Missing: pin, archive, mark unread, delete chat.
 - âŒ Calls (WebRTC voice/video with TURN) â€” nothing server-side or client-side.
 - 🟡 Notifications: desktop notifications, tab title + favicon unread, mention notifications (group @mentions -> message:mention) work; taskbar badge via the desktop bridge is unverified; Android push and DND are not built.
@@ -918,3 +917,33 @@ support assistant/agent at this layer (see "next session starts here").
 ### Not done this session
 Section 9 (calls, edit/forward/star, push notifications, offline queue, virtualization, Android
 APK build, FCM) and the remaining quality-gate polish (bundle split, dead code, admin types).
+
+---
+
+## Session 4 log (2026-10-24)
+
+### P follow-up - DONE
+The support assistant/help widget now delegate to the provider-agnostic layer when
+SUPPORT_AI_LAYER=true (encrypted admin settings, fallback chain, redaction, budget,
+circuit breaker, SSRF). Legacy aiProvider remains the default and the fallback path.
+Verified by server/test/ai/layerSwitch.test.js (7 assertions, mocked provider).
+
+### E (rest) group photo - DONE
+POST /api/chats/:id/avatar (image only, honours whoCanEditInfo, system message, live
+update). UI picker in the group info panel + avatars rendered in the list and header.
+Verified: groups integration test 68/68 + a Playwright photo-upload test.
+
+### Section 9 basics - DONE (message actions)
+PATCH /api/messages/:id (edit own text, "edited" label, message:edited socket event),
+POST/DELETE /:id/star (per-user), POST /:id/forward (permission + block checks),
+POST /:id/report (moderation Report + message snapshot). UI in the message menu.
+Verified: server/test/integration/messageFeatures.test.js 26/26 + tests/e2e/messaging.spec.js 4/4.
+
+### Quality gate - partial
+vite manualChunks splits react/data/icons/socket; main JS chunk 562 KB -> 265 KB and the
+size warning is gone. Build + typecheck green.
+
+### Still not built (section 9 remainder)
+WebRTC voice/video calls + TURN, push notifications (FCM/Android), chat-list pin/archive/
+mark-unread/delete, link previews, offline send queue, list virtualization, @mention polish
+in the chat list, Android APK build, admin `any` types, dead legacy file cleanup.

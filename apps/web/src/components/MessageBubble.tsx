@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Reply, Copy, Trash2, MoreVertical, Smile, Pin, Eye } from 'lucide-react';
+import { Reply, Copy, Trash2, MoreVertical, Smile, Pin, Eye, Pencil, Star, Forward, Flag, Check, X } from 'lucide-react';
 import type { Message, MessageStatus } from '@chatgram/core';
 import { MessageMedia } from './MessageMedia';
 import { MessageTicks } from './MessageTicks';
@@ -15,6 +15,14 @@ export interface BubbleActions {
   onPin?: (message: Message) => void;
   /** Show who has seen one of my messages. */
   onSeenBy?: (message: Message) => void;
+  /** Edit my own text message. */
+  onEdit?: (message: Message, content: string) => void;
+  /** Star / unstar for me. */
+  onStar?: (message: Message) => void;
+  /** Forward to another chat. */
+  onForward?: (message: Message) => void;
+  /** Report this message to the moderation team. */
+  onReport?: (message: Message) => void;
 }
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -43,6 +51,7 @@ export function MessageBubble({
   const [copied, setCopied] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [reactOpen, setReactOpen] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
 
   const mine = message.senderId === meId;
   const senderName = message.sender?.displayName;
@@ -188,6 +197,55 @@ export function MessageBubble({
                 <Pin className="h-4 w-4" /> Pin message
               </button>
             ) : null}
+            {mine && actions.onEdit && message.type === 'text' ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10"
+                onClick={() => {
+                  setEditing(message.content ?? '');
+                  setMenuOpen(false);
+                }}
+              >
+                <Pencil className="h-4 w-4" /> Edit message
+              </button>
+            ) : null}
+            {actions.onStar ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10"
+                onClick={() => {
+                  actions.onStar?.(message);
+                  setMenuOpen(false);
+                }}
+              >
+                <Star className={`h-4 w-4 ${message.starred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                {message.starred ? 'Remove star' : 'Star message'}
+              </button>
+            ) : null}
+            {actions.onForward ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10"
+                onClick={() => {
+                  actions.onForward?.(message);
+                  setMenuOpen(false);
+                }}
+              >
+                <Forward className="h-4 w-4" /> Forward
+              </button>
+            ) : null}
+            {!mine && actions.onReport ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                onClick={() => {
+                  actions.onReport?.(message);
+                  setMenuOpen(false);
+                }}
+              >
+                <Flag className="h-4 w-4" /> Report message
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -214,15 +272,56 @@ export function MessageBubble({
 
             <MessageMedia message={message} mine={mine} />
 
-            {message.content && message.type !== 'file' ? (
-              <span className="whitespace-pre-wrap break-words">{renderContent(message.content)}</span>
-            ) : null}
+            {editing !== null ? (
+              <div className="min-w-[220px]">
+                <textarea
+                  className="w-full resize-none rounded-lg px-2 py-1 text-[14px] text-ink-900"
+                  rows={2}
+                  value={editing}
+                  maxLength={4000}
+                  onChange={(event) => setEditing(event.target.value)}
+                  aria-label="Edit message"
+                  autoFocus
+                />
+                <div className="mt-1 flex justify-end gap-1">
+                  <button
+                    type="button"
+                    className="rounded px-2 py-0.5 text-[11.5px] font-semibold text-white/90 hover:bg-white/15"
+                    onClick={() => {
+                      const next = editing.trim();
+                      if (!next) return;
+                      actions.onEdit?.(message, next);
+                      setEditing(null);
+                    }}
+                  >
+                    <Check className="mr-0.5 inline h-3 w-3" /> Save
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded px-2 py-0.5 text-[11.5px] font-semibold text-white/80 hover:bg-white/15"
+                    onClick={() => setEditing(null)}
+                  >
+                    <X className="mr-0.5 inline h-3 w-3" /> Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {message.content && message.type !== 'file' ? (
+                  <span className="whitespace-pre-wrap break-words">{renderContent(message.content)}</span>
+                ) : null}
+                {message.starred ? (
+                  <Star className={`ml-1 inline h-3 w-3 align-baseline ${mine ? 'fill-amber-300 text-amber-300' : 'fill-amber-400 text-amber-500'}`} aria-label="Starred" />
+                ) : null}
+              </>
+            )}
 
             <span
               className={`ml-2 inline-flex translate-y-[2px] items-center gap-1 align-bottom text-[10.5px] ${
                 mine ? 'text-white/70' : 'text-ink-500 dark:text-ink-400'
               }`}
             >
+              {message.editedAt ? <span className="italic opacity-80">edited</span> : null}
               {formatTime(message.sentAt, timeFormat)}
               {mine ? <MessageTicks status={status} /> : null}
             </span>

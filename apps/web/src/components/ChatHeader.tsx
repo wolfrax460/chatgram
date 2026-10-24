@@ -80,8 +80,12 @@ export function ChatHeader({
             partner?.id ?? chat.id,
           )} text-xs font-bold text-white`}
         >
-          {partner?.avatarUrl ? (
-            <img src={partner.avatarUrl} alt={title} className="h-full w-full object-cover" />
+          {partner?.avatarUrl || (chat.type === 'group' && chat.groupAvatarUrl) ? (
+            <img
+              src={partner?.avatarUrl || chat.groupAvatarUrl}
+              alt={title}
+              className="h-full w-full object-cover"
+            />
           ) : (
             initialsFor(chat.type === 'group' ? chat.groupName : title)
           )}

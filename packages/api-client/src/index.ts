@@ -656,6 +656,17 @@ export class ApiClient {
 
   /* -------------------------------------------------------------- groups */
 
+  /** Upload/replace the group photo (admin / whoever may edit group info). */
+  async uploadGroupAvatar(chatId: string, file: File) {
+    const form = new FormData();
+    form.append('avatar', file);
+    const data = await this.request<{ message: string; url: string; chat: Chat }>(
+      `/api/chats/${chatId}/avatar`,
+      { method: 'POST', form },
+    );
+    return { url: data.url, chat: chatFromJson(data.chat), message: data.message };
+  }
+
   renameGroup(chatId: string, groupName: string) {
     return this.request(`/api/chats/${chatId}`, { method: 'PATCH', body: { groupName } });
   }
@@ -798,6 +809,39 @@ export class ApiClient {
   /** Clear the whole chat for me only. */
   clearChat(chatId: string) {
     return this.request(`/api/chats/${chatId}/messages`, { method: 'DELETE' });
+  }
+
+  /* ------------------------------------------- edit / star / forward / report */
+
+  /** Edit the text of my own message (adds an "edited" label). */
+  editMessage(messageId: string, content: string) {
+    return this.request<{ messageId: string; chatId: string; content: string; editedAt: string }>(
+      `/api/messages/${messageId}`,
+      { method: 'PATCH', body: { content } },
+    );
+  }
+
+  /** Star / unstar a message for me. */
+  starMessage(messageId: string, starred = true) {
+    return this.request<{ messageId: string; starred: boolean }>(`/api/messages/${messageId}/star`, {
+      method: starred ? 'POST' : 'DELETE',
+    });
+  }
+
+  /** Forward a message into another chat I belong to. */
+  forwardMessage(messageId: string, chatId: string) {
+    return this.request<unknown>(`/api/messages/${messageId}/forward`, {
+      method: 'POST',
+      body: { chatId },
+    }).then(messageFromJson);
+  }
+
+  /** Report a message to the moderation team. */
+  reportMessage(messageId: string, reason: string, details?: string) {
+    return this.request<{ message: string; reportId: string; reason: string }>(
+      `/api/messages/${messageId}/report`,
+      { method: 'POST', body: { reason, details } },
+    );
   }
 
   markChatRead(chatId: string) {

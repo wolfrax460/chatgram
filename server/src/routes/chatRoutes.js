@@ -3,12 +3,14 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
 const { clearChatMessages } = require('../controllers/messageController');
+const upload = require('../utils/upload');
 const {
   createChat,
   getChats,
   getChatById,
   getGroups,
   updateGroup,
+  updateGroupAvatar,
   setGroupAdmin,
   addParticipants,
   removeParticipant,
@@ -59,6 +61,7 @@ router.get('/:id/media', getChatMedia);
 
 // Edit a group (name, photo, description, settings)
 router.patch('/:id', updateGroup);
+router.post('/:id/avatar', upload.single('avatar'), updateGroupAvatar);
 
 // Group membership / roles
 router.post('/:id/participants', addParticipants);

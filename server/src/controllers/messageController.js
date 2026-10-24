@@ -170,8 +170,16 @@ const getMessages = async (req, res) => {
     // ...then flip it so the response is chronological.
     messages.reverse();
 
+    // Convenience flag for the client: has the signed-in user starred it?
+    const me = String(req.user._id);
+    const shaped = messages.map((message) => {
+      const json = message.toObject();
+      json.starred = (message.starredBy || []).some((id) => String(id) === me);
+      return json;
+    });
+
     res.json({
-      messages,
+      messages: shaped,
       hasMore: messages.length === limit,
       // Cursor for "load older messages".
       nextCursor: messages.length ? messages[0]._id : null,
@@ -490,6 +498,165 @@ const getMessageReaders = async (req, res) => {
   }
 };
 
+/* ------------------------------------------------- edit / star / forward / report */
+
+// @desc    Edit the text of your own message
+// @route   PATCH /api/messages/:id
+// @access  Private (sender only)
+const editMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ message: 'Invalid message ID' });
+    const content = String(req.body?.content ?? '').trim();
+    if (!content) return res.status(400).json({ message: 'The message cannot be empty.' });
+    if (content.length > 4000) return res.status(400).json({ message: 'That message is too long (max 4000 characters).' });
+
+    const message = await Message.findById(id);
+    if (!message) return res.status(404).json({ message: 'Message not found' });
+    const { error } = await assertParticipant(message.chatId, req.user._id);
+    if (error) return res.status(error.status).json({ message: error.message });
+    if (String(message.senderId) !== String(req.user._id)) {
+      return res.status(403).json({ message: 'You can only edit your own messages.', code: 'NOT_SENDER' });
+    }
+    if (message.isDeleted) return res.status(400).json({ message: 'That message was deleted.' });
+    if (message.type !== 'text') {
+      return res.status(400).json({ message: 'Only text messages can be edited.' });
+    }
+
+    message.content = content;
+    message.editedAt = new Date();
+    await message.save();
+
+    const payload = {
+      messageId: String(message._id),
+      chatId: String(message.chatId),
+      content,
+      editedAt: message.editedAt,
+    };
+    realtime.emitToChat(message.chatId, 'message:edited', payload);
+    return res.json({ message: 'Message updated', ...payload });
+  } catch (error) {
+    console.error('Edit message error:', error);
+    return res.status(500).json({ message: 'Could not edit the message' });
+  }
+};
+
+// @desc    Star / unstar a message for me
+// @route   POST/DELETE /api/messages/:id/star
+// @access  Private (participant)
+const starMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ message: 'Invalid message ID' });
+    const message = await Message.findById(id);
+    if (!message) return res.status(404).json({ message: 'Message not found' });
+    const { error } = await assertParticipant(message.chatId, req.user._id);
+    if (error) return res.status(error.status).json({ message: error.message });
+
+    const starred = req.method === 'DELETE' ? false : true;
+    if (starred) message.starredBy.addToSet(req.user._id);
+    else message.starredBy.pull(req.user._id);
+    await message.save();
+
+    return res.json({ messageId: String(message._id), starred });
+  } catch (error) {
+    console.error('Star message error:', error);
+    return res.status(500).json({ message: 'Could not update the star' });
+  }
+};
+
+// @desc    Forward a message to another chat I belong to
+// @route   POST /api/messages/:id/forward
+// @access  Private (participant of both chats)
+const forwardMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const targetChatId = req.body?.chatId;
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(targetChatId)) {
+      return res.status(400).json({ message: 'Invalid message or chat ID' });
+    }
+    const source = await Message.findById(id);
+    if (!source || source.isDeleted) return res.status(404).json({ message: 'Message not found' });
+    const sourceAccess = await assertParticipant(source.chatId, req.user._id);
+    if (sourceAccess.error) return res.status(sourceAccess.error.status).json({ message: sourceAccess.error.message });
+
+    const targetAccess = await assertParticipant(targetChatId, req.user._id);
+    if (targetAccess.error) return res.status(targetAccess.error.status).json({ message: targetAccess.error.message });
+    const targetChat = targetAccess.chat;
+
+    if (!groupSystem.canSendMessages(targetChat, req.user._id)) {
+      return res.status(403).json({ message: 'Only group admins can send messages in that group.', code: 'GROUP_SEND_FORBIDDEN' });
+    }
+    if (targetChat.type === 'direct') {
+      const other = targetChat.participants.find((participantId) => String(participantId) !== String(req.user._id));
+      if (other && (await blockedBetween(req.user._id, other))) {
+        return res.status(403).json({ message: 'You cannot message this person.', code: 'BLOCKED' });
+      }
+    }
+
+    const forwarded = await Message.create({
+      chatId: targetChatId,
+      senderId: req.user._id,
+      type: source.type === 'system' ? 'text' : source.type,
+      content: source.content || '',
+      mediaUrl: source.mediaUrl || null,
+      sentAt: new Date(),
+      deliveredTo: [req.user._id],
+      readBy: [req.user._id],
+    });
+    await Chat.findByIdAndUpdate(targetChatId, { lastMessage: forwarded._id, updatedAt: new Date() });
+    const populated = await Message.findById(forwarded._id).populate('senderId', '_id displayName avatarUrl phone');
+    realtime.joinUsersToChat(targetChatId, targetChat.participants.map((participantId) => String(participantId)));
+    realtime.emitToChat(targetChatId, 'message:new', populated.toObject());
+    return res.status(201).json(populated);
+  } catch (error) {
+    console.error('Forward message error:', error);
+    return res.status(500).json({ message: 'Could not forward the message' });
+  }
+};
+
+// @desc    Report a message to the moderation team
+// @route   POST /api/messages/:id/report
+// @access  Private (participant)
+const reportMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ message: 'Invalid message ID' });
+    const message = await Message.findById(id).populate('senderId', '_id displayName');
+    if (!message) return res.status(404).json({ message: 'Message not found' });
+    const { error } = await assertParticipant(message.chatId, req.user._id);
+    if (error) return res.status(error.status).json({ message: error.message });
+    if (String(message.senderId?._id || message.senderId) === String(req.user._id)) {
+      return res.status(400).json({ message: 'You cannot report your own message.' });
+    }
+
+    const Report = require('../models/Report');
+    const allowed = ['spam', 'abuse', 'harassment', 'impersonation', 'scam', 'other'];
+    const body = req.body || {};
+    const reason = allowed.includes(body.reason) ? body.reason : 'other';
+    const report = await Report.create({
+      reporterId: req.user._id,
+      targetUserId: message.senderId?._id || message.senderId,
+      targetMessageId: message._id,
+      chatId: message.chatId,
+      reason,
+      details: String(body.details || '').slice(0, 2000),
+      messageSnapshot: String(message.content || '').slice(0, 4000),
+    });
+    try {
+      require('../support/notifier')
+        .notifyAlert?.(`🚩 Message report\n\nReporter: ${req.user.displayName} (${req.user._id})\nReason: ${reason}\nMessage: ${String(message.content || '').slice(0, 300)}`)
+        .catch(() => {});
+    } catch {
+      /* best effort */
+    }
+    return res.status(201).json({ message: 'Report received. Thank you — our team will review it.', reportId: String(report._id), reason });
+  } catch (error) {
+    console.error('Report message error:', error);
+    return res.status(500).json({ message: 'Could not send the report' });
+  }
+};
+
 module.exports = {
   sendMessage,
   getMessages,
@@ -501,4 +668,8 @@ module.exports = {
   reactToMessage,
   clearChatMessages,
   getMessageReaders,
+  editMessage,
+  starMessage,
+  forwardMessage,
+  reportMessage,
 };

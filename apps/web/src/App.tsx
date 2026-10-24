@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import {
   chatPartner,
+  chatTitle,
   usePrefs,
   useRealtime,
   useSession,
@@ -304,6 +305,67 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
     }
   }
 
+  // ---- edit / star / forward / report ---------------------------------------
+  const [forwardFor, setForwardFor] = useState<Message | null>(null);
+  const [reportFor, setReportFor] = useState<Message | null>(null);
+  const [reportReason, setReportReason] = useState('spam');
+  const forwardTargets = useQuery({
+    queryKey: ['chats'],
+    queryFn: () => api.chats(),
+    enabled: Boolean(forwardFor),
+  });
+
+  async function editMessage(message: Message, content: string) {
+    const before = queryClient.getQueryData<Message[]>(['messages', chat.id]) ?? [];
+    queryClient.setQueryData<Message[]>(['messages', chat.id], (prev) =>
+      (prev ?? []).map((row) =>
+        row.id === message.id ? { ...row, content, editedAt: new Date().toISOString() } : row,
+      ),
+    );
+    try {
+      await api.editMessage(message.id, content);
+      setNotice('Message edited.');
+    } catch (err) {
+      queryClient.setQueryData<Message[]>(['messages', chat.id], before);
+      setNotice(err instanceof Error ? err.message : 'Could not edit the message');
+    }
+  }
+
+  async function toggleStar(message: Message) {
+    const next = !message.starred;
+    try {
+      await api.starMessage(message.id, next);
+      queryClient.setQueryData<Message[]>(['messages', chat.id], (prev) =>
+        (prev ?? []).map((row) => (row.id === message.id ? { ...row, starred: next } : row)),
+      );
+      setNotice(next ? 'Message starred.' : 'Star removed.');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not update the star');
+    }
+  }
+
+  async function forwardTo(message: Message, targetChatId: string) {
+    try {
+      await api.forwardMessage(message.id, targetChatId);
+      setForwardFor(null);
+      void queryClient.invalidateQueries({ queryKey: ['chats'] });
+      setNotice('Message forwarded.');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not forward the message');
+    }
+  }
+
+  async function reportMessage() {
+    if (!reportFor) return;
+    try {
+      const result = await api.reportMessage(reportFor.id, reportReason);
+      setReportFor(null);
+      setNotice(`Report sent (${result.reportId}). Our team will review it.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not send the report');
+    }
+  }
+
   return (
     <section className="flex min-w-0 flex-1 flex-col">
       <ChatHeader
@@ -453,6 +515,14 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
                     onPin: chat.type === 'group' ? (message) => void pinToGroup(message) : undefined,
                     onSeenBy:
                       message.senderId === meId ? (message) => setReadersFor(message) : undefined,
+                    onEdit:
+                      message.senderId === meId ? (row, content) => void editMessage(row, content) : undefined,
+                    onStar: (row) => void toggleStar(row),
+                    onForward: (row) => setForwardFor(row),
+                    onReport: (row) => {
+                      setReportReason('spam');
+                      setReportFor(row);
+                    },
                   }}
                 />
               </div>
@@ -523,6 +593,86 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
                 </li>
               ))}
             </ul>
+          </div>
+        </div>
+      ) : null}
+
+      {forwardFor ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={() => setForwardFor(null)}>
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-ink-800"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-label="Forward message"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="font-bold">Forward to…</h3>
+              <button type="button" className="btn-ghost !px-2" onClick={() => setForwardFor(null)} aria-label="Close">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {forwardTargets.isLoading ? <p className="text-sm text-ink-500">Loading chats…</p> : null}
+            <ul className="max-h-72 overflow-y-auto">
+              {(forwardTargets.data ?? []).map((target) => (
+                <li key={target.id}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-ink-100 dark:hover:bg-white/5"
+                    onClick={() => void forwardTo(forwardFor, target.id)}
+                  >
+                    <span className="grid h-8 w-8 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[10px] font-bold text-white">
+                      {chatTitle(target, meId).slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="truncate text-sm">{chatTitle(target, meId)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
+
+      {reportFor ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={() => setReportFor(null)}>
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-ink-800"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-label="Report message"
+          >
+            <h3 className="text-lg font-bold">Report message</h3>
+            <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">
+              Only Chatgram&apos;s moderation team sees your report.
+            </p>
+            <div className="mt-2 space-y-1">
+              {([
+                { key: 'spam', label: 'Spam or unwanted messages' },
+                { key: 'abuse', label: 'Abusive content' },
+                { key: 'harassment', label: 'Harassment' },
+                { key: 'impersonation', label: 'Pretending to be someone else' },
+                { key: 'scam', label: 'Scam or fraud' },
+                { key: 'other', label: 'Something else' },
+              ] as const).map((reason) => (
+                <label key={reason.key} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-ink-100 dark:hover:bg-white/5">
+                  <input
+                    type="radio"
+                    name="message-report-reason"
+                    value={reason.key}
+                    checked={reportReason === reason.key}
+                    onChange={() => setReportReason(reason.key)}
+                  />
+                  {reason.label}
+                </label>
+              ))}
+            </div>
+            <div className="mt-3 flex justify-end gap-2">
+              <button type="button" className="btn-ghost" onClick={() => setReportFor(null)}>
+                Cancel
+              </button>
+              <button type="button" className="btn-primary" onClick={() => void reportMessage()}>
+                Send report
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

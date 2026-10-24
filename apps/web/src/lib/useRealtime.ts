@@ -100,6 +100,15 @@ export function useRealtimeBridge(): void {
           void queryClient.invalidateQueries({ queryKey: ['messages'] });
         },
 
+        /** The sender edited a message: patch every open copy. */
+        onMessageEdited: ({ messageId, chatId, content, editedAt }) => {
+          queryClient.setQueryData<Message[]>(['messages', chatId], (prev) =>
+            (prev ?? []).map((message) =>
+              message.id === messageId ? { ...message, content, editedAt } : message,
+            ),
+          );
+        },
+
         onTyping: ({ chatId, userId: typingId, isTyping }) => {          if (typingId === userId) return;
           setTyping(chatId, isTyping ? typingId : null);
         },

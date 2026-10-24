@@ -119,6 +119,42 @@ async function main() {
   check('adding posts a system message', history.some((m) => m.type === 'system' && /added/i.test(m.content || '')), JSON.stringify(history.slice(-2)));
   check('system messages never appear as normal text', history.filter((m) => m.type === 'system').every((m) => m.senderId));
 
+  // ------------------------------------------------------------ group photo
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  async function uploadGroupPhoto(token, id, bytes, mimetype, name) {
+    const form = new FormData();
+    form.append('avatar', new Blob([bytes], { type: mimetype }), name);
+    const response = await fetch(`${BASE}/api/chats/${id}/avatar`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    const text = await response.text();
+    let json = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      json = text;
+    }
+    return { status: response.status, body: json };
+  }
+
+  const memberPhotoDefault = await uploadGroupPhoto(carol.token, chatId, PNG, 'image/png', 'group.png');
+  check('default settings let any member change the photo', memberPhotoDefault.status === 200, `got ${memberPhotoDefault.status}`);
+  const photo = await uploadGroupPhoto(alice.token, chatId, PNG, 'image/png', 'group.png');
+  check('admin changes the group photo -> 200', photo.status === 200, `got ${photo.status} ${JSON.stringify(photo.body)}`);
+  check('group photo URL is stored', typeof photo.body?.url === 'string' && photo.body.url.length > 0, JSON.stringify(photo.body?.url));
+  const chatWithPhoto = await api('GET', `/api/chats/${chatId}`, { token: bob.token });
+  check('members see the new group photo', chatWithPhoto.body?.groupAvatar === photo.body.url, String(chatWithPhoto.body?.groupAvatar));
+  history = await messages(alice.token, chatId);
+  check('group photo change posts a system message', history.some((m) => m.type === 'system' && /group photo/i.test(m.content || '')));
+
+  const nonImage = await uploadGroupPhoto(alice.token, chatId, Buffer.from('%PDF-1.4'), 'application/pdf', 'doc.pdf');
+  check('non-image group photo -> 415', nonImage.status === 415, `got ${nonImage.status}`);
+
   const nonAdminRemove = await api('DELETE', `/api/chats/${chatId}/participants/${bob.id}`, { token: carol.token });
   check('non-admin cannot remove members -> 403', nonAdminRemove.status === 403, `got ${nonAdminRemove.status}`);
   const nonAdminPromote = await api('POST', `/api/chats/${chatId}/admins`, {
@@ -165,6 +201,8 @@ async function main() {
 
   const nonAdminEdit = await api('PATCH', `/api/chats/${chatId}`, { token: carol.token, body: { groupName: 'Hijacked' } });
   check('non-admin cannot edit info when admins-only -> 403', nonAdminEdit.status === 403 && nonAdminEdit.body?.code === 'GROUP_EDIT_FORBIDDEN', JSON.stringify(nonAdminEdit.body));
+  const nonAdminPhotoForbidden = await uploadGroupPhoto(carol.token, chatId, PNG, 'image/png', 'nope.png');
+  check('non-admin cannot change the photo when admins-only -> 403', nonAdminPhotoForbidden.status === 403, `got ${nonAdminPhotoForbidden.status}`);
   const edit = await api('PATCH', `/api/chats/${chatId}`, {
     token: bob.token,
     body: { groupName: `Renamed ${run}`, groupDescription: 'A group for the tests' },

@@ -176,6 +176,32 @@ test.describe('groups', () => {
     await page.getByRole('button', { name: 'Unpin' }).click();
     await expect(page.getByTestId('pinned-message')).toHaveCount(0, { timeout: 15_000 });
   });
+
+  test('admin uploads a group photo and everyone sees it', async ({ page }) => {
+    const fs = require('fs');
+    const path = require('path');
+    const alice = await registerUser('grp-photo-admin');
+    const bob = await registerUser('grp-photo-bob');
+    const groupName = `Photo group ${Date.now().toString(36)}`;
+    await createGroup(alice, groupName, [bob.user.id]);
+
+    await signIn(page, alice);
+    await openTab(page, 'Groups');
+    await page.getByRole('button', { name: 'Info' }).first().click();
+    await page
+      .getByTestId('group-photo-input')
+      .setInputFiles(path.join(__dirname, 'fixtures', 'status-image.png'));
+    await expect(page.getByText('Group photo updated.')).toBeVisible({ timeout: 20_000 });
+    const photo = page.getByTestId('group-photo');
+    await expect(photo).toBeVisible();
+    const src = await photo.getAttribute('src');
+    expect(src).toContain('/uploads/');
+
+    // The system message reaches the conversation.
+    await page.getByRole('button', { name: new RegExp(groupName) }).first().click();
+    await expect(page.getByTestId('system-message').filter({ hasText: /group photo/i }).first()).toBeVisible({ timeout: 20_000 });
+    expect(fs.existsSync(path.join(__dirname, 'fixtures', 'status-image.png'))).toBe(true);
+  });
 });
 
 

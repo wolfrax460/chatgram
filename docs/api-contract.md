@@ -270,3 +270,15 @@ reply hook (`help/replyBridge`); guests poll while the widget is open.
 | GET | `/api/support/admin/ai` | effective AI settings, masked key (`hasKey`, `keyLast4`), providers, env names, diagnostics |
 | PUT | `/api/support/admin/ai` | save provider/model/baseUrl/key/limits/fallbacks (key encrypted at rest) |
 | POST | `/api/support/admin/ai/test` | tiny prompt; `{ ok, latencyMs, provider, model }` or `{ ok:false, code, message }` |
+
+## Session 4 additions (2026-10-24) — message actions + group photo
+
+| Method | Path | Notes |
+|---|---|---|
+| PATCH | `/api/messages/:id` | edit my own text message; `{ content }` → `{ messageId, chatId, content, editedAt }`; 403 `NOT_SENDER`; broadcasts `message:edited` |
+| POST/DELETE | `/api/messages/:id/star` | star / unstar for me (per-user `starredBy`); `GET /api/messages` adds a `starred` convenience flag |
+| POST | `/api/messages/:id/forward` | `{ chatId }` → copies text/media into another chat I belong to (participant + group-send-permission + block checks) |
+| POST | `/api/messages/:id/report` | `{ reason, details? }` → moderation `Report` with a message snapshot; cannot report your own message |
+| POST | `/api/chats/:id/avatar` | multipart `avatar` (image only) — group photo, respects `whoCanEditInfo`, posts a system message and updates every member live |
+
+Socket: new server→client event `message:edited` `{ messageId, chatId, content, editedAt }`.

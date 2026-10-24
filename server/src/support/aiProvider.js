@@ -152,10 +152,50 @@ async function callGemini(cfg, system, messages) {
 /* ------------------------------------------------------------------ api */
 
 /**
+ * Optional bridge to the provider-agnostic layer in `server/src/ai`.
+ *
+ * When `SUPPORT_AI_LAYER=true` all support/help AI calls go through the new
+ * service (same interface, encrypted admin settings, fallback chain, circuit
+ * breaker, budget, redaction, SSRF). When it is off, the legacy adapters below
+ * keep working unchanged.
+ */
+function useNewLayer() {
+  return String(process.env.SUPPORT_AI_LAYER || '') === 'true';
+}
+
+function layerInfo() {
+  return {
+    enabled: String(process.env.SUPPORT_AI_ENABLED || '') === 'true',
+    provider: process.env.SUPPORT_AI_PROVIDER || '',
+    // Env view only: database overrides are visible in the admin AI panel.
+    model: process.env.SUPPORT_AI_PROVIDER ? process.env.SUPPORT_AI_MODEL || '' : null,
+  };
+}
+
+/**
  * Ask the configured model. Resolves to a trimmed answer, or null when the
  * assistant is disabled or the request fails (callers fall back to the KB).
  */
 async function askAssistant({ system, messages, maxTokens }) {
+  if (useNewLayer()) {
+    try {
+      const result = await require('../ai/service').chat({
+        system,
+        messages: (messages || []).map((message) => ({
+          role: message.role === 'assistant' ? 'assistant' : 'user',
+          text: String(message.text || ''),
+        })),
+        maxTokens: maxTokens ? Math.min(Number(maxTokens) || 400, 2000) : undefined,
+        allowContact: true, // support prompts handle their own contact collection
+      });
+      const clean = String(result.text || '').trim();
+      return clean || null;
+    } catch (error) {
+      console.warn('Support AI (new layer) error:', error.message);
+      return null;
+    }
+  }
+
   const cfg = resolveConfig();
   if (!cfg.enabled) return null;
   if (maxTokens) cfg.maxTokens = Math.min(Number(maxTokens) || cfg.maxTokens, 2000);
@@ -182,8 +222,9 @@ async function askAssistant({ system, messages, maxTokens }) {
 }
 
 function assistantInfo() {
+  if (useNewLayer()) return layerInfo();
   const cfg = resolveConfig();
   return { enabled: cfg.enabled, provider: cfg.provider, model: cfg.enabled ? cfg.model : null };
 }
 
-module.exports = { askAssistant, assistantInfo, resolveConfig, PROVIDERS };
+module.exports = { askAssistant, assistantInfo, resolveConfig, PROVIDERS, useNewLayer };

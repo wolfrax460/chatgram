@@ -47,6 +47,12 @@ export interface Message {
   reactions: MessageReaction[];
   isDeleted?: boolean;
   failed?: boolean;
+  /** Set when the sender edited the text (shows "edited" in the bubble). */
+  editedAt?: string;
+  /** Users who starred this message (per-user bookmark). */
+  starredBy?: string[];
+  /** True when the signed-in reader starred it (server convenience field). */
+  starred?: boolean;
 }
 
 export interface Chat {
@@ -155,6 +161,9 @@ export function messageFromJson(json: unknown): Message {
       : [],
     isDeleted: j.isDeleted === true,
     failed: j.failed === true,
+    editedAt: j.editedAt ? String(j.editedAt) : undefined,
+    starredBy: asStringArray(j.starredBy),
+    starred: j.starred === true,
   };
 }
 
@@ -167,8 +176,15 @@ export function chatFromJson(json: unknown): Chat {
       ? j.participants.map(userFromJson)
       : [],
     groupName: j.groupName ? String(j.groupName) : undefined,
-    groupAvatarUrl: j.groupAvatarUrl ? String(j.groupAvatarUrl) : undefined,
-    admins: asStringArray(j.admins),
+    // The API returns `groupAvatar`; older local storage used `groupAvatarUrl`.
+    groupAvatarUrl:
+      j.groupAvatarUrl || j.groupAvatar ? String(j.groupAvatarUrl || j.groupAvatar) : undefined,
+    admins: (() => {
+      const adminIds = asStringArray(j.admins);
+      if (adminIds.length > 0) return adminIds;
+      // Server field name is groupAdmins.
+      return asStringArray(j.groupAdmins);
+    })(),
     lastMessage: j.lastMessage ? messageFromJson(j.lastMessage) : undefined,
     unreadCount: typeof j.unreadCount === 'number' ? j.unreadCount : 0,
     updatedAt: j.updatedAt ? String(j.updatedAt) : undefined,

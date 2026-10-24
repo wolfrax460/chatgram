@@ -12,6 +12,10 @@ const {
   deleteMessage,
   reactToMessage,
   getMessageReaders,
+  editMessage,
+  starMessage,
+  forwardMessage,
+  reportMessage,
 } = require('../controllers/messageController');
 const upload = require('../utils/upload');
 
@@ -38,6 +42,13 @@ router.get('/:id/readers', getMessageReaders);
 
 // Delete: ?scope=me (default) or ?scope=everyone (sender only)
 router.delete('/:id', deleteMessage);
+
+// Edit my own text · star for me · forward · report a message
+router.patch('/:id', editMessage);
+router.post('/:id/star', starMessage);
+router.delete('/:id/star', starMessage);
+router.post('/:id/forward', forwardMessage);
+router.post('/:id/report', reportMessage);
 
 // Mark a single message as delivered / read
 router.post('/:id/delivered', markAsDelivered);

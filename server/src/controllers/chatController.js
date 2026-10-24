@@ -7,6 +7,7 @@ const realtime = require('../utils/realtime');
 const { blockedBetween } = require('../utils/blocks');
 const groupSystem = require('../utils/groupSystem');
 const crypto = require('crypto');
+const storage = require('../utils/storage');
 
 const PARTICIPANT_FIELDS = '_id displayName avatarUrl about isOnline lastSeen phone email';
 
@@ -930,12 +931,50 @@ const getChatMedia = async (req, res) => {
   }
 };
 
+/* ------------------------------------------------------------- group photo */
+
+// @desc    Upload/replace the group photo
+// @route   POST /api/chats/:id/avatar
+// @access  Private (per group settings: anyone or admins)
+const updateGroupAvatar = async (req, res) => {
+  try {
+    const chat = await Chat.findById(req.params.id);
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    if (chat.type !== 'group') return res.status(400).json({ message: 'Only groups have a photo' });
+    if (!groupSystem.canEditInfo(chat, req.user._id)) {
+      return res.status(403).json({
+        message: 'Only group admins can change the group photo.',
+        code: 'GROUP_EDIT_FORBIDDEN',
+      });
+    }
+    if (!req.file) return res.status(400).json({ message: 'No image uploaded' });
+    if (!String(req.file.mimetype || '').startsWith('image/')) {
+      return res.status(415).json({ message: 'Choose an image file (jpg, png, webp or gif).' });
+    }
+
+    const stored = await storage.persistUpload(req, 'groups');
+    chat.groupAvatar = stored.url;
+    await chat.save();
+
+    const me = await User.findById(req.user._id).select('displayName');
+    await groupSystem.postSystemMessage(chat, `${me?.displayName || 'A member'} changed the group photo`);
+    const populated = await groupSystem.broadcastChatUpdate(chat._id);
+    groupSystem.broadcastMemberList(chat._id);
+
+    return res.json({ message: 'Group photo updated', url: stored.url, chat: populated });
+  } catch (error) {
+    console.error('Update group avatar error:', error);
+    return res.status(500).json({ message: 'Server error updating the group photo' });
+  }
+};
+
 module.exports = {
   createChat,
   getChats,
   getChatById,
   getGroups,
   updateGroup,
+  updateGroupAvatar,
   setGroupAdmin,
   addParticipants,
   removeParticipant,

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Check, Copy, Loader2, Link as LinkIcon, Plus, Search, Settings2, Shield, ShieldOff,
+  Check, Copy, Loader2, Link as LinkIcon, Pencil, Plus, Search, Settings2, Shield, ShieldOff,
   Trash2, Users, X, BellOff, Bell, LogOut, FileText, Film, Music, RefreshCw,
 } from 'lucide-react';
 import { chatTitle, useSession, type Chat, type User } from '@chatgram/core';
@@ -192,6 +192,16 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
   const [description, setDescription] = useState(chat.description ?? '');
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [copied, setCopied] = useState(false);
+  const photoRef = useRef<HTMLInputElement>(null);
+
+  const changePhoto = useMutation({
+    mutationFn: (file: File) => api.uploadGroupAvatar(chat.id, file),
+    onSuccess: () => {
+      refresh();
+      setNotice('Group photo updated.');
+    },
+    onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not update the group photo'),
+  });
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['groups'] });
@@ -345,8 +355,40 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
       {notice ? <p role="status" className="px-4 py-2 text-xs text-emerald-600 dark:text-emerald-400">{notice}</p> : null}
 
       <div className="border-b border-ink-200 px-4 py-4 text-center dark:border-white/10">
-        <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-2xl font-bold text-white">
-          {chatTitle(chat, meId).slice(0, 2).toUpperCase()}
+        <div className="relative mx-auto h-20 w-20">
+          <div className="grid h-20 w-20 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-2xl font-bold text-white">
+            {group?.avatarUrl || chat.groupAvatarUrl ? (
+              <img src={group?.avatarUrl || chat.groupAvatarUrl} alt={chatTitle(chat, meId)} className="h-full w-full object-cover" data-testid="group-photo" />
+            ) : (
+              chatTitle(chat, meId).slice(0, 2).toUpperCase()
+            )}
+          </div>
+          {iAmAdmin || settings.whoCanEditInfo === 'all' ? (
+            <>
+              <input
+                ref={photoRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                data-testid="group-photo-input"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = '';
+                  if (file) changePhoto.mutate(file);
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => photoRef.current?.click()}
+                disabled={changePhoto.isPending}
+                title="Change group photo"
+                aria-label="Change group photo"
+                className="absolute -bottom-1 -right-1 grid h-8 w-8 place-items-center rounded-full border-2 border-white bg-brand-600 text-white shadow dark:border-ink-900"
+              >
+                {changePhoto.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
+              </button>
+            </>
+          ) : null}
         </div>
         <h4 className="mt-2 text-lg font-bold">{group?.name ?? chatTitle(chat, meId)}</h4>
         <p className="text-[12px] text-ink-500 dark:text-ink-400">
@@ -682,8 +724,12 @@ export default function Groups({ onOpenChat }: { onOpenChat: (chatId: string) =>
               key={chat.id}
               className="flex items-center gap-3 px-4 py-3 hover:bg-ink-100/70 dark:hover:bg-white/[.04]"
             >
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
-                {chatTitle(chat, meId).slice(0, 2).toUpperCase()}
+              <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
+                {chat.groupAvatarUrl ? (
+                  <img src={chat.groupAvatarUrl} alt={chatTitle(chat, meId)} className="h-full w-full object-cover" />
+                ) : (
+                  chatTitle(chat, meId).slice(0, 2).toUpperCase()
+                )}
               </div>
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onOpenChat(chat.id)}>
                 <p className="truncate font-semibold">{chatTitle(chat, meId)}</p>

@@ -42,6 +42,8 @@ export interface RealtimeHandlers {
     reactions: { userId: string; emoji: string }[];
   }) => void;
   onMessageDeleted?: (payload: { messageId: string; chatId: string; scope: string }) => void;
+  /** The sender edited the text of a message. */
+  onMessageEdited?: (payload: { messageId: string; chatId: string; content: string; editedAt: string }) => void;
   /** A group member list changed (add/remove/leave/promote). */
   onGroupMembers?: (payload: { chatId: string }) => void;
   /** Somebody @mentioned me in a group. */
@@ -144,6 +146,9 @@ export class RealtimeClient {
       h.onMessageDeleted?.(data),
     );
     socket.on('group:members', (data: { chatId: string }) => h.onGroupMembers?.(data));
+    socket.on('message:edited', (data: { messageId: string; chatId: string; content: string; editedAt: string }) =>
+      h.onMessageEdited?.(data),
+    );
     socket.on('message:mention', (data: unknown) => {
       const payload = (data ?? {}) as {
         message?: unknown;

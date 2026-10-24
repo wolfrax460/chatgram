@@ -59,6 +59,16 @@ const messageSchema = new mongoose.Schema({
   mentionUserIds: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
+  }],
+  // Set when the sender edits the text; the client shows an "edited" label.
+  editedAt: {
+    type: Date,
+    default: null
+  },
+  // Per-user stars (bookmarks). No document is copied — just this list.
+  starredBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   }]
 }, {
   timestamps: true
@@ -71,6 +81,7 @@ messageSchema.index({ deletedFor: 1 });
 messageSchema.index({ senderId: 1 });
 messageSchema.index({ 'deliveredTo': 1 });
 messageSchema.index({ 'readBy': 1 });
+messageSchema.index({ starredBy: 1 });
 
 // Indexes for delivery/read receipts
 messageSchema.index({ chatId: 1, 'deliveredTo': 1 });

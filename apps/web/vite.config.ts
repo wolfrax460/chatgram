@@ -17,6 +17,18 @@ export default defineConfig(({ mode }) => {
       assetsDir: 'static',
       emptyOutDir: true,
       sourcemap: false,
+      // Split the heavy, rarely-changing libraries into their own chunks so a
+      // code change does not force users to download the whole app again.
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+            'vendor-data': ['@tanstack/react-query', 'zustand'],
+            'vendor-icons': ['lucide-react'],
+            'vendor-socket': ['socket.io-client'],
+          },
+        },
+      },
     },
     server: {
       port: 5174,

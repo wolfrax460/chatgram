@@ -54,3 +54,7 @@ Thumbs.db
 # electron
 /apps/desktop/release/
 /apps/desktop/node_modules/
+
+# Playwright artefacts
+test-results/
+playwright-report/
