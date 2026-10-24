@@ -983,3 +983,9 @@ DB `chatgram-backups/20261024-105120.tgz`, nginx `.bak-20261024`. Recorded in
   production at all target sizes.
 - Rollback: previous Vercel deployment, `src.bak-20261024-112539`,
   `chatgram-backups/20261024-112539.tgz`.
+
+### Session 6 — 2FA dependency fix (already committed as 3c01773, deployed)
+- The deploy included commit `3c01773` (otplib pinned to ^12.0.1, `express-rate-limit`
+  and `qrcode` declared, 22-assertion `server/test/unit/twoFactor.test.js`). Verified on
+  the production server: installed otplib **12.0.1**, `authenticator` helper present,
+  both dependencies declared. `npm run test:unit` → 22/22.
