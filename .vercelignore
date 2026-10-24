@@ -1,0 +1,6 @@
+﻿.secrets/
+node_modules/
+test-results/
+backups/
+*.log
+scripts/prod-*.js

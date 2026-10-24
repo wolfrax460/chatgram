@@ -193,6 +193,8 @@ rollback is unambiguous.
 
 | 2026-10-24 (16:52) | AI moderation/degraded/answer-user | Blocked-topic guard (`AI_BLOCKED_TOPICS`), AI degraded flag (5 failures/10 min) + admin health endpoint and red banner, inbox answer now delivers to the asker via Support. Backend first (DB backup `20261024-145107`, src backup `src.bak-20261024-145107`, health ok), web `chatgram-ajmsmgr3a`. | **Green.** /api/admin/ai/health 401 unauth, 200 with admin session; pages 200. Rollback: previous Vercel deployment, `src.bak-20261024-145107`, DB dump `20261024-145107`. |
 
+| 2026-10-24 (17:05) | admin account + inbox delivery | Chatgram Admin account created (must-change flag), queued AI inbox records delivered once each (idempotent bookkeeping), `.secrets/` ignore rules + dashboard no-provider banner. Backend first (DB backup `20261024-150153`, src backup `src.bak-20261024-150153`, health ok), web `chatgram-m9obak9dg`. | **Green.** Admin user login 200 via the public API; inbox queue delivered=2 remaining=0; pages 200. Rollback: previous Vercel deployment, `src.bak-20261024-150153`, DB dump `20261024-150153`. |
+
 ## 6. Deploy record
 
 | Date | Commit | Deployed | Result / rollback |

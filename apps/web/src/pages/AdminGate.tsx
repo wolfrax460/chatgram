@@ -462,6 +462,11 @@ export default function AdminGate() {
         <p className="mb-3 text-[12.5px] text-ink-500 dark:text-ink-300">
           Switch providers without a redeploy. Keys are encrypted, write-only and shown only as their last 4 characters.
         </p>
+        {providersData && providersData.providers.length === 0 ? (
+          <p role="alert" data-testid="no-provider-banner" className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12.5px] font-medium text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+            No AI provider is configured yet. Add a Groq provider below, paste its key in the write-only key field and press Save + Test — AI features stay unavailable until a provider works.
+          </p>
+        ) : null}
         {providerNotice ? <p className="mb-2 rounded-lg bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">{providerNotice}</p> : null}
         {providersData?.providers?.length ? (
           <div className="overflow-x-auto">

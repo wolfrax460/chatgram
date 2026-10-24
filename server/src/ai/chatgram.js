@@ -75,6 +75,8 @@ const adminInboxSchema = new mongoose.Schema(
     createdAt: { type: Date, default: Date.now },
     answeredAt: { type: Date, default: null },
     lastSeenAt: { type: Date, default: Date.now },
+    deliveredAt: { type: Date, default: null },
+    deliveredMessageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
   },
   { timestamps: false },
 );
@@ -189,7 +191,7 @@ function stripMarker(text) {
   };
 }
 
-async function deliverToAdminInbox(question, askerHash) {
+async function deliverToAdminInbox(inboxId, question, askerHash) {
   const email = String(process.env.CHATGRAM_ADMIN_EMAIL || '').toLowerCase().trim();
   if (!email) return;
   try {
@@ -201,7 +203,7 @@ async function deliverToAdminInbox(question, askerHash) {
     if (!adminUser || !supportUser) return;
     let chat = await Chat.findOne({ type: 'direct', participants: { $all: [adminUser._id, supportUser._id] } });
     if (!chat) chat = await Chat.create({ type: 'direct', participants: [supportUser._id, adminUser._id] });
-    await Message.create({
+    const message = await Message.create({
       chatId: chat._id,
       senderId: supportUser._id,
       type: 'text',
@@ -211,6 +213,9 @@ async function deliverToAdminInbox(question, askerHash) {
       readBy: [],
     });
     await Chat.updateOne({ _id: chat._id }, { updatedAt: new Date() });
+    if (inboxId) {
+      await AdminInbox.updateOne({ _id: inboxId }, { $set: { deliveredAt: new Date(), deliveredMessageId: message._id } });
+    }
   } catch (error) {
     console.warn('Admin inbox delivery skipped:', error.message);
   }
@@ -233,7 +238,7 @@ async function recordUnknown(userId, question, replyText, providerKey) {
     providerKey,
     redactedContext: redact(replyText, { allowContact: false }).slice(0, 800),
   });
-  await deliverToAdminInbox(created.question, created.askerHash);
+  await deliverToAdminInbox(created._id, created.question, created.askerHash);
   return created;
 }
 
@@ -511,6 +516,21 @@ async function answerInboxItem(id, answer) {
   return { item, entry, delivered };
 }
 
+/** Deliver every not-yet-delivered inbox question into the admin account. */
+async function deliverQueuedInboxToAdmin() {
+  const pending = await AdminInbox.find({ deliveredAt: null }).sort({ createdAt: 1 }).limit(500);
+  let delivered = 0;
+  for (const item of pending) {
+    const before = await AdminInbox.findById(item._id).select('deliveredAt');
+    if (before?.deliveredAt) continue;
+    await deliverToAdminInbox(item._id, item.question, item.askerHash);
+    const after = await AdminInbox.findById(item._id).select('deliveredAt');
+    if (after?.deliveredAt) delivered += 1;
+  }
+  const remaining = await AdminInbox.countDocuments({ deliveredAt: null });
+  return { delivered, remaining };
+}
+
 async function ignoreInboxItem(id) {
   const item = await AdminInbox.findById(id);
   if (!item) return null;
@@ -529,6 +549,7 @@ module.exports = {
   answerInboxItem,
   aiHealth,
   blockedTopic,
+  deliverQueuedInboxToAdmin,
   recordProviderFailure,
   ignoreInboxItem,
   normalizeQuestion,

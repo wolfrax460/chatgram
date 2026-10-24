@@ -66,3 +66,6 @@ client/landing/.env.local
 
 # Production database backups (never commit user data)
 backups/
+
+# Operator secrets (never commit)
+.secrets/

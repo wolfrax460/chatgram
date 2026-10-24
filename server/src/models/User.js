@@ -50,6 +50,8 @@ const userSchema = new mongoose.Schema({
   tokenVersion: { type: Number, default: 0 },
   passwordChangedAt: { type: Date, default: null },
 
+  // Set for accounts handed over by an operator; the UI asks them to change it.
+  mustChangePassword: { type: Boolean, default: false },
   isSupportAccount: {
     type: Boolean,
     default: false

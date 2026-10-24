@@ -59,27 +59,38 @@ typecheck and build clean.
 **Deploy:** backend `src.bak-20261024-143333`, DB dump `~/chatgram-backups/20261024-143333.tgz`, web
 `chatgram-8jiknwnkc`. Recorded in `docs/deploy.md`.
 
-### Where the work queue stands
+### Where the work queue stands (audited 2026-10-24)
 
-1. DONE C - change password (sessions invalidated, email notice, 30 integration assertions).
-2. DONE B (rest) - photo/video/voice statuses, viewer controls, upload progress/cancel/retry,
-   captions, 24h file cleanup (45 + 13 assertions, 9 Playwright tests).
-3. DONE D - profile panel with privacy rules, blocking, mute, report, shared groups/media
-   (57 assertions, 8 Playwright tests).
-- 🟡 E (rest): groups done except join-request approval mode (2026-10-24). Permissions, system messages, invites, pin, mentions, seen-by, shared media, last-admin handoff, empty-group delete AND group photo upload (API + UI + live update) all built and tested (68 integration assertions + 6 Playwright tests). Only missing: join-request approval mode.
-   (61 assertions, 5 Playwright tests).
-5. DONE F - full Settings audit (32 assertions, 4 Playwright tests).
-6. DONE A4 + suites - 41 Playwright tests + 325 integration assertions + 36 AI-layer tests on the local stack.
-7. 🟡 W — help centre backend + 3-tab widget + handoff + admin editor done; widget strings English-only, no widget voice recording, article icons not rendered.
-   are English-only, no voice-note recording in the widget, article icons not rendered.
-8. ✅ P — provider-agnostic AI layer built, admin-wired and switchable into the live support assistant (`SUPPORT_AI_LAYER=true`); 36 tests.
-   budget, redaction, SSRF, encrypted admin key, admin panel + test button, 29 unit tests).
-   NOT YET SWITCHED: the support assistant/agent still use the legacy support/aiProvider.js.
-9. 🟡 Section 9 — message edit/forward/star/report done (+26 assertions, 4 Playwright tests); calls, push notifications, offline queue, virtualization, chat list pin/archive and Android APK still not built.
-   offline queue, virtualization, ...). Read receipts and unread handling were fixed along the way.
-- 🟡 Quality gate: tsc/build green after every edit; tests green; docs updated; bundle split via manualChunks (main chunk 562 KB -> 265 KB, vendor chunks cached separately). Remaining: admin page any types, some dead legacy files, calls/push/offline/virtualization not built.
+Legend: ✅ done + deployed · ◐ partial (missing parts listed) · ✗ not started.
 
-    admin page uses any types.
+1. ✅ White lines / scrollbars / help launcher — deployed.
+2. ✅ Support/AI outage — root cause fixed (stale dashboard key overriding the env key;
+   assistant silenced by existing tickets / disabled AI). Regression test + production smoke
+   pass; admin Test-AI shows a red, classified error.
+3. ◐ Chatgram AI — backend + UI + streaming + pinned conversation + silent learning loop +
+   admin Inbox + KB learning + blocked topics + degraded banner + answer-to-user are deployed.
+   Missing: Meta-AI-style *standard chat view* (Change 1: per-message actions, share,
+   regenerate, image/pasted input, group @mentions, unread previews), 9e notification digests.
+4. ✗ Empty-screen recommendations + quick actions.
+9a. ◐ Admin password gate deployed and enabled in production (sessions, CSRF, lockout, audit,
+    change-password). Missing: TOTP enrolment, IP allowlist, removal of the legacy
+    support-admin guard.
+9b. ✗ Admin dashboard pages — only the single-page admin gate/providers/inbox exists;
+    no route-based shell, Overview/Users/… pages.
+9c. ◐ Model providers + feature routing deployed (keys write-only, health, undo, tests).
+    Missing: cost estimates, per-provider budget enforcement, "switch all".
+9d. ✗ Read-only oversight, security-review reason flow, global message search, review audit UI.
+9e. ◐ Admin Inbox + AI degraded banner + answer-to-user deployed. Missing: hourly digest /
+    instant all-providers-down notification behind a toggle; real-time inbox updates.
+5.  ◐ Windows app — an older installer exists; it was NOT rebuilt with this session's features.
+6.  ◐ Android — the earlier build is sideload-only and was NOT rebuilt with this session's
+    features; no release keystore (by design).
+7.  ✗ Landing Features/Downloads tab with checksums and QR code.
+•   Change 1 (Meta-AI-style conversation) — ✗ not implemented (separate AI page still).
+•   Change 2 (route-based admin dashboard) — ✗ not implemented.
+•   Admin account setup (Chatgram Admin user, queued-inbox delivery, credentials file,
+    must-change-password flag, provider banner) — ✅ done 2026-10-24.
+•   Presence stuck-online fix (parallel work) — ✅ deployed and verified.
 
 ### Next session starts here (in order — remaining queue)
 
@@ -1184,3 +1195,18 @@ authenticated AI test, then the Groq key replacement through the admin providers
 - Backend first (DB backup `20261024-145107`, src backup `src.bak-20261024-145107`, health ok),
   then web `chatgram-ajmsmgr3a`. Production verified: `/api/admin/ai/health` 401
   unauthenticated, 200 with the admin session; pages 200.
+
+
+### Session 17 (2026-10-24) — ledger reconciliation + admin account setup
+- Audited code + production; rewrote the status block above.
+- Created the **Chatgram Admin** user (terminal123b@gmail.com) through the normal model path
+  (bcrypt-hashed password, must-change-password flag, profile/avatar), set
+  `CHATGRAM_ADMIN_EMAIL`, delivered the 2 queued unknown-question inbox records once each
+  (`AdminInbox.deliveredAt` bookkeeping, idempotent), and verified admin login (200).
+- Wrote both operator passwords once to
+  `C:\Users\mugis\documents\chatgram\.secrets\admin-credentials.txt` (ACL: user + SYSTEM);
+  `.secrets/` added to `.gitignore` + `.vercelignore` and proven ignored with
+  `git check-ignore -v`. Admin panel password was already configured and was left unchanged.
+- Added the dashboard banner shown while no AI provider is configured.
+- Backend deployed (DB backup `20261024-150153`, src backup `src.bak-20261024-150153`), web
+  `chatgram-m9obak9dg`. Tests: `server/test/ai/adminDelivery.test.js` 8/8.
