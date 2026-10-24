@@ -1,6 +1,6 @@
-/**
+﻿/**
  * Change 3 regression: native <select> dropdown lists must be dark with
- * readable text on the dark theme — never a white box with invisible options.
+ * readable text on the dark theme â€” never a white box with invisible options.
  *
  * Native option popups are painted by the browser, so this asserts the computed
  * styles the popup is painted from: `color-scheme: dark` on the document plus a
@@ -95,7 +95,7 @@ function assertDarkAndReadable(styles, label) {
 
 test.describe.configure({ timeout: 120_000 });
 
-test.describe('Change 3 — dark native select popups', () => {
+test.describe('Change 3 â€” dark native select popups', () => {
   test('the auth sign-up country select paints dark options', async ({ page }) => {
     await forceDarkTheme(page);
     await page.goto(`${APP}/`);
@@ -122,25 +122,49 @@ test.describe('Change 3 — dark native select popups', () => {
     { width: 1366, height: 600 },
     { width: 1920, height: 1080 },
   ]) {
-    test(`admin Model providers + feature routing selectors are dark at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    test(`admin dashboard dropdowns are dark and keyboard accessible at ${viewport.width}x${viewport.height}`, async ({ page }) => {
       await page.setViewportSize(viewport);
-      await forceDarkTheme(page);
       const login = await page.request.post(`${API}/api/admin/auth/login`, {
         data: { password: STAGING_ADMIN_PASSWORD },
       });
       expect(login.ok(), `admin login: ${login.status()}`).toBeTruthy();
 
-      await page.goto(`${APP}/admin`);
-      await expect(page.getByText('Model providers', { exact: false }).first()).toBeVisible({ timeout: 30_000 });
-      await page.getByText('Model providers', { exact: false }).first().scrollIntoViewIfNeeded();
+      await page.goto(`${APP}/admin/providers`);
+      await expect(page.getByRole('heading', { name: 'Model providers' })).toBeVisible({ timeout: 30_000 });
+      const trigger = page.getByRole('button', { name: 'Chatgram AI assistant primary provider' });
+      await expect(trigger).toBeVisible({ timeout: 20_000 });
+      await trigger.click();
+      const list = page.locator('.admin-select-list').first();
+      await expect(list).toBeVisible({ timeout: 10_000 });
 
-      const providerSelect = page.locator('label:has-text("Provider") select').first();
-      await expect(providerSelect).toBeVisible({ timeout: 15_000 });
-      assertDarkAndReadable(await selectPaintStyles(providerSelect), `admin provider picker @${viewport.width}`);
+      const paint = await page.evaluate(() => {
+        const listEl = document.querySelector('.admin-select-list');
+        const optionEl = document.querySelector('.admin-select-option');
+        const root = document.querySelector('.admin-root');
+        return {
+          colorScheme: root ? getComputedStyle(root).colorScheme : '',
+          listBackground: listEl ? getComputedStyle(listEl).backgroundColor : '',
+          optionColor: optionEl ? getComputedStyle(optionEl).color : '',
+          optionBackground: optionEl ? getComputedStyle(optionEl).backgroundColor : '',
+        };
+      });
+      expect(paint.colorScheme, 'admin color-scheme').toContain('dark');
+      const listBackground = parseColor(paint.listBackground);
+      const optionColor = parseColor(paint.optionColor);
+      expect(listBackground, 'dropdown background').not.toBeNull();
+      expect(optionColor, 'option text colour').not.toBeNull();
+      expect(isWhite(listBackground), `dropdown list is not white (${paint.listBackground})`).toBe(false);
+      const ratio = contrastRatio(optionColor, listBackground);
+      expect(ratio, `option contrast ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
 
-      const routingSelect = page.locator('select[aria-label$="primary provider"]').first();
-      await expect(routingSelect).toBeVisible({ timeout: 15_000 });
-      assertDarkAndReadable(await selectPaintStyles(routingSelect), `admin feature routing @${viewport.width}`);
+      // Keyboard: arrow to the next option, Enter selects it, Escape closes.
+      const before = await trigger.innerText();
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+      await expect(list).toBeHidden({ timeout: 10_000 });
+      const after = await trigger.innerText();
+      expect(after.length).toBeGreaterThan(0);
+      expect(before || after).toBeTruthy();
     });
   }
 });

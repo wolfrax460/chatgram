@@ -4,11 +4,43 @@ const router = express.Router();
 const { requireAdminSession, requireAdminCsrf } = require('../middleware/adminAuth');
 const admin = require('../admin/auth');
 const ai = require('../ai/chatgram');
+const aiPolicy = require('../ai/policy');
 
 router.use(requireAdminSession);
 
 router.get('/health', async (req, res) => {
   return res.json({ ai: ai.aiHealth(), blockedTopicsConfigured: Boolean(process.env.AI_BLOCKED_TOPICS) });
+});
+
+// Admin-editable AI policy: blocked topics, per-user caps, max input, alerts.
+// (The panel existed before but the HTTP routes were never mounted — found while
+// rebuilding the dashboard; see docs/decisions.md D33.)
+router.get('/policy', async (req, res) => {
+  try {
+    return res.json({ policy: await aiPolicy.getPolicy() });
+  } catch (error) {
+    return res.status(500).json({ message: 'Could not load the AI policy.' });
+  }
+});
+
+router.put('/policy', requireAdminCsrf, async (req, res) => {
+  try {
+    const policy = await aiPolicy.updatePolicy(req.body || {});
+    await admin.audit(
+      'ai_policy_update',
+      req,
+      JSON.stringify({
+        hourlyLimit: policy.hourlyLimit,
+        dailyLimit: policy.dailyLimit,
+        maxInputChars: policy.maxInputChars,
+        blockedTopics: policy.blockedTopics.length,
+        alertsEnabled: policy.alertsEnabled,
+      }).slice(0, 300),
+    );
+    return res.json({ policy });
+  } catch (error) {
+    return res.status(400).json({ message: error.message || 'Could not save the AI policy.' });
+  }
 });
 
 // Live badge counters for the dashboard (polled every 15 s by the admin UI).

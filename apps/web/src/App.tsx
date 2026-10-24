@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Moon, Sun, Monitor, MessageCircle, LogOut, Users, BookUser, CircleDashed,
@@ -32,7 +32,6 @@ import Status from './pages/Status';
 import SettingsPage from './pages/Settings';
 import Auth from './pages/Auth';
 import SupportWidget from './components/SupportWidget';
-import AdminGate from './pages/AdminGate';
 import { AiThread } from './components/AiThread';
 import { useAiThread } from './lib/aiThread';
 import JoinGroup from './pages/JoinGroup';
@@ -41,6 +40,10 @@ import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, formatTime, sameDay, statusOf } from './lib/ui';
 
 type Tab = 'chats' | 'status' | 'groups' | 'contacts' | 'settings' | 'ai';
+
+// The admin dashboard is its own route tree, loaded lazily so the messaging app
+// bundle never carries the dashboard code.
+const AdminApp = lazy(() => import('./pages/admin/AdminApp'));
 
 /* --------------------------------------------------------------- favicon */
 
@@ -1070,9 +1073,17 @@ export default function App() {
     };
   }, [setUser, setReady]);
 
-  // Tiny path route: /web/admin opens the support control dashboard.
-  if (typeof window !== 'undefined' && /\/admin\/?$/.test(window.location.pathname)) {
-    return <AdminGate />;
+  // Route tree: /web/admin and every /web/admin/* section (Overview, Users, Inbox, …).
+  if (typeof window !== 'undefined' && /\/admin(?:\/|$)/.test(window.location.pathname)) {
+    return (
+      <Suspense
+        fallback={
+          <div className="grid min-h-screen place-items-center bg-ink-900 text-sm text-ink-300">Loading the admin dashboard…</div>
+        }
+      >
+        <AdminApp />
+      </Suspense>
+    );
   }
 
   // Group invite links: /web/join/<token>

@@ -584,3 +584,40 @@ smaller leak: the `[[CHATGRAM_UNKNOWN: ...]]` marker was visible mid-stream, so 
 (strip anywhere, not only at the end) and the client (strip in render/copy/share/preview)
 remove it.
 
+
+
+## D33 - The admin dashboard is a route-based, lazy-loaded app with its own dark design system (2026-10-24)
+
+The single long /web/admin page is replaced by `apps/web/src/pages/admin/`: a lazily loaded
+route tree (Overview, Users + user detail, Inbox, Providers, Admin security, plus honest
+"not built yet" placeholders for the remaining 9b pages). It has its own dark-only design
+system (`admin.css` tokens, 8px grid, KPI cards with SVG sparklines and gradient bars, sticky
+tables, drawers, confirm dialogs, toasts, skeletons, a Ctrl+K command palette, a sidebar with
+grouped lucide icons, live API/DB/AI chips, a session timer and a 15 s inbox badge poll). The
+messaging bundle does not grow: Overview/Users/UserDetail/Inbox/Providers are separate lazy
+chunks and the main `index-*.js` shrank by ~22 kB. Because the app shell was rendered outside
+a parent route, the dashboard uses a small path switch instead of nested `<Routes>` (the
+browser back button still works through react-router history). One shared custom dark
+`Select` replaces every native `<select>` in the dashboard (Keyboard: arrows, Enter, Escape,
+type-ahead; listbox ARIA roles) — enforced by the guards in `nativeSelectGuard.test.js` and the
+admin Playwright specs.
+
+## D34 - The AI policy HTTP routes never existed (found while rebuilding the dashboard) (2026-10-24)
+
+`/api/admin/ai/policy` (GET/PUT) was called by the old admin panel and described as deployed,
+but no route was ever mounted: the old panel showed a 404 and the admin-editable blocked
+topics/caps could not be changed from production. Found when the new Providers page loaded the
+policy panel. The routes now exist on `adminAiRoutes` (admin session + CSRF, audited as
+`ai_policy_update`, sanitized summary only) and a Playwright run against the new dashboard
+exercises them.
+
+## D35 - Dashboard backend endpoints (2026-10-24)
+
+`GET /api/admin/overview` (KPIs + 14/30/90-day series from MongoDB aggregations, live online
+count from the socket registry), `GET /api/admin/users` (server-side search + pagination,
+never selects password/twoFactorSecret/recoveryCodes), `GET /api/admin/users/:id` (profile +
+counters only; message content stays behind the 9d reason prompt), and the audited actions
+`POST /api/admin/users/:id/force-logout` (tokenVersion bump) and
+`POST /api/admin/users/:id/reset-2fa`. Suspend/ban, device/session lists, reports/groups/
+content/support/AI-usage/announcements/releases/flags/safety/health/audit/settings/data-request
+pages and the 9d security-review + global search are still to build (crossed).

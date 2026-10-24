@@ -84,6 +84,23 @@ non-matching query and opens the AI view, no runtime errors. 9/9 checks passed.
 staging DB and later AI suites hit "you have reached the Chatgram AI limit". Restore now uses
 `replaceOne` plus a "policy restored after the run" check; the staging policy was cleared.
 
+### Change 2 — admin dashboard chunk 1 (in progress this round)
+
+Built and tested: lazy route-based admin app (`pages/admin/`), dark design system, app shell
+(sidebar groups, top bar, Ctrl+K palette, date range, live API/DB/AI chips, session timer,
+15 s inbox badge), **Overview** (14 KPIs, sparklines, per-day bars, needs-attention panel, AI
+usage per provider, quick actions), **Users** (server-side search/pagination, chips, CSV,
+row → detail), **User detail** (Profile/Activity/Actions tabs, force logout, reset 2FA),
+**Inbox** (master-detail, type/status filters, j/k/a/i shortcuts, answer→KB, ignore), **Model
+providers** (cards, test, health/budget meters, feature routing with fallbacks + undo, AI
+safety limits), **Admin security** (password change, sessions, sign out all, audit preview).
+New backend: `/api/admin/overview`, `/api/admin/users`, `/api/admin/users/:id`,
+`.../force-logout`, `.../reset-2fa` and the previously missing `/api/admin/ai/policy`
+routes. Tests: 29 integration checks (`adminOverview.test.js`), 5 Playwright dashboard specs,
+the dark-select specs rewritten for the shared custom dropdown, screenshots under
+`docs/screens/`. Remaining from 9b/9d is listed in `docs/decisions.md` D34/D35 and crossed in
+the report.
+
 ### Deployed (2026-10-24 ~19:05-19:25)
 
 Backend backup `20261024-164639` (36K, statuses safe), src backup `src.bak-20261024-164639`.
