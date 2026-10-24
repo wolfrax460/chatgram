@@ -86,6 +86,8 @@ Legend: ✅ done + deployed · ◐ partial (missing parts listed) · ✗ not sta
 6.  ◐ Android — the earlier build is sideload-only and was NOT rebuilt with this session's
     features; no release keystore (by design).
 7.  ✗ Landing Features/Downloads tab with checksums and QR code.
+•   AI policy (admin-editable blocked topics + limits) — ✅ deployed: settings-backed, validated,
+    audited, effective immediately; tests 7/7. Alerts toggle stored but digest delivery not built.
 •   Change 1 (Meta-AI-style conversation) — ◐ partial: disclaimer banner, intro bubble, pills
     above the composer, verified badge, typing dots, copy/good/bad/regenerate actions and thumbs
     feedback are deployed. Still missing: standard ChatWindow component, share-to-chat,
@@ -1219,3 +1221,9 @@ authenticated AI test, then the Groq key replacement through the admin providers
 - Backend deployed (DB backup 20261024-150744, src backup src.bak-20261024-150744, health ok),
   web chatgram-k8n88dt5n. Tests: server/test/ai/feedback.test.js 7/7 (up accepted with no inbox
   noise, down recorded with question + counter, repeat increments, other users rejected).
+
+
+### Session 19 (2026-10-24) — admin-editable AI policy
+- Backend deployed (DB backup 20261024-151218, src backup src.bak-20261024-151218, health ok),
+  web chatgram-d980jqxf4. Tests: server/test/ai/policy.test.js 7/7 (env defaults, stored values,
+  invalid limits rejected, stored blocked topic refused, max input enforced, stored hourly cap).

@@ -46,6 +46,8 @@ const aiSettingsSchema = new mongoose.Schema(
       default: [],
     },
     features: { type: mongoose.Schema.Types.Mixed, default: {} },
+    // Admin-editable AI safety/limit policy (blocked topics, caps, alerts toggle).
+    aiPolicy: { type: mongoose.Schema.Types.Mixed, default: {} },
     lastFeatureChange: { type: mongoose.Schema.Types.Mixed, default: null },
     fallbacks: {
       type: [

@@ -475,3 +475,20 @@ tab, `AI_UNKNOWN_NOTIFY` digests/9e alerts, moderation topics list, and the
 - Not done (still crossed): the thread is not yet the *standard* ChatWindow (dedicated route with
   the same look), share-to-chat, image/pasted input, group @Chatgram AI, unread badges/previews for
   new AI replies, and the "Ask Chatgram AI" search row.
+
+
+---
+
+## D25 - Admin-editable AI policy: blocked topics + limits (2026-10-24)
+
+- New `server/src/ai/policy.js`: policy stored in the AiSettings document (`aiPolicy`)
+  with env fallbacks. Fields: `blockedTopics`, `hourlyLimit`, `dailyLimit`,
+  `maxInputChars`, `alertsEnabled`. Validation: hourly 1–10000, daily 1–100000,
+  max input 100–20000, topics capped at 100 entries.
+- Chatgram AI (both normal and streaming paths) now reads the policy on every turn: blocked
+  topics are refused politely without a provider call, per-user hourly/daily caps and the max
+  input length take effect immediately.
+- Admin API: `GET/PUT /api/admin/ai/policy` behind the admin session + CSRF; every update is
+  written to the admin audit log. Dashboard: an "AI safety & limits" panel on /web/admin.
+- The alerts toggle is stored for the 9e digest work; the digest/instant delivery itself is NOT
+  implemented yet (crossed in the ledger).

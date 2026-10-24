@@ -90,6 +90,7 @@ export default function AdminGate() {
   const [inboxDraft, setInboxDraft] = useState<Record<string, string>>({});
   const [inboxStatus, setInboxStatus] = useState('new');
   const [aiHealth, setAiHealth] = useState<{ degraded: boolean; failuresLast10Min: number } | null>(null);
+  const [policyDraft, setPolicyDraft] = useState<{ blockedTopics: string; hourlyLimit: number; dailyLimit: number; maxInputChars: number; alertsEnabled: boolean } | null>(null);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
@@ -122,6 +123,41 @@ export default function AdminGate() {
   async function refreshAiHealth() {
     const result = await adminFetch('/api/admin/ai/health');
     if (result.status === 200) setAiHealth(result.body.ai);
+    const policyResult = await adminFetch('/api/admin/ai/policy');
+    if (policyResult.status === 200 && policyResult.body?.policy) {
+      const policy = policyResult.body.policy;
+      setPolicyDraft({
+        blockedTopics: (policy.blockedTopics || []).join(', '),
+        hourlyLimit: policy.hourlyLimit,
+        dailyLimit: policy.dailyLimit,
+        maxInputChars: policy.maxInputChars,
+        alertsEnabled: policy.alertsEnabled === true,
+      });
+    }
+  }
+
+  async function savePolicy(event: React.FormEvent) {
+    event.preventDefault();
+    if (!session || !policyDraft) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await adminFetch('/api/admin/ai/policy', {
+        method: 'PUT',
+        csrf: session.csrfToken,
+        body: {
+          blockedTopics: policyDraft.blockedTopics,
+          hourlyLimit: policyDraft.hourlyLimit,
+          dailyLimit: policyDraft.dailyLimit,
+          maxInputChars: policyDraft.maxInputChars,
+          alertsEnabled: policyDraft.alertsEnabled,
+        },
+      });
+      if (result.status === 200) setProviderNotice('AI safety and limits saved — effective immediately.');
+      else setError(result.body?.message ?? 'Could not save the AI policy.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function refreshInbox() {
@@ -455,6 +491,42 @@ export default function AdminGate() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="card p-4" data-testid="ai-policy">
+        <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-ink-500">AI safety &amp; limits</h2>
+        <p className="mb-3 text-[12.5px] text-ink-500 dark:text-ink-300">
+          Effective immediately for Chatgram AI. Blocked topics are comma separated and case-insensitive; matches are refused politely without calling the provider.
+        </p>
+        {policyDraft ? (
+          <form onSubmit={savePolicy} className="grid gap-2 sm:grid-cols-2">
+            <label className="block sm:col-span-2">
+              <span className="label">Blocked topics (comma separated)</span>
+              <input className="field h-9" value={policyDraft.blockedTopics} onChange={(event) => setPolicyDraft({ ...policyDraft, blockedTopics: event.target.value })} placeholder="e.g. weapons, hacking" />
+            </label>
+            <label className="block">
+              <span className="label">Messages per hour / user</span>
+              <input type="number" min={1} className="field h-9" value={policyDraft.hourlyLimit} onChange={(event) => setPolicyDraft({ ...policyDraft, hourlyLimit: Number(event.target.value) })} />
+            </label>
+            <label className="block">
+              <span className="label">Messages per day / user</span>
+              <input type="number" min={1} className="field h-9" value={policyDraft.dailyLimit} onChange={(event) => setPolicyDraft({ ...policyDraft, dailyLimit: Number(event.target.value) })} />
+            </label>
+            <label className="block">
+              <span className="label">Max input characters</span>
+              <input type="number" min={100} className="field h-9" value={policyDraft.maxInputChars} onChange={(event) => setPolicyDraft({ ...policyDraft, maxInputChars: Number(event.target.value) })} />
+            </label>
+            <div className="flex items-end gap-3">
+              <label className="flex items-center gap-2 text-[12.5px]">
+                <input type="checkbox" checked={policyDraft.alertsEnabled} onChange={(event) => setPolicyDraft({ ...policyDraft, alertsEnabled: event.target.checked })} />
+                Alert notifications (digest, off by default)
+              </label>
+              <button type="submit" className="btn-primary h-9 px-3 text-[12.5px]" disabled={busy}>Save AI policy</button>
+            </div>
+          </form>
+        ) : (
+          <p className="text-[12.5px] text-ink-500">Loading AI policy…</p>
+        )}
       </section>
 
       <section className="card p-4" data-testid="model-providers">

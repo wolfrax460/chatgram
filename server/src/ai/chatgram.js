@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const { service } = require('./service');
 const { redact } = require('./redact');
+const { getPolicy } = require('./policy');
 
 const MAX_INPUT = 4000;
 const HISTORY_LIMIT = 12;
@@ -29,13 +30,9 @@ function aiHealth() {
 }
 
 /** Comma-separated blocked topics from AI_BLOCKED_TOPICS (moderation guard). */
-function blockedTopic(text) {
-  const topics = String(process.env.AI_BLOCKED_TOPICS || '')
-    .split(',')
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
+function blockedTopic(text, topics) {
   const value = String(text || '').toLowerCase();
-  return topics.find((topic) => value.includes(topic)) || null;
+  return (topics || []).find((topic) => topic && value.includes(topic)) || null;
 }
 
 const aiConversationSchema = new mongoose.Schema(
@@ -164,14 +161,14 @@ function isChatgramQuestion(text) {
   );
 }
 
-async function limitsFor(userId) {
+async function limitsFor(userId, policy) {
   const hourAgo = new Date(Date.now() - 3600 * 1000);
   const dayAgo = new Date(Date.now() - 24 * 3600 * 1000);
   const [hour, day] = await Promise.all([
     AiMessage.countDocuments({ userId, role: 'user', createdAt: { $gte: hourAgo } }),
     AiMessage.countDocuments({ userId, role: 'user', createdAt: { $gte: dayAgo } }),
   ]);
-  return { hour, day };
+  return { hour, day, hourlyLimit: policy.hourlyLimit, dailyLimit: policy.dailyLimit };
 }
 
 async function ensureConversation(userId, conversationId) {
@@ -247,19 +244,21 @@ async function recordUnknown(userId, question, replyText, providerKey) {
  * @returns {{ conversationId, reply, providerKey, unknown, conversation }}
  */
 async function sendMessage({ userId, conversationId, text }) {
+  const policy = await getPolicy();
   const body = String(text || '').trim();
   if (!body) {
     const error = new Error('Message is required.');
     error.code = 'EMPTY';
     throw error;
   }
-  if (body.length > MAX_INPUT) {
-    const error = new Error(`Messages are limited to ${MAX_INPUT} characters.`);
+  const inputLimit = Math.max(100, Number(policy.maxInputChars) || MAX_INPUT);
+  if (body.length > inputLimit) {
+    const error = new Error(`Messages are limited to ${inputLimit} characters.`);
     error.code = 'TOO_LONG';
     throw error;
   }
-  const limits = await limitsFor(userId);
-  if (limits.hour >= HOURLY_LIMIT || limits.day >= DAILY_LIMIT) {
+  const limits = await limitsFor(userId, policy);
+  if (limits.hour >= policy.hourlyLimit || limits.day >= policy.dailyLimit) {
     const error = new Error('You have reached the Chatgram AI limit for now. Try again later.');
     error.code = 'RATE_LIMITED';
     throw error;
@@ -267,7 +266,7 @@ async function sendMessage({ userId, conversationId, text }) {
 
   const conversation = await ensureConversation(userId, conversationId);
   await AiMessage.create({ conversationId: conversation._id, userId, role: 'user', content: body });
-  const blocked = blockedTopic(body);
+  const blocked = blockedTopic(body, policy.blockedTopics);
   if (blocked) {
     const refusal = "I can't help with that request. If you think this is a mistake, please contact Chatgram Support.";
     await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: refusal });
@@ -342,25 +341,34 @@ async function sendMessage({ userId, conversationId, text }) {
 
 /** Streaming variant: yields deltas, then returns the same result shape. */
 async function streamMessage({ userId, conversationId, text, onDelta }) {
+  const policy = await getPolicy();
   const body = String(text || '').trim();
   if (!body) {
     const error = new Error('Message is required.');
     error.code = 'EMPTY';
     throw error;
   }
-  if (body.length > MAX_INPUT) {
-    const error = new Error(`Messages are limited to ${MAX_INPUT} characters.`);
+  const inputLimit = Math.max(100, Number(policy.maxInputChars) || MAX_INPUT);
+  if (body.length > inputLimit) {
+    const error = new Error(`Messages are limited to ${inputLimit} characters.`);
     error.code = 'TOO_LONG';
     throw error;
   }
-  const limits = await limitsFor(userId);
-  if (limits.hour >= HOURLY_LIMIT || limits.day >= DAILY_LIMIT) {
+  const limits = await limitsFor(userId, policy);
+  if (limits.hour >= policy.hourlyLimit || limits.day >= policy.dailyLimit) {
     const error = new Error('You have reached the Chatgram AI limit for now. Try again later.');
     error.code = 'RATE_LIMITED';
     throw error;
   }
   const conversation = await ensureConversation(userId, conversationId);
   await AiMessage.create({ conversationId: conversation._id, userId, role: 'user', content: body });
+  const blocked = blockedTopic(body, policy.blockedTopics);
+  if (blocked) {
+    const refusal = "I can't help with that request. If you think this is a mistake, please contact Chatgram Support.";
+    await onDelta(refusal);
+    await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: refusal });
+    return { conversationId: String(conversation._id), reply: refusal, providerKey: 'moderation', unknown: false, blocked: true };
+  }
   if (conversation.title === 'New chat') {
     conversation.title = body.slice(0, 60);
     conversation.updatedAt = new Date();

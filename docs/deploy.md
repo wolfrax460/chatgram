@@ -197,6 +197,8 @@ rollback is unambiguous.
 
 | 2026-10-24 (17:09) | AI bubble polish + feedback | Disclaimer banner, intro bubble, suggestion pills above composer, verified badge, typing dots, copy/good/bad/regenerate actions, POST /api/ai/messages/:id/feedback (thumbs-down -> admin Inbox negative_feedback, dedupe counter). Backend first (DB backup 20261024-150744, src backup src.bak-20261024-150744, health ok), web chatgram-k8n88dt5n. | Green. Feedback endpoint 401 unauthenticated; pages 200. Rollback: previous Vercel deployment, src.bak-20261024-150744, DB dump 20261024-150744. |
 
+| 2026-10-24 (17:13) | AI policy (blocked topics + limits) | AiSettings.aiPolicy, GET/PUT /api/admin/ai/policy (admin session + CSRF, audited), Chatgram AI reads blocked topics/caps/max-input immediately (normal + streaming), dashboard "AI safety & limits" panel. Backend first (DB backup 20261024-151218, src backup src.bak-20261024-151218, health ok), web chatgram-d980jqxf4. | Green. /api/admin/ai/policy 401 unauthenticated; pages 200; tests 7/7. Rollback: previous Vercel deployment, src.bak-20261024-151218, DB dump 20261024-151218. |
+
 ## 6. Deploy record
 
 | Date | Commit | Deployed | Result / rollback |
