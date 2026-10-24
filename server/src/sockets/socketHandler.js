@@ -236,6 +236,15 @@ function registerSocketHandlers(io) {
         .answerSupportChat(payload, io)
         .catch(() => {});
 
+      // 9e (e): no support reply within 60 s -> an admin Inbox record.
+      const watchdog = require('../support/supportWatchdog');
+      watchdog
+        .isSupportThreadMessage(chat, payload)
+        .then((isSupportThread) => {
+          if (isSupportThread) watchdog.watchSupportMessage(chat, payload);
+        })
+        .catch(() => {});
+
       require('../support/replyHook')
         .propagateSupportReply(payload, io)
         .catch(() => {});

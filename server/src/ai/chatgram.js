@@ -221,9 +221,23 @@ async function deliverToAdminInbox(inboxId, question, askerHash) {
   }
 }
 
-async function recordUnknown(userId, question, replyText, providerKey) {
+/**
+ * Answers that are empty, or that say the model does not know / cannot help,
+ * are low-confidence: they are worth an admin Inbox record even when the model
+ * forgot the hidden marker.
+ */
+function looksLowConfidence(text) {
+  const value = String(text || '').trim();
+  if (!value) return true;
+  if (/\bCHATGRAM_UNKNOWN\b/i.test(value)) return false; // handled by the marker path
+  return /\b(i (?:do not|don't) (?:have|know)|i'?m not sure|i am not sure|not (?:certain|sure)|i can(?:no|')t (?:help|answer)|i cannot (?:help|answer)|unable to (?:help|answer)|no confirmed answer)\b/i.test(
+    value,
+  );
+}
+
+async function recordUnknown(userId, question, replyText, providerKey, type = 'chatgram_unknown') {
   const normalized = normalizeQuestion(question);
-  const existing = await AdminInbox.findOne({ normalized, status: { $in: ['new', 'answered'] } });
+  const existing = await AdminInbox.findOne({ normalized, type, status: { $in: ['new', 'answered'] } });
   if (existing) {
     existing.count += 1;
     existing.lastSeenAt = new Date();
@@ -231,6 +245,7 @@ async function recordUnknown(userId, question, replyText, providerKey) {
     return existing;
   }
   const created = await AdminInbox.create({
+    type,
     question: redact(question, { allowContact: false }).slice(0, 500),
     normalized,
     askerHash: askerHash(userId),
@@ -322,6 +337,10 @@ async function sendMessage({ userId, conversationId, text }) {
   if (unknownQuestion) {
     unknown = true;
     await recordUnknown(userId, unknownQuestion || body, finalText, answer.providerKey);
+  }
+  if (!unknown && looksLowConfidence(finalText)) {
+    unknown = true;
+    await recordUnknown(userId, body, finalText, answer.providerKey, 'low_confidence');
   }
   const stored = await AiMessage.create({
     conversationId: conversation._id,
@@ -426,7 +445,26 @@ async function streamMessage({ userId, conversationId, text, onDelta }) {
     unknown = true;
     await recordUnknown(userId, unknownQuestion || body, finalText, providerKey);
   }
+  if (!unknown && looksLowConfidence(finalText)) {
+    unknown = true;
+    await recordUnknown(userId, body, finalText, providerKey, 'low_confidence');
+  }
   const stored = await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: finalText, providerKey, unknown });
+  // Same question repeated in the same conversation: keep one Inbox record and
+  // increment its counter instead of creating duplicates.
+  const previousUser = await AiMessage.findOne({ conversationId: conversation._id, role: 'user' })
+    .sort({ createdAt: -1 })
+    .skip(1);
+  if (
+    previousUser &&
+    normalizeQuestion(previousUser.content) === normalizeQuestion(body) &&
+    !unknown
+  ) {
+    await recordUnknown(userId, body, finalText, providerKey);
+    unknown = true;
+    stored.unknown = true;
+    await stored.save();
+  }
   await AiConversation.updateOne({ _id: conversation._id }, { updatedAt: new Date() });
   return { conversationId: String(conversation._id), reply: finalText, providerKey, unknown, messageId: String(stored._id) };
 }
@@ -485,6 +523,21 @@ async function listInbox({ status = 'new', page = 1, limit = 25 } = {}) {
     page: Number(page) || 1,
     pageCount: Math.max(1, Math.ceil(total / size)),
   };
+}
+
+/**
+ * Live badge data for the dashboard (polled every 15 s): new Inbox records by
+ * type plus the total, so the Inbox nav item and Overview can show a badge.
+ */
+async function inboxUnreadCount() {
+  const [newTotal, supportTimeout, lowConfidence, unknown, negativeFeedback] = await Promise.all([
+    AdminInbox.countDocuments({ status: 'new' }),
+    AdminInbox.countDocuments({ status: 'new', type: 'support_timeout' }),
+    AdminInbox.countDocuments({ status: 'new', type: 'low_confidence' }),
+    AdminInbox.countDocuments({ status: 'new', type: 'chatgram_unknown' }),
+    AdminInbox.countDocuments({ status: 'new', type: 'negative_feedback' }),
+  ]);
+  return { new: newTotal, supportTimeout, lowConfidence, unknown, negativeFeedback };
 }
 
 async function deliverAnswerToUser(item, answerText) {
@@ -597,6 +650,7 @@ module.exports = {
   getMessages,
   deleteConversation,
   listInbox,
+  inboxUnreadCount,
   answerInboxItem,
   aiHealth,
   blockedTopic,

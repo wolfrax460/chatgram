@@ -87,6 +87,7 @@ export default function AdminGate() {
   const [featureDraft, setFeatureDraft] = useState<Record<string, { primary: string; fallback: string }>>({});
   const [inbox, setInbox] = useState<InboxRow[]>([]);
   const [inboxTotal, setInboxTotal] = useState(0);
+  const [inboxUnread, setInboxUnread] = useState({ new: 0, supportTimeout: 0, lowConfidence: 0, unknown: 0, negativeFeedback: 0 });
   const [inboxDraft, setInboxDraft] = useState<Record<string, string>>({});
   const [inboxStatus, setInboxStatus] = useState('new');
   const [aiHealth, setAiHealth] = useState<{ degraded: boolean; failuresLast10Min: number } | null>(null);
@@ -168,6 +169,19 @@ export default function AdminGate() {
     }
   }
 
+  async function refreshInboxUnread() {
+    const result = await adminFetch('/api/admin/ai/inbox/unread');
+    if (result.status === 200) {
+      setInboxUnread({
+        new: Number(result.body?.new) || 0,
+        supportTimeout: Number(result.body?.supportTimeout) || 0,
+        lowConfidence: Number(result.body?.lowConfidence) || 0,
+        unknown: Number(result.body?.unknown) || 0,
+        negativeFeedback: Number(result.body?.negativeFeedback) || 0,
+      });
+    }
+  }
+
   async function answerInbox(id: string) {
     if (!session) return;
     const answer = String(inboxDraft[id] || '').trim();
@@ -218,7 +232,14 @@ export default function AdminGate() {
     void refreshLists(session.csrfToken);
     void refreshProviders(session.csrfToken);
     void refreshInbox();
+    void refreshInboxUnread();
     void refreshAiHealth();
+    // 9e live push fallback: poll the inbox + badge counters every 15 s.
+    const timer = window.setInterval(() => {
+      void refreshInbox();
+      void refreshInboxUnread();
+    }, 15_000);
+    return () => window.clearInterval(timer);
   }, [session?.csrfToken, inboxStatus]);
 
   async function signIn(event: React.FormEvent) {
@@ -662,7 +683,18 @@ export default function AdminGate() {
 
       <section className="card p-4" data-testid="ai-inbox">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-ink-500">Chatgram AI inbox ({inboxTotal})</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-ink-500">
+            Chatgram AI inbox ({inboxTotal})
+            {inboxUnread.new > 0 ? (
+              <span
+                className="ml-2 inline-flex items-center gap-1 rounded-full bg-brand-600 px-2 py-0.5 text-[10.5px] font-bold normal-case tracking-normal text-white"
+                data-testid="inbox-unread-badge"
+                title={`${inboxUnread.unknown} unknown, ${inboxUnread.lowConfidence} low confidence, ${inboxUnread.supportTimeout} support timeouts, ${inboxUnread.negativeFeedback} thumbs down`}
+              >
+                {inboxUnread.new} new
+              </span>
+            ) : null}
+          </h2>
           <select className="field h-8 w-[130px] text-[12px]" value={inboxStatus} onChange={(event) => setInboxStatus(event.target.value)} aria-label="Inbox filter">
             <option value="new">New</option>
             <option value="answered">Answered</option>

@@ -100,6 +100,15 @@ const sendMessage = async (req, res) => {
       .answerSupportChat(message, realtime.getIo())
       .catch(() => {});
 
+    // 9e (e): no support reply within 60 s -> an admin Inbox record.
+    const watchdog = require('../support/supportWatchdog');
+    watchdog
+      .isSupportThreadMessage(chat, populated)
+      .then((isSupportThread) => {
+        if (isSupportThread) watchdog.watchSupportMessage(chat, populated);
+      })
+      .catch(() => {});
+
     require('../support/replyHook')
       .propagateSupportReply(message, realtime.getIo())
       .catch(() => {});

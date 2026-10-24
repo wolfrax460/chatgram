@@ -11,6 +11,15 @@ router.get('/health', async (req, res) => {
   return res.json({ ai: ai.aiHealth(), blockedTopicsConfigured: Boolean(process.env.AI_BLOCKED_TOPICS) });
 });
 
+// Live badge counters for the dashboard (polled every 15 s by the admin UI).
+router.get('/inbox/unread', async (req, res) => {
+  try {
+    return res.json(await ai.inboxUnreadCount());
+  } catch (error) {
+    return res.status(500).json({ message: 'Could not load the inbox counters.' });
+  }
+});
+
 router.get('/inbox', async (req, res) => {
   try {
     const result = await ai.listInbox({
