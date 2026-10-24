@@ -39,14 +39,14 @@ Deploy record + rollback commands: `docs/deploy.md`.
 
 ### Next session starts here (in order — remaining queue)
 
-1. Section 9 remainder: chat-list pin/archive/mark-unread/delete, link previews, offline send
-   queue, list virtualization, @mention highlighting in the list.
-2. Calls: WebRTC voice/video with TURN credentials endpoint + incoming-call UI; document a
-   LiveKit plan for group calls (docs only for now).
-3. Notifications: FCM/Android push with deep links, taskbar badge verification, DND; then the
-   Android APK build (Gradle distribution is still blocked — use a mirror or document the step).
-4. Quality gate: remove `any` from the admin page, delete the stale server/server/ legacy copy if
-   unused, run the whole suite, and only then hand over for deployment.
+Done so far (all deployed): auth layout fix, docs tidy, full production deploy,
+AI layer switch, group photo, message edit/forward/star/report, join-request approval,
+do-not-disturb notifications.
+
+Remaining:
+1. Calls: WebRTC voice/video signalling endpoints + TURN credentials + incoming-call UI.
+2. Offline send queue and message-list virtualization (plus link previews if time).
+3. Quality gate: remove `any` from the admin page, delete dead legacy files, final sweep.
 
 ### Working commands
 
