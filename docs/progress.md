@@ -39,14 +39,16 @@ Deploy record + rollback commands: `docs/deploy.md`.
 
 ### Next session starts here (in order — remaining queue)
 
-Done so far (all deployed): auth layout fix, docs tidy, full production deploy,
-AI layer switch, group photo, message edit/forward/star/report, join-request approval,
-do-not-disturb notifications.
+Done and deployed: auth layout fix, docs tidy, full production deploy, AI layer switch,
+group photo, message edit/forward/star/report, join-request approval, do-not-disturb,
+WebRTC 1:1 voice calls.
 
 Remaining:
-1. Calls: WebRTC voice/video signalling endpoints + TURN credentials + incoming-call UI.
-2. Offline send queue and message-list virtualization (plus link previews if time).
-3. Quality gate: remove `any` from the admin page, delete dead legacy files, final sweep.
+1. Offline send queue (retry failed messages when the socket reconnects) and message-list
+   virtualization for very long conversations; link previews if time allows.
+2. Quality gate: remove `any` from the admin page, delete dead legacy files (e.g. the old
+   `server/server` copy if unused), run the whole suite, then deploy with the recorded
+   procedure.
 
 ### Working commands
 
