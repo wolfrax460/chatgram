@@ -1281,3 +1281,27 @@ svg {
 .docs-foot { border-top: 1px solid var(--line); padding: 26px 0; font-size: 13px; color: var(--muted); }
 .docs-foot a { color: var(--text-soft); }
 .docs-foot a:hover { color: var(--brand); }
+
+/* --------------------------------------------------- preview / screenshots */
+/* Two phone shots side by side, then one full-width desktop shot underneath. */
+.shots-phones {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 620px;
+  margin: 0 auto 36px;
+}
+.shots-phones .shot-frame { border-radius: 30px; }
+.shot-wide { margin: 0; }
+.shot-wide .shot-frame { padding: 9px; border-radius: 20px; }
+.shot-wide .shot-frame img { border-radius: 13px; display: block; }
+.shot-wide figcaption { margin-top: 16px; }
+
+@media (max-width: 640px) {
+  .shots-phones {
+    grid-template-columns: 1fr;
+    max-width: 300px;
+    gap: 22px;
+    margin-bottom: 26px;
+  }
+  .shot-wide .shot-frame { padding: 6px; border-radius: 14px; }
+  .shot-wide .shot-frame img { border-radius: 9px; }
+}

@@ -112,13 +112,18 @@ The React app is served at `/web/` and the marketing site + `/docs` at `/`.
 Both are deployed together from the landing project.
 
 ```powershell
-npm run build -w @chatgram/web
-npm run build --prefix client/landing
-Remove-Item -Recurse -Force client/landing/dist/web -ErrorAction SilentlyContinue
-Copy-Item -Recurse apps/web/dist client/landing/dist/web
-cd client/landing
-npx vercel --prod --yes
+powershell -ExecutionPolicy Bypass -File scripts/deploy-web.ps1
 ```
+
+That script builds both bundles, assembles `.vercel/output` (Build Output API),
+deploys with `--prebuilt`, and checks the four production URLs. Use `-SkipBuild`
+to re-deploy files that are already built.
+
+> **Do not run a bare `npx vercel --prod` from `client/landing`.**
+> Vercel then runs its own `vite build` from the uploaded source, which empties
+> `dist/` and silently deletes the copied `dist/web` — the landing updates while
+> `/web/` starts returning **404**. This happened on 2026-10-24 and was fixed by
+> switching to the prebuilt flow above.
 
 Then verify:
 

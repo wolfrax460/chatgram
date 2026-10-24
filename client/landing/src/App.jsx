@@ -98,6 +98,7 @@ function Nav({ mode, setMode }) {
     ['#preview', 'Preview'],
     ['#security', 'Privacy'],
     ['#download', 'Download'],
+    ['#whats-new', "What's new"],
     ['#faq', 'FAQ'],
   ];
 
@@ -151,7 +152,8 @@ function Hero({ sizes }) {
           </h1>
           <p className="lead">
             Chatgram keeps you close to the people who matter — real-time chat, voice notes,
-            photos, groups and status updates, on Android, Windows or right in your browser.
+            photos, groups and 24-hour status, with two-step verification and privacy you
+            actually control. On Android, Windows or right in your browser.
           </p>
           <div className="hero-actions">
             <a className="btn btn-primary btn-lg" href="/web/">
@@ -204,7 +206,7 @@ function Footer() {
         </div>
         <div className="foot-bottom">
           <span>© {new Date().getFullYear()} Chatgram. All rights reserved.</span>
-          <span>Built with Flutter · Node.js · MongoDB</span>
+          <span>Built with React · Node.js · MongoDB</span>
         </div>
       </div>
     </footer>
@@ -230,7 +232,7 @@ export default function App() {
           id="features"
           eyebrow="Features"
           title="Everything you need to stay in touch"
-          lead="Built for fast, everyday conversations — nothing you do not need, nothing getting in the way."
+          lead="Every item below is live in the app today — not a someday list."
         >
           <Features />
         </Section>

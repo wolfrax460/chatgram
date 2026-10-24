@@ -130,6 +130,30 @@ export const Icon = {
       <path d="M8 20h8M12 16v4" />
     </svg>
   ),
+  bell: (
+    <svg viewBox="0 0 24 24" {...stroke}>
+      <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+    </svg>
+  ),
+  help: (
+    <svg viewBox="0 0 24 24" {...stroke}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.6 9.2a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2-2.4 3.5" />
+      <path d="M12 17h.01" />
+    </svg>
+  ),
+  pin: (
+    <svg viewBox="0 0 24 24" {...stroke}>
+      <path d="M9 3h6l-1 6 4 3v2H6v-2l4-3-1-6Z" />
+      <path d="M12 14v7" />
+    </svg>
+  ),
+  phone: (
+    <svg viewBox="0 0 24 24" {...stroke}>
+      <path d="M6.5 3.5h3l1.4 4-2 1.4a12 12 0 0 0 5.2 5.2l1.4-2 4 1.4v3a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.5 5.7 2 2 0 0 1 6.5 3.5Z" />
+    </svg>
+  ),
 };
 
 /* -------------------------------------------------------------- primitives */
@@ -153,9 +177,9 @@ export function Section({ id, eyebrow, title, lead, children, alt = false }) {
 /* ------------------------------------------------------------ quick facts */
 const FACTS = [
   { icon: Icon.devices, label: '3 platforms', sub: 'Android, Windows, Web' },
-  { icon: Icon.shield, label: 'Private by default', sub: 'Contacts are yours alone' },
-  { icon: Icon.lock, label: 'Encrypted in transit', sub: 'HTTPS and WSS only' },
-  { icon: Icon.server, label: 'Self-hosted', sub: 'No adverts, no tracking' },
+  { icon: Icon.key, label: 'Two-step verification', sub: 'TOTP with recovery codes' },
+  { icon: Icon.shield, label: 'Privacy per contact', sub: 'You decide what each person sees' },
+  { icon: Icon.server, label: 'No adverts, no tracking', sub: 'Your conversations are not the product' },
 ];
 
 export function Facts() {
@@ -179,7 +203,7 @@ const FEATURES = [
   {
     icon: Icon.chat,
     title: 'Real-time chat',
-    body: 'Messages arrive the instant they are sent over a live connection, with delivered and read receipts.',
+    body: 'Messages arrive the instant they are sent, with delivered and read receipts, typing indicators and optimistic sending that recovers from a dropped connection.',
   },
   {
     icon: Icon.mic,
@@ -188,33 +212,53 @@ const FEATURES = [
   },
   {
     icon: Icon.image,
-    title: 'Photos & video',
-    body: 'Send images and videos that open full-screen with pinch-to-zoom and in-app playback.',
+    title: 'Photos, video & files',
+    body: 'Send images, video and documents. Media opens full-screen, and uploads show real progress with cancel and retry.',
+  },
+  {
+    icon: Icon.phone,
+    title: 'One-to-one voice calls',
+    body: 'Call a contact directly in the app over WebRTC — with ringing, mute, a call timer and a clean hang-up.',
   },
   {
     icon: Icon.users,
-    title: 'Group chats',
-    body: 'Bring people together, add or remove members, and promote admins to help manage the group.',
+    title: 'Groups with real tools',
+    body: 'Group photo, admins, member roles and permissions. The last admin leaving promotes the next member, so a group is never orphaned.',
+  },
+  {
+    icon: Icon.shield,
+    title: 'Approval & invite links',
+    body: 'Require an admin to approve new members, or share a revocable invite link. People request to join; you decide.',
+  },
+  {
+    icon: Icon.pin,
+    title: 'Powerful message actions',
+    body: 'Reply, edit, forward, star, pin, react, @mention and report — with “seen by” lists on group messages.',
   },
   {
     icon: Icon.clock,
-    title: 'Status updates',
-    body: 'Share a moment that disappears after 24 hours, and see exactly who viewed it.',
+    title: '24-hour status',
+    body: 'Share photos, video or audio that vanish after a day. See exactly who viewed them, and the files are deleted when they expire.',
   },
   {
-    icon: Icon.search,
-    title: 'Private contacts',
-    body: 'Add people by name, email or phone. Only the contacts you add can appear in your list.',
+    icon: Icon.key,
+    title: 'Two-step verification',
+    body: 'Protect your account with an authenticator app and ten single-use recovery codes. Passwords are changeable from Settings.',
   },
   {
     icon: Icon.eyeOff,
-    title: 'Presence control',
-    body: 'Hide your online status from everyone, or keep it visible and hide it from specific people.',
+    title: 'Privacy and safety',
+    body: 'Choose who sees your online status, last seen, photo, about, phone and email. Block, mute or report anyone who crosses a line.',
   },
   {
-    icon: Icon.devices,
-    title: 'One account, everywhere',
-    body: 'Sign in on Android, Windows and the web with the same account and pick up where you left off.',
+    icon: Icon.bell,
+    title: 'Do not disturb',
+    body: 'Set quiet hours once and they follow you to every device — notifications and sounds stay silent until morning.',
+  },
+  {
+    icon: Icon.help,
+    title: 'Help centre & AI assistant',
+    body: '37 searchable help articles, an AI assistant that answers instantly, and a one-tap hand-off to a human when it cannot.',
   },
 ];
 
@@ -233,24 +277,45 @@ export function Features() {
 }
 
 /* ------------------------------------------------------------ screenshots */
-const SHOTS = [
-  { src: '/assets/android-app.png', alt: 'Chatgram chat list on Android', caption: 'Your conversations' },
-  { src: '/assets/android-register.png', alt: 'Chatgram sign-up screen', caption: 'Sign up in seconds' },
-  { src: '/assets/android-landing.png', alt: 'Chatgram welcome screen', caption: 'Built for every platform' },
+const PHONE_SHOTS = [
+  {
+    src: '/assets/web-chat-list.png',
+    alt: 'Chatgram chat list showing unread badges and read receipts',
+    caption: 'Your conversations',
+  },
+  {
+    src: '/assets/web-conversation.png',
+    alt: 'A real-time Chatgram conversation with delivery ticks',
+    caption: 'Live chat with delivery and read ticks',
+  },
 ];
+
+const WIDE_SHOT = {
+  src: '/assets/web-desktop.png',
+  alt: 'Chatgram three-pane desktop layout: navigation, chat list and conversation',
+  caption: 'The full three-pane layout on a larger screen',
+};
 
 export function Screenshots() {
   return (
-    <div className="shots">
-      {SHOTS.map(({ src, alt, caption }) => (
-        <figure className="shot" key={src}>
-          <div className="shot-frame">
-            <img src={src} alt={alt} loading="lazy" />
-          </div>
-          <figcaption>{caption}</figcaption>
-        </figure>
-      ))}
-    </div>
+    <>
+      <div className="shots shots-phones">
+        {PHONE_SHOTS.map(({ src, alt, caption }) => (
+          <figure className="shot" key={src}>
+            <div className="shot-frame">
+              <img src={src} alt={alt} loading="lazy" />
+            </div>
+            <figcaption>{caption}</figcaption>
+          </figure>
+        ))}
+      </div>
+      <figure className="shot shot-wide">
+        <div className="shot-frame">
+          <img src={WIDE_SHOT.src} alt={WIDE_SHOT.alt} loading="lazy" />
+        </div>
+        <figcaption>{WIDE_SHOT.caption}</figcaption>
+      </figure>
+    </>
   );
 }
 
@@ -263,18 +328,28 @@ const SECURITY = [
   },
   {
     icon: Icon.key,
-    title: 'Short-lived sessions',
-    body: 'Access tokens are valid for minutes and refresh automatically. Signing out revokes the session server-side.',
-  },
-  {
-    icon: Icon.users,
-    title: 'Contacts stay private',
-    body: 'Contact lists are personal. Nobody can browse the directory of accounts — you add who you want.',
+    title: 'Two-step verification',
+    body: 'Add an authenticator app to your account, with ten single-use recovery codes in case you lose the phone.',
   },
   {
     icon: Icon.eyeOff,
-    title: 'You control presence',
-    body: 'Online status and last-seen are opt-in. Turn them off entirely, or hide them from chosen contacts.',
+    title: 'Privacy, per person',
+    body: 'Online status, last seen, photo, about, phone and email are each yours to switch off — and read receipts are optional.',
+  },
+  {
+    icon: Icon.devices,
+    title: 'Sessions you control',
+    body: 'Access tokens are short-lived and refreshed automatically. See every signed-in device and sign out the others in one tap. Changing your password does it for you.',
+  },
+  {
+    icon: Icon.shield,
+    title: 'Block, mute and report',
+    body: 'Blocked accounts cannot message or call you. Reports reach a real inbox, not a void.',
+  },
+  {
+    icon: Icon.server,
+    title: 'Guarded on the server',
+    body: 'Every chat, role and privacy rule is enforced server-side, never trusted from the app. Logins are rate limited and repeated failures lock the account temporarily.',
   },
 ];
 
@@ -318,10 +393,10 @@ const PLATFORMS = [
     icon: Icon.windows,
     label: 'Windows',
     title: 'Chatgram for Windows',
-    meta: 'ZIP · Portable, no installer',
+    meta: 'Installer · Unsigned',
     cta: 'Download for Windows',
     href: DOWNLOADS.windows,
-    note: 'Unzip anywhere and run chatgram.exe.',
+    note: 'If Windows warns you, choose “More info” then “Run anyway”.',
     req: 'Windows 10 or newer, 64-bit',
   },
   {
@@ -400,7 +475,26 @@ export function Steps() {
 /* --------------------------------------------------------------- changelog */
 const RELEASES = [
   {
-    version: '1.0.0',
+    version: '1.1',
+    date: 'October 2026',
+    items: [
+      'One-to-one voice calls over WebRTC, with ringing, mute, timer and hang-up',
+      'Two-step verification with an authenticator app and ten single-use recovery codes',
+      'Change your password from Settings — every other device is signed out automatically',
+      'Tap anyone to open their profile: photo, about, presence, common groups and shared media',
+      'Block, unblock, mute and report, with read-receipt privacy',
+      'Video and audio status updates, with auto-advance, hold to pause and arrow-key navigation',
+      'Group join-request approval and revocable invite links',
+      'Group permissions, pinned messages, @mentions, shared-media browser and “seen by”',
+      'Edit, forward, star, react to and report individual messages',
+      'Account settings: change email or phone, review active sessions, delete your account',
+      'Do-not-disturb schedule that follows you to every device',
+      'Help centre with 37 articles, an AI assistant and a one-tap hand-off to a human',
+      'Rebuilt sign-in and sign-up that fit short laptop screens without clipping',
+    ],
+  },
+  {
+    version: '1.0',
     date: 'October 2026',
     items: [
       'First public release for Android, Windows and the web',
@@ -439,11 +533,11 @@ export function Changelog() {
 
 /* ----------------------------------------------------------------- roadmap */
 const ROADMAP = [
-  { status: 'next', title: 'End-to-end encrypted messages', body: 'Encrypt message contents so only the two participants can read them.' },
+  { status: 'next', title: 'End-to-end encrypted messages', body: 'Encrypt message contents so only the two participants can read them — the server included.' },
+  { status: 'next', title: 'Group and video calls', body: 'Video and multi-person calls on top of the voice calling that shipped today.' },
   { status: 'next', title: 'Push notifications', body: 'Get notified when the app is closed, on Android and Windows.' },
   { status: 'planned', title: 'Message search', body: 'Search across all of your conversations.' },
-  { status: 'planned', title: 'Video calling', body: 'One-to-one and group video calls.' },
-  { status: 'planned', title: 'Message backup & export', body: 'Download your own conversation history at any time.' },
+  { status: 'planned', title: 'Backup and export', body: 'Download your own conversation history at any time.' },
 ];
 
 export function Roadmap() {
@@ -470,7 +564,15 @@ const FAQS = [
   },
   {
     q: 'Do I need a separate account for each device?',
-    a: 'No. One account works on Android, Windows and the web. Sign in with the same email on every device.',
+    a: 'No. One account works on Android, Windows and the web. Sign in with the same email on every device and your chats are already there.',
+  },
+  {
+    q: 'Can I use it without installing anything?',
+    a: 'Yes — open the web app in any modern browser. Nothing to download, and it is the same account and interface as the installed apps.',
+  },
+  {
+    q: 'Is there two-step verification?',
+    a: 'Yes. In Settings → Security you can add an authenticator app by scanning a QR code, and you get ten single-use recovery codes in case you lose the phone.',
   },
   {
     q: 'How do I install the Android app?',
@@ -478,23 +580,27 @@ const FAQS = [
   },
   {
     q: 'Windows shows a warning when I start the app. Is that normal?',
-    a: 'Yes. The app is not code-signed, so Windows SmartScreen may warn you the first time. Choose “More info” then “Run anyway”.',
+    a: 'Yes. The installer is not code-signed yet, so Windows SmartScreen may warn you the first time. Choose “More info” then “Run anyway”.',
   },
   {
     q: 'Who can see when I am online?',
-    a: 'You decide. In Settings → Privacy you can hide your online status from everybody, or keep it on and hide it from specific contacts.',
+    a: 'You decide. In Settings → Privacy each item — online status, last seen, profile photo, about, phone and email — can be switched off, and read receipts are optional too.',
   },
   {
     q: 'Are my messages end-to-end encrypted?',
-    a: 'Not yet. Messages are currently encrypted in transit (HTTPS/WSS) and stored on the server, but not end-to-end encrypted. End-to-end encryption is the top item on the roadmap.',
+    a: 'Not yet. Messages are encrypted in transit (HTTPS/WSS) and stored on the server, but the server can read them. End-to-end encryption is the top item on the roadmap.',
   },
   {
-    q: 'Can I use Chatgram with people on another network?',
-    a: 'Yes. The apps connect to a hosted server over the internet, so you can chat with anyone anywhere as long as they have an account.',
+    q: 'What if I cannot find an answer?',
+    a: 'The in-app help centre has 37 articles and an AI assistant that answers from them. If it cannot help, one tap hands the conversation to a person and creates a support ticket.',
+  },
+  {
+    q: 'Can I make calls?',
+    a: 'Yes — one-to-one voice calls are built in. Open a chat with a contact and tap the phone icon. Video and group calls are still on the roadmap.',
   },
   {
     q: 'What happens to my photos and voice notes?',
-    a: 'They are stored in the cloud and referenced by the app, so they stay available across your devices rather than living only on the machine that uploaded them.',
+    a: 'They are stored in the cloud and referenced by the app, so they stay available across your devices rather than living only on the machine that uploaded them. Status media is deleted when it expires after 24 hours.',
   },
 ];
 
