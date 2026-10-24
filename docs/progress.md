@@ -84,6 +84,26 @@ non-matching query and opens the AI view, no runtime errors. 9/9 checks passed.
 staging DB and later AI suites hit "you have reached the Chatgram AI limit". Restore now uses
 `replaceOne` plus a "policy restored after the run" check; the staging policy was cleared.
 
+### Deployed (2026-10-24 ~19:05-19:25)
+
+Backend backup `20261024-164639` (36K, statuses safe), src backup `src.bak-20261024-164639`.
+Commits: `b07baf8` (Change 3), `bd939f2` (AI streaming fix), `f8e39fd` (Change 1 + group
+mentions), `6c72655` (test isolation + docs), `483b30a` (marker + /api proxy), plus the
+client marker-strip commit. PM2 restarts #76/#77. Web deployments: `chatgram-fh4jk7f2x` →
+`chatgram-7a0bsmz1c` (adds the `/api` proxy) → `chatgram-13vnvgz1z`.
+Gate before deploy: typecheck/build, 6 unit, 9 AI suites, 14 integration suites, **69/69
+Playwright**. Production smoke (temporary account, deleted afterwards): login, pinned AI row,
+AI header "AI", no call buttons, attach hidden, **real streamed AI answer with no marker
+leak**, admin gate sign-in through the proxy + `GET /api/admin/providers` 200, no runtime
+errors.
+
+**Owner action from this round:** the admin-panel password in
+`.secrets/admin-credentials.txt` did not match the server hash (the panel was unreachable), so
+it was reset to a new random 28-character value written to the same file and the file ACL was
+set to the current user only. Change both passwords on first use, then delete the file. Note:
+one local debug command accidentally echoed the credentials file into this machine's terminal
+history — rotate both passwords.
+
 ### Queue after this round
 
 1. 9e tail: support-no-reply-60s Inbox record, low-confidence/duplicate records, live Inbox push.

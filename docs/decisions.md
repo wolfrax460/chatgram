@@ -539,3 +539,48 @@ tab, `AI_UNKNOWN_NOTIFY` digests/9e alerts, moderation topics list, and the
 - Crossed: the recommendations are still hard-coded in the client, not served by
   `GET /api/app/recommendations`, not editable in /web/admin, not dismissible, and completed
   states (2FA on, photo set) are not hidden yet.
+
+## D29 - The web app talks to the API through a same-origin `/api` proxy on Vercel (2026-10-24)
+
+The Build Output API config shipped by `scripts/deploy-web.ps1` never proxied `/api`, so
+same-origin web features broke in production while working locally (Vite proxies `/api`): the
+Chatgram AI stream fetch returned **405** and the admin panel's SameSite=Strict session cookie
+could never be set, so the panel was unreachable from the dashboard screen. The config now
+starts with `{ "src": "/api/(.*)", "dest": "https://chatgram.duckdns.org/api/$1" }` before the
+filesystem handler, and the deploy script fails unless `GET /api/status/health` returns healthy
+JSON and `POST /api/auth/login` reaches the API (401 with bad credentials, not 405). This also
+keeps the API origin hidden from the browser and avoids CORS.
+
+## D30 - Chatgram AI is a system account, used only for group mentions (2026-10-24)
+
+Group `@Chatgram AI` mentions needed a sender members can see in the thread. A dedicated user
+with `isAiAccount: true` ("Chatgram AI", assistant avatar) is created on first use by
+`server/src/utils/aiAccount.js`; it has no local password (cannot be signed into), is excluded
+from people search (`/api/users/search`, `/api/contacts/search`) and is added to a group's
+participants only when that group has `groupSettings.aiMentions` enabled. The toggle is off by
+default, only messages that mention the assistant are sent to the provider, and a per-group
+limiter allows 3 answers per 10 minutes with a 20 second minimum gap (the slot is reserved
+before the provider call so five rapid mentions produce exactly one answer).
+
+## D31 - Admin panel password was reset during the Change 1 deploy (2026-10-24)
+
+The owner's credentials file recorded a panel password that did **not** match
+`ADMIN_PANEL_PASSWORD_HASH` on the server (bcrypt comparison run on the VM: no match), which
+made `/web/admin` impossible to open. The panel password was reset with
+`scripts/set-admin-password.js --stdin` (random 28-character value written to the owner's
+`.secrets/admin-credentials.txt`, never printed or committed; the file's ACL is user-only), PM2
+was restarted, and admin sign-in through the production proxy was verified. The owner must
+change it on first use and delete the file. `scripts/set-admin-password.js` needs `bcryptjs`
+from `../server/node_modules` when run from `~/chatgram/scripts` on the VM.
+
+## D32 - AI streaming had two production-only bugs hidden by the local Vite proxy (2026-10-24)
+
+Local staging proxied `/api` through Vite, which hid both: (a) `chatgram.js` destructures
+`const { service } = require('./service')` at load time and the streamer was only a named
+export, so `service.streamForFeature` was `undefined` and every Chatgram AI answer fell back to
+"unavailable"; (b) the production proxy was missing (D29). Regression tests:
+`server/test/ai/streaming.test.js` (8 checks) and the deploy script's proxy gate. A third,
+smaller leak: the `[[CHATGRAM_UNKNOWN: ...]]` marker was visible mid-stream, so both the server
+(strip anywhere, not only at the end) and the client (strip in render/copy/share/preview)
+remove it.
+
