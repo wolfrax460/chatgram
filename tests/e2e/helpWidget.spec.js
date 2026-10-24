@@ -88,7 +88,7 @@ test.describe('help widget', () => {
     await page.getByRole('button', { name: /Talk to a person/ }).first().click();
     await page.getByLabel('Your email (so we can reply)').fill('widget-test@chatgram.test');
     await page.getByRole('button', { name: 'Send to the team' }).click();
-    await expect(page.getByText(/Your ticket is CG-/)).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByText(/Your ticket is CG-/).first()).toBeVisible({ timeout: 25_000 });
   });
 
   test('signed-in user gets a named greeting and the conversation survives a reload', async ({ page }) => {

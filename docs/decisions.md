@@ -249,3 +249,46 @@ multer actually wrote the file.
 expiry cleanup (`statusCleanup.test.js`), and 9 Playwright tests
 (`tests/e2e/status.spec.js`) with real PNG/WebM fixtures recorded through Chromium
 MediaRecorder (`tests/e2e/fixtures/generate-fixtures.js`).
+
+---
+
+## D15 - Help centre: articles in Mongo, guest conversations keyed by a random guestId (2026-10-24)
+
+**Decision:** the help centre has its own `Collection` and `Article` models seeded from
+`server/src/help/articles.seed.json` (idempotent upsert at boot), and widget
+conversations are `HelpConversation` + `HelpMessage` documents with 90-day TTL indexes.
+Guest conversations are authorised by the random `guestId` the widget generates and keeps
+in `sessionStorage` (>=16 chars) — the same trust model as a signed-out support session.
+Logged-in conversations are authorised by the session user.
+
+**Why not reuse SupportSettings.kb:** the KB is a single prompt blob for the AI. The help
+centre needs collections, article ordering, search snippets and an admin editor; keeping
+them separate means editing an article cannot break the AI prompt, and the existing KB
+editor keeps working.
+
+**AI:** answers use the best-matching articles as grounding; when AI is disabled/failing the
+server answers with the article text and states it does not know when nothing matches.
+
+**Human handoff:** creates a normal `SupportTicket` (same ID format, same Telegram/email
+notification) and links it to the conversation. Support replies in the desk conversation are
+mirrored into the widget by `help/replyBridge` (live via socket for logged-in users; guests
+get it on the widget's poll).
+
+**Status card:** `GET /api/status/health` is new; `GET /api/status` is the existing statuses
+(stories) feed and must not change, so the health check lives below it.
+
+## D16 - Provider-agnostic AI layer (2026-10-24)
+
+**Decision:** new `server/src/ai/` module with one `chat({messages, system, stream, signal})`
+interface over adapters (OpenAI-compatible covers most vendors, plus native Anthropic,
+Gemini and Cohere). Settings are env-first with database overrides; admin-saved keys are
+AES-256-GCM encrypted (`AI_SETTINGS_SECRET`), never returned (last 4 chars only). Includes
+retries/backoff, per-request timeouts, per-provider circuit breaker, ordered fallback chain
+ending in a KB-only answer, daily token budget, redaction before sending, and SSRF
+validation for admin-entered endpoints (https-only except allow-listed local model servers).
+
+**Not switched over yet:** the existing support assistant/agent still use the older
+`server/src/support/aiProvider.js` (5 backends). The new layer is wired to `/api/support/admin/ai`,
+`/test` and the admin panel; migrating the widget's AI calls to it is a follow-up (see
+docs/progress.md "next session starts here"). This was deliberate: switching live AI paths in
+the same session as the help-centre rebuild would have made rollback harder.

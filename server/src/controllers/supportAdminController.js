@@ -279,4 +279,52 @@ module.exports = {
   getTicketDetail,
   replyToTicketAdmin,
   PROVIDER_PRESETS,
+  getAiLayerSettings,
+  updateAiLayerSettings,
+  testAiLayer,
 };
+
+/* ------------------------------------------------- provider-agnostic AI layer */
+
+/** GET /api/support/admin/ai — provider, model, masked key, fallbacks, env names. */
+async function getAiLayerSettings(req, res) {
+  try {
+    const masked = await require('../ai/settings').maskedSettings();
+    const { diagnostics } = require('../ai/service');
+    return res.json({ ...masked, diagnostics: diagnostics() });
+  } catch (error) {
+    console.error('Get AI layer settings error:', error);
+    return res.status(500).json({ message: 'Could not load the AI settings.' });
+  }
+}
+
+/** PUT /api/support/admin/ai — save provider/model/base URL/key/limits/fallbacks. */
+async function updateAiLayerSettings(req, res) {
+  try {
+    const updated = await require('../ai/settings').updateSettings(req.body || {});
+    return res.json({ message: 'AI settings saved.', settings: updated });
+  } catch (error) {
+    if (error && error.code) {
+      return res.status(400).json({ message: error.message, code: error.code });
+    }
+    console.error('Update AI layer settings error:', error);
+    return res.status(500).json({ message: 'Could not save the AI settings.' });
+  }
+}
+
+/** POST /api/support/admin/ai/test — tiny prompt; reports success, latency, error. */
+async function testAiLayer(req, res) {
+  try {
+    const body = req.body || {};
+    // An endpoint typed into this form must pass the same SSRF check as a saved one.
+    if (body.baseUrl) {
+      const checked = await require('../ai/ssrf').validateBaseUrl(body.baseUrl);
+      if (!checked.ok) return res.status(400).json({ ok: false, code: 'invalid_base_url', message: checked.message });
+    }
+    const result = await require('../ai/service').testConnection(body);
+    return res.status(result.ok ? 200 : 400).json(result);
+  } catch (error) {
+    console.error('Test AI layer error:', error);
+    return res.status(500).json({ ok: false, message: 'Could not test the provider.' });
+  }
+}

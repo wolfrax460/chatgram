@@ -17,6 +17,9 @@ const {
   listTickets,
   getTicketDetail,
   replyToTicketAdmin,
+  getAiLayerSettings,
+  updateAiLayerSettings,
+  testAiLayer,
 } = require('../controllers/supportAdminController');
 
 /** Only the built-in support account may use the dashboard. */
@@ -47,6 +50,10 @@ router.get('/admin/settings', requireSupportAccount, getAdminSettings);
 router.put('/admin/settings', requireSupportAccount, updateAdminSettings);
 router.get('/admin/stats', requireSupportAccount, getAdminStats);
 router.post('/admin/test-ai', requireSupportAccount, testAi);
+// Provider-agnostic AI layer (encrypted key, fallback chain, test connection).
+router.get('/admin/ai', requireSupportAccount, getAiLayerSettings);
+router.put('/admin/ai', requireSupportAccount, updateAiLayerSettings);
+router.post('/admin/ai/test', requireSupportAccount, testAiLayer);
 router.get('/admin/kb', requireSupportAccount, getKb);
 router.put('/admin/kb', requireSupportAccount, updateKb);
 router.post('/admin/kb/reset', requireSupportAccount, resetKb);

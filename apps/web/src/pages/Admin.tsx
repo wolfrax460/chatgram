@@ -157,12 +157,205 @@ function Overview({ settingsQuery }: { settingsQuery: any }) {
         </div>
       </section>
 
+      <AiProvidersPanel />
+
       <div className="sticky bottom-3 flex justify-end">
         <button type="button" onClick={() => save.mutate(form)} disabled={save.isPending} className="btn-primary inline-flex h-11 items-center gap-2 px-5 shadow-lg">
           {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save settings
         </button>
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------- AI providers (new layer) */
+
+/**
+ * Provider-agnostic AI settings: pick any provider, model and key, set limits
+ * and a fallback chain, then test the connection. The key is encrypted on the
+ * server and only its last 4 characters ever come back.
+ */
+function AiProvidersPanel() {
+  const qc = useQueryClient();
+  const [draft, setDraft] = useState<Record<string, any>>({});
+  const [apiKey, setApiKey] = useState('');
+  const [notice, setNotice] = useState('');
+  const [test, setTest] = useState<{ ok: boolean; latencyMs?: number; message?: string; code?: string } | null>(null);
+
+  const query = useQuery({ queryKey: ['admin-ai'], queryFn: () => api.request<any>('/api/support/admin/ai'), retry: false });
+
+  useEffect(() => {
+    if (query.data) setDraft(query.data);
+  }, [query.data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.request<any>('/api/support/admin/ai', {
+        method: 'PUT',
+        body: {
+          enabled: draft.enabled,
+          provider: draft.provider,
+          model: draft.model,
+          baseUrl: draft.baseUrl,
+          temperature: draft.temperature,
+          maxOutputTokens: draft.maxOutputTokens,
+          timeoutMs: draft.timeoutMs,
+          dailyTokenBudget: draft.dailyTokenBudget,
+          fallbacks: (draft.fallbacks ?? []).filter((f: any) => f.provider && f.model),
+          ...(apiKey ? { apiKey } : {}),
+        },
+      }),
+    onSuccess: (data) => {
+      setNotice(data?.message ?? 'Saved.');
+      setApiKey('');
+      qc.invalidateQueries({ queryKey: ['admin-ai'] });
+    },
+    onError: (error: any) => setNotice(error?.message ?? 'Could not save.'),
+  });
+
+  const runTest = useMutation({
+    mutationFn: () =>
+      api.request<any>('/api/support/admin/ai/test', {
+        method: 'POST',
+        body: { provider: draft.provider, model: draft.model, baseUrl: draft.baseUrl, ...(apiKey ? { apiKey } : {}) },
+      }),
+    onSuccess: (data) => setTest(data),
+    onError: (error: any) => setTest({ ok: false, message: error?.message ?? 'Test failed' }),
+  });
+
+  const providers: { id: string; label: string; needsKey: boolean; defaultBaseUrl: string; note: string | null }[] =
+    draft.providers ?? [];
+
+  return (
+    <section className="card p-4" data-testid="admin-ai">
+      <h2 className="mb-1 text-sm font-bold uppercase tracking-wide text-ink-500">AI providers (provider-agnostic)</h2>
+      <p className="mb-3 text-[12px] text-ink-500 dark:text-ink-400">
+        One interface for every provider. The key is encrypted at rest and only the last 4 characters are shown.
+        {draft.source ? ` Currently configured from ${draft.source}.` : ''}
+        {draft.keyLast4 ? ` Key ending ${draft.keyLast4}.` : ''}
+      </p>
+
+      {notice ? <p role="status" className="mb-2 rounded-lg bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">{notice}</p> : null}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="label">Provider</span>
+          <select
+            className="field h-10"
+            value={draft.provider ?? ''}
+            onChange={(e) => {
+              const provider = providers.find((p) => p.id === e.target.value);
+              setDraft((d) => ({ ...d, provider: e.target.value, baseUrl: provider?.defaultBaseUrl || '' }));
+            }}
+            aria-label="AI provider"
+          >
+            <option value="">(not set)</option>
+            {providers.map((provider) => (
+              <option key={provider.id} value={provider.id}>{provider.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="label">Model</span>
+          <input className="field h-10" value={draft.model ?? ''} onChange={(e) => setDraft((d) => ({ ...d, model: e.target.value }))} placeholder="Model name (no default is hardcoded)" aria-label="AI model" />
+        </label>
+        <label className="block sm:col-span-2">
+          <span className="label">Base URL</span>
+          <input className="field h-10" value={draft.baseUrl ?? ''} onChange={(e) => setDraft((d) => ({ ...d, baseUrl: e.target.value }))} placeholder="https://…" aria-label="AI base URL" />
+        </label>
+        <label className="block">
+          <span className="label">API key {draft.hasKey ? '(saved — leave blank to keep)' : ''}</span>
+          <input className="field h-10" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={draft.hasKey ? '••••••••' : 'Paste the key'} autoComplete="off" aria-label="AI API key" />
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="label">Max output tokens</span>
+            <input className="field h-10" type="number" value={draft.maxOutputTokens ?? 400} onChange={(e) => setDraft((d) => ({ ...d, maxOutputTokens: Number(e.target.value) }))} />
+          </label>
+          <label className="block">
+            <span className="label">Daily token budget</span>
+            <input className="field h-10" type="number" value={draft.dailyTokenBudget ?? 200000} onChange={(e) => setDraft((d) => ({ ...d, dailyTokenBudget: Number(e.target.value) }))} />
+          </label>
+          <label className="block">
+            <span className="label">Temperature</span>
+            <input className="field h-10" type="number" step="0.1" min="0" max="2" value={draft.temperature ?? 0.2} onChange={(e) => setDraft((d) => ({ ...d, temperature: Number(e.target.value) }))} />
+          </label>
+          <label className="block">
+            <span className="label">Timeout (ms)</span>
+            <input className="field h-10" type="number" value={draft.timeoutMs ?? 20000} onChange={(e) => setDraft((d) => ({ ...d, timeoutMs: Number(e.target.value) }))} />
+          </label>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-[13px]">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" className="h-4 w-4 rounded border-ink-300 text-brand-600" checked={Boolean(draft.enabled)} onChange={(e) => setDraft((d) => ({ ...d, enabled: e.target.checked }))} /> Enabled
+        </label>
+        <button type="button" className="btn-ghost inline-flex h-9 items-center gap-1.5 px-3" onClick={() => runTest.mutate()} disabled={runTest.isPending}>
+          {runTest.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />} Test connection
+        </button>
+        <button type="button" className="btn-primary inline-flex h-9 items-center gap-1.5 px-3" onClick={() => save.mutate()} disabled={save.isPending}>
+          {save.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save AI provider
+        </button>
+      </div>
+
+      {test ? (
+        <p className={`mt-2 rounded-lg px-3 py-2 text-[12.5px] ${test.ok ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300'}`} data-testid="admin-ai-test">
+          {test.ok ? `Connection OK — ${test.latencyMs} ms` : `Failed${test.code ? ` (${test.code})` : ''}: ${test.message ?? 'no answer'}`}
+        </p>
+      ) : null}
+
+      <div className="mt-3">
+        <div className="flex items-center justify-between">
+          <p className="text-[12px] font-bold uppercase tracking-wider text-ink-500">Fallback chain</p>
+          <button
+            type="button"
+            className="btn-ghost !py-1 text-[12px]"
+            onClick={() => setDraft((d) => ({ ...d, fallbacks: [...(d.fallbacks ?? []), { provider: 'openai', model: '' }] }))}
+          >
+            <Plus className="h-3.5 w-3.5" /> Add fallback
+          </button>
+        </div>
+        {(draft.fallbacks ?? []).length === 0 ? (
+          <p className="text-[12px] text-ink-500 dark:text-ink-400">No fallbacks. The chain ends with a knowledge-base-only answer.</p>
+        ) : null}
+        {(draft.fallbacks ?? []).map((fallback: any, index: number) => (
+          <div key={index} className="mt-1 flex gap-2">
+            <select
+              className="field h-9 flex-1"
+              value={fallback.provider}
+              onChange={(e) => setDraft((d) => {
+                const next = [...(d.fallbacks ?? [])];
+                next[index] = { ...next[index], provider: e.target.value };
+                return { ...d, fallbacks: next };
+              })}
+              aria-label={`Fallback ${index + 1} provider`}
+            >
+              {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
+            </select>
+            <input
+              className="field h-9 flex-1"
+              placeholder="model"
+              value={fallback.model}
+              onChange={(e) => setDraft((d) => {
+                const next = [...(d.fallbacks ?? [])];
+                next[index] = { ...next[index], model: e.target.value };
+                return { ...d, fallbacks: next };
+              })}
+              aria-label={`Fallback ${index + 1} model`}
+            />
+            <button
+              type="button"
+              className="btn-ghost !px-2 text-rose-500"
+              aria-label={`Remove fallback ${index + 1}`}
+              onClick={() => setDraft((d) => ({ ...d, fallbacks: (d.fallbacks ?? []).filter((_: unknown, i: number) => i !== index) }))}
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

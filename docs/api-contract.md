@@ -226,3 +226,47 @@ The Flutter client (**`client/lib/shared/services/socket_service.dart`**):
 ### Status expiry
 
 `Status.createdAt` no longer carries a TTL index. A scheduled job (`server/src/utils/statusCleanup.js`, started after MongoDB connects, every 10 minutes) deletes statuses older than 24 h **and their stored files**; `expiresAt` carries a 25 h TTL index as a safety net only. The legacy `createdAt` TTL index is dropped once on boot (safe to re-run). `DELETE /api/status/:id` deletes the file immediately.
+
+---
+
+## Session 3 additions (2026-10-24) — help centre + AI layer
+
+### Help centre (public)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/status/health` | `{ ok, database, socket, storage, time }`. **`/api/status` remains the statuses feed.** |
+| GET | `/api/help/collections` | collections + `articleCount` |
+| GET | `/api/help/collections/:slug` | collection + its articles |
+| GET | `/api/help/articles/:slug` | article + `collectionTitle` + related articles |
+| GET | `/api/help/search?q=` | title/summary/body/keyword search with snippets |
+| POST | `/api/help/uploads` | multipart attachment for a widget message (10 MB, rate limited) |
+
+### Help widget conversations (user or guest)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/help/conversations` | create/reuse an open conversation; guests send `guestId` (>=16 chars) |
+| GET | `/api/help/conversations?guestId=` | list mine (user via bearer, guest via guestId) |
+| GET | `/api/help/conversations/:id` | messages (owner only, 403 otherwise) |
+| POST | `/api/help/conversations/:id/messages` | `{ text?, attachments? }` → stores the message + assistant reply (`{ reply, source, matched, ticketId }`) |
+| POST | `/api/help/conversations/:id/read` | clear unread |
+| POST | `/api/help/conversations/:id/resolve` | status → resolved + system message |
+| DELETE | `/api/help/conversations/:id` | delete-my-data path |
+| POST | `/api/help/conversations/:id/handoff` | creates a `SupportTicket` (`CG-XXXXX`), links it, notifies the owner |
+| POST | `/api/help/conversations/:id/transcript` | email a copy (valid email required) |
+| POST | `/api/help/messages/:id/feedback` | `{ value: 'up'|'down' }` |
+
+Messages carry `role: user|assistant|agent|system`, optional `articleSlug` citation,
+attachments and feedback. Human replies are mirrored into the conversation by the support
+reply hook (`help/replyBridge`); guests poll while the widget is open.
+
+### Admin editor + AI settings (support account only)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET/PUT/DELETE | `/api/help/admin/collections[/:slug]` | article collections |
+| GET/PUT/DELETE | `/api/help/admin/articles[/:slug]` | articles (slug, collection, title, summary, body, keywords, published) |
+| GET | `/api/support/admin/ai` | effective AI settings, masked key (`hasKey`, `keyLast4`), providers, env names, diagnostics |
+| PUT | `/api/support/admin/ai` | save provider/model/baseUrl/key/limits/fallbacks (key encrypted at rest) |
+| POST | `/api/support/admin/ai/test` | tiny prompt; `{ ok, latencyMs, provider, model }` or `{ ok:false, code, message }` |

@@ -1,99 +1,143 @@
 # Migration Progress
 
-Running log. Updated as phases complete.
+Running log. Updated as phases/queue tasks complete.
 
-Last updated: 2026-10-21 (session 2)
+Last updated: 2026-10-24 (session 3)
 
 ---
 
-## SESSION 2 — NEXT SESSION STARTS HERE
+## SESSION 3 - NEXT SESSION STARTS HERE
 
-**Read this first. Then `docs/decisions.md`, then the ledger below.**
+**Read this first. Then docs/decisions.md, docs/ai-providers.md, docs/local-staging.md and the ledger below.**
 
-Branch: `master`. Last known commit at session start: `a5a325a`.
-Deploy policy: `no-prod-deploy` — nothing below has been deployed.
+Branch: master. Session started at a5a325a; work is committed locally in small commits.
+Deploy policy: no-prod-deploy - **nothing has been deployed to production.**
 
-Working commands:
+### Where the work queue stands
 
-```powershell
-npm run build -w @chatgram/web      # tsc --noEmit + vite build (the real quality gate)
-npm run typecheck                   # all workspaces (packages/ currently have no tsconfig — see FIX)
-node server/test/e2e.smoke.js       # backend smoke tests against the local stack
-```
+1. DONE C - change password (sessions invalidated, email notice, 30 integration assertions).
+2. DONE B (rest) - photo/video/voice statuses, viewer controls, upload progress/cancel/retry,
+   captions, 24h file cleanup (45 + 13 assertions, 9 Playwright tests).
+3. DONE D - profile panel with privacy rules, blocking, mute, report, shared groups/media
+   (57 assertions, 8 Playwright tests).
+4. PARTIAL E (rest) - groups done except group-photo upload UI and join-request approval mode
+   (61 assertions, 5 Playwright tests).
+5. DONE F - full Settings audit (32 assertions, 4 Playwright tests).
+6. DONE A4 + suites - 31 Playwright tests + 238 integration assertions on the local stack.
+7. PARTIAL W - help centre backend + 3-tab widget + handoff + admin editor done; widget strings
+   are English-only, no voice-note recording in the widget, article icons not rendered.
+8. PARTIAL P - provider-agnostic AI layer done (adapters, fallback chain, circuit breaker,
+   budget, redaction, SSRF, encrypted admin key, admin panel + test button, 29 unit tests).
+   NOT YET SWITCHED: the support assistant/agent still use the legacy support/aiProvider.js.
+9. NOT STARTED Section 9 (remaining messaging: calls, edit/forward/star, push notifications,
+   offline queue, virtualization, ...). Read receipts and unread handling were fixed along the way.
+10. PARTIAL Quality gate - tsc/build green after every edit, tests green, docs updated.
+    Remaining: bundle ~550 KB (needs manualChunks/code-splitting), some dead legacy files,
+    admin page uses any types.
 
-Local stack (see `docs/local-staging.md`): MongoDB on 127.0.0.1:27017,
-API on :5000 (`server/.env.local`), web on :5174 (`VITE_API_URL=http://localhost:5000`).
+### Next session starts here (in order)
+
+1. Switch the support/help AI calls to the new server/src/ai service (feature-flagged), re-run
+   node server/test/ai/ai.test.js and the help-widget Playwright spec; retire
+   support/aiProvider.js once the admin test button exercises the new layer.
+2. Group photo upload UI (PATCH accepts groupAvatar; needs upload endpoint + picker) and decide
+   on join-request approval mode.
+3. Section 9: edit/forward/star first, then notifications (mentions + DND), then calls
+   (WebRTC + TURN; docs-only LiveKit plan for group calls), then offline queue/virtualization.
+4. Quality gate: manualChunks bundle split, remove any from the admin page, delete the stale
+   server/server/ legacy copy if unused, run the whole suite again.
+
+### Working commands
+
+    npm run build -w @chatgram/web      # tsc --noEmit + vite build (the real quality gate)
+    npm run typecheck                   # all workspaces
+    npm run start:staging               # local API on :5000 against chatgram_staging (never prod)
+    npm run test:integration            # auth, status media/cleanup, profile, groups, account settings
+    npm run test:e2e                    # Playwright: status, profile, groups, settings, realtime, security, mobile, help widget
+    node server/test/ai/ai.test.js      # AI layer unit tests with mocked provider servers
+    node server/test/integration/helpCenter.test.js  # help-centre backend
+
+Local stack (see docs/local-staging.md): MongoDB on 127.0.0.1:27017, API on :5000
+(scripts/start-staging.ps1), web on :5174 (VITE_API_URL=http://127.0.0.1:5000).
+
+### Owner actions still pending (I cannot do these)
+
+- Rotate the Groq/DeepSeek/NVIDIA/Ollama keys and the Telegram bot token (assume compromised).
+- Add https://chatgram.duckdns.org/api/auth/google/callback to the Google Cloud Console
+  authorized redirect URIs.
+- Deploy the ready-to-deploy commits when satisfied (no prod deploy was done).
+- Play Store release keystore (sideload APK only for now).
 
 ---
 
 ## LEDGER (session 2, copied 2026-10-21)
 
-Legend: ✅ done and verified in the last session | 🟡 partial | ❌ not done | ❓ unknown, verify by auditing the code first
+Legend: âœ… done and verified in the last session | ðŸŸ¡ partial | âŒ not done | â“ unknown, verify by auditing the code first
 
 **Urgent bug list (A to F)**
-- ✅ A1 to A3: status photo upload crash fixed and verified
-- ✅ A4: automated upload test for image, audio and video (2026-10-21, commit: task 2)
-  - `server/test/integration/statusMedia.test.js` — 45 assertions: real PNG + real WAV + real video uploads, limits, wrong types, file-on-disk checks, file deletion on status delete.
-  - `tests/e2e/status.spec.js` — 9 Playwright tests with real fixtures (PNG, WebM video/audio recorded via Chromium MediaRecorder in `tests/e2e/fixtures/generate-fixtures.js`).
-- ✅ B1: status media no longer cropped (composer preview and viewer use contain + letterbox, 240px preview cap)
-- ✅ B2: video and audio status types (mp4/webm/mov, mp3/m4a/ogg/wav), client and server validation, limits (2026-10-21)
+- âœ… A1 to A3: status photo upload crash fixed and verified
+- âœ… A4: automated upload test for image, audio and video (2026-10-21, commit: task 2)
+  - `server/test/integration/statusMedia.test.js` â€” 45 assertions: real PNG + real WAV + real video uploads, limits, wrong types, file-on-disk checks, file deletion on status delete.
+  - `tests/e2e/status.spec.js` â€” 9 Playwright tests with real fixtures (PNG, WebM video/audio recorded via Chromium MediaRecorder in `tests/e2e/fixtures/generate-fixtures.js`).
+- âœ… B1: status media no longer cropped (composer preview and viewer use contain + letterbox, 240px preview cap)
+- âœ… B2: video and audio status types (mp4/webm/mov, mp3/m4a/ogg/wav), client and server validation, limits (2026-10-21)
   - `POST /api/status/media`, `GET /api/status/limits`; image 10 MB, video 50 MB/60 s, audio 20 MB. 415/413/400 codes; client validates before upload with the limit in the message.
-- ✅ B3: video thumbnail + duration limit / trim; audio player with waveform and cover placeholder (2026-10-21)
+- âœ… B3: video thumbnail + duration limit / trim; audio player with waveform and cover placeholder (2026-10-21)
   - Poster frame captured on canvas and uploaded as `thumbnailUrl`. Over-60 s videos are **rejected** (spec allows reject or trim; no trim editor built). Audio preview/player has a real waveform (Web Audio decode) + gradient cover placeholder.
-- ✅ B4: viewer auto-advance (5s + progress bar), hold to pause, arrow keys / tap for next and previous (2026-10-21)
+- âœ… B4: viewer auto-advance (5s + progress bar), hold to pause, arrow keys / tap for next and previous (2026-10-21)
   - Images and text statuses advance on a 5 s rAF clock with an accessible `role="progressbar"`; video/audio advance on `ended`; hold-to-pause with tap suppression; swipe left/right; arrow keys; Esc.
-- ✅ B5: upload progress bar, cancel and retry (2026-10-21)
+- âœ… B5: upload progress bar, cancel and retry (2026-10-21)
   - `api.uploadFileWithProgress` (XHR) drives a real percentage bar; AbortController cancels; the file stays selected so Post status = retry. Playwright verifies cancel + retry under throttled upload.
-- ✅ B6: caption for any media type (2026-10-21)
+- âœ… B6: caption for any media type (2026-10-21)
   - `Status.text` is the caption; composer labels it "Caption (optional)" when a file is selected; rendered under every media type in the viewer.
-- ✅ B7: delete stored file when a status expires or is deleted (2026-10-21)
+- âœ… B7: delete stored file when a status expires or is deleted (2026-10-21)
   - 10-minute cleanup job deletes >24 h statuses + files/posters; legacy `createdAt` TTL index dropped; `expiresAt` 25 h TTL safety net; delete endpoint removes the file immediately. `statusCleanup.test.js` verifies (13 assertions).
-- ✅ C: change password (Settings > Account, endpoint, session invalidation, email notice, tests) (2026-10-21)
-  - `POST /api/auth/change-password` + Settings → Account → Change password UI (strength meter, confirm, show/hide). Session generation (`tokenVersion`/`tv`) signs out every other device, keeps this one signed in; email notice; per-IP + per-account throttling. 30 integration assertions pass.
-- ❌ D: profile panel (tap a person anywhere, GET /api/users/:id/profile, privacy rules, actions)
-- ✅ E: group members list and leave group (backend + UI)
-- ❌ E (rest): add/remove members and promote/demote verified with permission tests, live member updates verified, last-admin handoff verified, empty-group handling, three-user automated tests
-- ❌ F: Settings audit (every control in every section works and saves)
+- âœ… C: change password (Settings > Account, endpoint, session invalidation, email notice, tests) (2026-10-21)
+  - `POST /api/auth/change-password` + Settings â†’ Account â†’ Change password UI (strength meter, confirm, show/hide). Session generation (`tokenVersion`/`tv`) signs out every other device, keeps this one signed in; email notice; per-IP + per-account throttling. 30 integration assertions pass.
+- âŒ D: profile panel (tap a person anywhere, GET /api/users/:id/profile, privacy rules, actions)
+- âœ… E: group members list and leave group (backend + UI)
+- âŒ E (rest): add/remove members and promote/demote verified with permission tests, live member updates verified, last-admin handoff verified, empty-group handling, three-user automated tests
+- âŒ F: Settings audit (every control in every section works and saves)
 
 **Already working in production (do not break)**
 Auth with 2FA + recovery codes, Google sign-in/up, support AI agent with Telegram two-way, dashboard inbox + reply, knowledge-base editor, group member roster and leave group, status photo upload and uncropped display, Settings/Contacts/Status full width, forgot-password reveal, Windows installer at `/downloads/chatgram-windows-setup.exe`, `/docs` Terms + Privacy.
 
 **Other open items**
-- ❌ Android APK: scaffolded, Gradle distribution download blocked (see Decisions)
-- ❌ Playwright / integration suite: needs the local staging stack (see Rules)
-- ❌ Google OAuth: add `https://chatgram.duckdns.org/api/auth/google/callback` as an authorized redirect URI in Google Cloud Console (I do this myself; without it Google sign-in fails with redirect_uri_mismatch)
-- ❌ Rotate the Groq, DeepSeek, NVIDIA and Ollama keys and the Telegram bot token (I do this myself)
+- âŒ Android APK: scaffolded, Gradle distribution download blocked (see Decisions)
+- âŒ Playwright / integration suite: needs the local staging stack (see Rules)
+- âŒ Google OAuth: add `https://chatgram.duckdns.org/api/auth/google/callback` as an authorized redirect URI in Google Cloud Console (I do this myself; without it Google sign-in fails with redirect_uri_mismatch)
+- âŒ Rotate the Groq, DeepSeek, NVIDIA and Ollama keys and the Telegram bot token (I do this myself)
 
-**Features requested but not confirmed built (audit each, then mark ✅/🟡/❌)** — audit result 2026-10-21:
-- 🟡 Help-center widget upgrade: a 1-tab widget exists (`components/SupportWidget.tsx`, ticket + guest socket + assistant); the 3-tab Home/Messages/Help spec, Article/Collection models and `/api/help/*` do not exist (section W below).
-- 🟡 Provider-agnostic AI layer: `server/src/support/aiProvider.js` already supports 5 backends with KB fallback; there is no `server/ai/` interface, no encrypted admin-saved keys, no fallback chain/circuit breaker/budget/redaction/SSRF (section P below).
-- ❌ Chatgram Assistant avatar: files `public/assistant-avatar.svg`, `assistant-512-circle.png` are NOT in `apps/web/public/`; create an original one.
-- 🟡 Chat basics: delivery/read ticks ✅, date separators ✅, unread divider ✅, typing ✅, drafts ✅, emoji picker ✅, search in chat ✅, reply ✅ (text-prefix), edit ❌, forward ❌, delete (me/everyone) ✅, reactions ✅, unread divider ✅. Missing: edit, forward, star, pin message, link previews.
-- 🟡 Chat list: unread badges ✅, previews ✅, pin ❌, archive ❌, mute ❌, search ✅, new chat ✅/new group ✅, sorted by recent ✅.
-- ❌ Calls (WebRTC voice/video with TURN) — nothing server-side or client-side.
-- 🟡 Notifications: desktop notifications ✅, tab title + favicon unread ✅, taskbar badge via desktop bridge (unverified) 🟡, Android push ❌, mention notifications ❌, DND ❌.
-- ❌ Security review (authorization on every endpoint and socket event, rate limits, upload checks) — not done systematically.
+**Features requested but not confirmed built (audit each, then mark âœ…/ðŸŸ¡/âŒ)** â€” audit result 2026-10-21:
+- 🟡 Help-center widget upgrade: 3-tab Home/Messages/Help widget + help-centre backend built (2026-10-24, commit: help): 10 collections / 37 seeded articles, Article+Collection models, search, conversations with assistant replies (/api/help/*), human handoff to a ticket, live agent reply bridge, transcript email, feedback, resolve/delete, admin article editor, GET /api/status/health status card. Gaps: widget strings English-only, no voice-note recording in the widget, article icons not rendered.
+- 🟡 Provider-agnostic AI layer: server/src/ai/ built (2026-10-24, commit: ai): one chat()/streamChat() interface; adapters for OpenAI-compatible (OpenAI, Azure, Groq, Together, OpenRouter, DeepSeek, xAI, Mistral, Ollama, LM Studio, llama.cpp, vLLM, custom), Anthropic, Gemini and Cohere; env-first config with encrypted admin keys; fallback chain + circuit breaker + retries/timeouts; daily token budget; redaction; SSRF checks; admin API + panel + Test connection; 29 mocked-server tests. NOT switched: support assistant/agent still use the legacy support/aiProvider.js.
+- âŒ Chatgram Assistant avatar: files `public/assistant-avatar.svg`, `assistant-512-circle.png` are NOT in `apps/web/public/`; create an original one.
+- 🟡 Chat basics: delivery/read ticks, date separators, unread divider, typing, drafts, emoji picker, search in chat, reply, delete me/everyone, reactions all work. Missing: edit, forward, star, generic pin (groups have a pinned message), link previews.
+- 🟡 Chat list: unread badges, previews, search chats, new chat/new group, sorted by recent, mute (server + profile + Settings) work. Missing: pin, archive, mark unread, delete chat.
+- âŒ Calls (WebRTC voice/video with TURN) â€” nothing server-side or client-side.
+- 🟡 Notifications: desktop notifications, tab title + favicon unread, mention notifications (group @mentions -> message:mention) work; taskbar badge via the desktop bridge is unverified; Android push and DND are not built.
+- 🟡 Security review: blocking/mute/read-receipt/who-can-add privacy enforced server-side; authorization tested across chats, groups, profile and help (Playwright security spec); XSS rendered as text (tested); upload type/size checks; rate limits on auth/status/help. Remaining: systematic endpoint-by-endpoint audit, secure-header review, socket event audit.
 
 ---
 
 
-## Phase 0 — Audit ✅ 5/6
+## Phase 0 â€” Audit âœ… 5/6
 
 | Task | Status |
 |---|---|
-| 1. Screen + feature inventory (Section 7) | ✅ `docs/migration-audit.md` §1–2 |
-| 2. API contract (REST + Socket.IO) → `docs/api-contract.md` | ✅ 41 REST endpoints, 8 client→server events, 13 server→client events |
-| 3. `pubspec.yaml` → React mapping (Section 6) | ✅ `docs/migration-audit.md` §3 |
-| 4. Local data / auth storage recorded | ✅ §4 |
-| 5. Android applicationId, signing, Windows packaging | ✅ §5 — **three blocking findings** |
-| 6. Staging backend running | ❌ **blocked** — see `blockers.md` B1 |
+| 1. Screen + feature inventory (Section 7) | âœ… `docs/migration-audit.md` Â§1â€“2 |
+| 2. API contract (REST + Socket.IO) â†’ `docs/api-contract.md` | âœ… 41 REST endpoints, 8 clientâ†’server events, 13 serverâ†’client events |
+| 3. `pubspec.yaml` â†’ React mapping (Section 6) | âœ… `docs/migration-audit.md` Â§3 |
+| 4. Local data / auth storage recorded | âœ… Â§4 |
+| 5. Android applicationId, signing, Windows packaging | âœ… Â§5 â€” **three blocking findings** |
+| 6. Staging backend running | âŒ **blocked** â€” see `blockers.md` B1 |
 
 **Exit criteria:** "contract doc complete, feature checklist complete, staging backend running."
-→ 5 of 6 done. Staging is an infrastructure decision the owner must make.
+â†’ 5 of 6 done. Staging is an infrastructure decision the owner must make.
 
 ---
 
-## Phase 1 — Backend freeze & hardening ⏸ not started
+## Phase 1 â€” Backend freeze & hardening â¸ not started
 
 Blocked on: staging (B1) for the exit criterion, and owner decisions on Android identity (B2/B3)
 for the `X-Client`/min-version work to be meaningful.
@@ -103,21 +147,21 @@ Ready to do immediately once unblocked (all additive, no breaking change):
 - [ ] Accept new CORS origins: staging web, `capacitor://localhost`, `https://localhost`,
       Electron origin, `http://localhost:*` in dev
 - [ ] Read + log `X-Client` / `X-Client-Version` headers
-- [ ] `GET /api/app/min-version` → `{ minVersion, platforms }`
+- [ ] `GET /api/app/min-version` â†’ `{ minVersion, platforms }`
 - [ ] Push token endpoints (`POST /api/push/register`, `DELETE /api/push/:token`) + `platform` field
 - [ ] Confirm socket handshake CORS for wrapped-app origins
 
 ---
 
-## Phase 2 — Web MVP ⏸ not started
+## Phase 2 â€” Web MVP â¸ not started
 
 Seed exists: `client/webapp/` (React 18 + Vite + Tailwind, ~70% of the feature set).
 
 - [ ] pnpm monorepo scaffold (`apps/web`, `apps/desktop`, `apps/mobile`, `packages/*`)
-- [ ] `packages/api-client` — typed REST client, refresh, error handling
-- [ ] `packages/realtime` — socket wrapper, reconnect (20 tries, 1s→5s), re-auth on reconnect
-- [ ] `packages/core` — models, Zod schemas, stores
-- [ ] `packages/ui` — design tokens + components
+- [ ] `packages/api-client` â€” typed REST client, refresh, error handling
+- [ ] `packages/realtime` â€” socket wrapper, reconnect (20 tries, 1sâ†’5s), re-auth on reconnect
+- [ ] `packages/core` â€” models, Zod schemas, stores
+- [ ] `packages/ui` â€” design tokens + components
 - [ ] `apps/web` shell, routing, theme tokens
 - [ ] Auth slice
 - [ ] Socket slice
@@ -127,18 +171,18 @@ Seed exists: `client/webapp/` (React 18 + Vite + Tailwind, ~70% of the feature s
 
 ---
 
-## Phase 3 — Feature parity ⏸ not started
+## Phase 3 â€” Feature parity â¸ not started
 
-Section 7 checklist: **0 / 15** ticked for React. See `migration-audit.md` §2 for the table.
+Section 7 checklist: **0 / 15** ticked for React. See `migration-audit.md` Â§2 for the table.
 
-Priority order per plan §8: groups → presence → status → media/voice → notifications → settings/privacy.
+Priority order per plan Â§8: groups â†’ presence â†’ status â†’ media/voice â†’ notifications â†’ settings/privacy.
 Plus: push notifications (greenfield) and deep links.
 
 ---
 
-## Phase 4 — Windows (Electron) ⏸ not started
+## Phase 4 â€” Windows (Electron) â¸ not started
 
-## Phase 5 — Android (Capacitor) ⏸ not started — **blocked on app id + keystore**
+## Phase 5 â€” Android (Capacitor) â¸ not started â€” **blocked on app id + keystore**
 
 ---
 
@@ -154,14 +198,14 @@ release keystore.
 Monorepo scaffolded and **building green** (	sc --noEmit strict + vite).
 
 - [x] Workspace root (\package.json\ workspaces, \	sconfig.base.json\)
-- [x] \packages/core\ — models (\User\, \Chat\, \Message\, \StatusItem\), JSON
+- [x] \packages/core\ â€” models (\User\, \Chat\, \Message\, \StatusItem\), JSON
       normalisers (\_id\/\id\ tolerance), display helpers, Zustand stores
       (session, theme, realtime, prefs)
-- [x] \packages/api-client\ — typed client: bearer auth, single-flight refresh +
+- [x] \packages/api-client\ â€” typed client: bearer auth, single-flight refresh +
       replay on 401, \ApiError\, one method per endpoint in docs/api-contract.md
-- [x] \packages/realtime\ — socket wrapper matching Flutter exactly: websocket +
-      polling fallback, 20 retries 1s→5s, re-emit \uthenticate\ on every connect
-- [x] \pps/web\ — React 18 + TS + Vite + Tailwind + lucide-react +
+- [x] \packages/realtime\ â€” socket wrapper matching Flutter exactly: websocket +
+      polling fallback, 20 retries 1sâ†’5s, re-emit \uthenticate\ on every connect
+- [x] \pps/web\ â€” React 18 + TS + Vite + Tailwind + lucide-react +
       TanStack Query + Zustand; login, session restore, chat list, conversation
       view, light/dark/system theme
 - [ ] React Router routes beyond the shell
@@ -177,7 +221,7 @@ see decisions.md D9).
 
 ## Phase 1 progress (2026-10-20)
 
-- [x] **CORS origins** — extracted isAlwaysAllowedOrigin/originAllowed in
+- [x] **CORS origins** â€” extracted isAlwaysAllowedOrigin/originAllowed in
       \server/src/server.js\. Always allows \http(s)://localhost:*\,
       \http(s)://127.0.0.1:*\, \capacitor://localhost\, \https://localhost\;
       the \CLIENT_URL\ allow-list still governs real domains. Socket.IO uses the
@@ -185,7 +229,7 @@ see decisions.md D9).
       *This fixed a real user-facing bug: the React dev server on
       \http://localhost:5174\ was rejected ("CORS: blocked origin"), so sign-in
       failed locally.*
-      Verified: localhost:5174 → 204 + ACAO; capacitor://localhost → ACAO;
+      Verified: localhost:5174 â†’ 204 + ACAO; capacitor://localhost â†’ ACAO;
       vercel origin still allowed; evil.example.com still gets no ACAO header.
 - [ ] \X-Client\ / \X-Client-Version\ logging
 - [ ] \GET /api/app/min-version\
@@ -208,19 +252,19 @@ see decisions.md D9).
 - **A6** Typing indicator in the chat header and in the chat-list row.
 - **B1-B5** Emoji picker (32 emoji), send/mic swap, Enter sends + Shift+Enter newline,
   textarea auto-grows to ~5 lines, per-chat drafts, attach menu (photo / document / camera).
-- **C1-C3** Header: in-chat search, call button, ⋮ menu; connection state shown only
-  when disconnected ("Reconnecting…"); subtitle is online / typing… / "last seen today at …".
+- **C1-C3** Header: in-chat search, call button, â‹® menu; connection state shown only
+  when disconnected ("Reconnectingâ€¦"); subtitle is online / typingâ€¦ / "last seen today at â€¦".
 - **D1-D4** Chat list: time, unread badge, tick or "You:" prefix, initials from first+last
   word, stable colour hash of the user id, profile photo when set, search bar, new-chat
   button, sorted by most recent.
 - **E1-E4** Message column capped at 860px centred, bubbles at 65%; received bubbles get a
   1px border; rail labels 11.5px with tooltips + aria-labels; logout confirmation dialog;
   secondary text moved to ink-600/ink-300 for WCAG AA.
-- **E5** 12h/24h time-format setting (Settings → Time format), persisted.
+- **E5** 12h/24h time-format setting (Settings â†’ Time format), persisted.
 - **F1-F2** Unread total in the tab title ("(2) Chatgram") and a badge drawn onto the
   favicon via canvas when unread > 0.
 
-### Not done (need backend additions — see decisions.md D10)
+### Not done (need backend additions â€” see decisions.md D10)
 - Message reactions, forward, delete-for-everyone, mute, block, clear-chat, calls.
 - "Test with two browser sessions" was not performed: no second set of live credentials
   was available in this environment. Type-check and production build pass.
@@ -233,12 +277,12 @@ All additive; existing documents and the Flutter client are unaffected.
 
 - \Message\: \eactions[{userId, emoji, createdAt}]\, \deletedFor[userId]\, \isDeleted\
   (+ indexes on \chatId+isDeleted\ and \deletedFor\).
-- \DELETE /api/messages/:id?scope=me|everyone\ — \me\ pushes to \deletedFor\;
+- \DELETE /api/messages/:id?scope=me|everyone\ â€” \me\ pushes to \deletedFor\;
   \everyone\ (sender only) sets \isDeleted\, clears content/media and emits
   \message:deleted\ to the chat room.
-- \POST /api/messages/:id/reactions\ \{ emoji }\ — one reaction per user, same
+- \POST /api/messages/:id/reactions\ \{ emoji }\ â€” one reaction per user, same
   emoji toggles off; emits \message:reaction\.
-- \DELETE /api/chats/:id/messages\ — per-user clear (pushes to \deletedFor\ for
+- \DELETE /api/chats/:id/messages\ â€” per-user clear (pushes to \deletedFor\ for
   every current message, so the other participant keeps their history).
 - \getMessages\ now filters \isDeleted: true\ and \deletedFor: <me>\.
 
@@ -280,7 +324,7 @@ graph against the *uploaded* file, not only the local one.
 - Phone **sign-up** now shows a clear message that phone registration is still in
   development and to use email (the UI previously let the server reject it).
 - /docs published: **Terms of Service** and **Privacy Policy** as a real page
-  (served from docs/index.html — the same SPA shell, routed by pathname in
+  (served from docs/index.html â€” the same SPA shell, routed by pathname in
   main.jsx). Sign-in/sign-up Terms and Privacy links deep-link to
   /docs#terms and /docs#privacy.
   Note: a Vercel ewrites entry for /docs did not take effect, so /docs is
@@ -327,7 +371,7 @@ above is the shared prerequisite for it, so it was done first.
 
 ---
 
-## Support widget — step 1 backend (2026-10-20)
+## Support widget â€” step 1 backend (2026-10-20)
 
 - **Model** SupportTicket: ticketId (CG-XXXXX), guestId, contact/contactType,
   status open|answered|closed, summary, transcript[], replies[], meta
@@ -342,7 +386,7 @@ above is the shared prerequisite for it, so it was done first.
   SUPPORT_NOTIFY_EMAIL when SMTP is configured.
 - **GET /api/support/tickets/:ticketId?contact=** (public, 30/hour per IP):
   returns status + replies only when the contact matches; otherwise 404.
-- **Nothing existing changed** — routes are mounted before \protect\.
+- **Nothing existing changed** â€” routes are mounted before \protect\.
 
 ### Deviation (documented)
 The spec asked for one conversation **per ticket** between a "Support Desk"
@@ -402,7 +446,7 @@ delete-my-ticket, Turnstile, Playwright suite, backend hardening.
 
 ## Support assistant: multi-provider AI proxy (2026-10-20)
 
-- **server/src/support/aiProvider.js** — one adapter, five backends:
+- **server/src/support/aiProvider.js** â€” one adapter, five backends:
   nthropic (Messages API), openai, gemini (generateContent),
   openai-compatible (any OpenAI-schema endpoint: Groq, OpenRouter, Together,
   DeepSeek, Mistral, Fireworks, Ollama, LM Studio, vLLM), and 
@@ -413,16 +457,16 @@ one.
   request timeout by AI_TIMEOUT_MS.
 - **POST /api/support/assistant** (public): rate limited 30/hour per guest and
   200/day per IP, max 12 messages x 1200 chars in, injects the knowledge base
-  into the system prompt, and **always answers** — when AI is disabled or the
+  into the system prompt, and **always answers** â€” when AI is disabled or the
   provider fails it returns a keyword-matched KB answer with source: "kb".
 - **Widget** now calls the assistant endpoint instead of answering locally;
   the local KB remains as an offline fallback.
 
 ### Verified live
-ssistantInfo() → {"enabled":false,"provider":"none"} (AI off by default).
+ssistantInfo() â†’ {"enabled":false,"provider":"none"} (AI off by default).
 POST /api/support/assistant with "I forgot my password" returned
-{"source":"kb","aiEnabled":false,"answer":"Passwords must be at least 8 characters…"}
-— note it matched the password-rules entry, which is the expected keyword
+{"source":"kb","aiEnabled":false,"answer":"Passwords must be at least 8 charactersâ€¦"}
+â€” note it matched the password-rules entry, which is the expected keyword
 behaviour until AI is enabled. Health OK, /api/config 200, /api/chats 401.
 
 ### Still to build
@@ -779,3 +823,98 @@ Video and audio status types, thumbnail generation, duration limits, viewer auto
 - Bug found+fixed: multer wrote local status files to `uploads/status/` while the URL
   said `uploads/videos/`, so local video/audio 404'd.
 - Also fixed: root `npm run typecheck` was broken (packages had no tsconfig.json).
+
+
+### D. Profile panel - DONE (commit be5a2c1)
+- `GET /api/users/:id/profile` (privacy-aware), `POST/DELETE /api/users/:id/block`,
+  `GET /api/users/me/blocked`, `POST /api/users/:id/report`,
+  `GET/POST/DELETE /api/users/me/muted[/:chatId]`, extended `GET/PUT /api/users/me/privacy`
+  (showPhone, showEmail, showAbout, showProfilePhoto, readReceipts, whoCanAddToGroups).
+- Blocking enforced in REST sendMessage, socket `message:send` and direct-chat creation.
+  A blocked person gets 404 for the profile; the blocker gets a minimal card so the block
+  can be undone from the same panel.
+- Read receipts: with `readReceipts:false` delivery is recorded but no `message:read` is
+  published/stored (sender never sees blue ticks).
+- UI: one `ProfilePanel` opened from chat header, chat list avatar, contacts, group member
+  list, status viewer and group message sender names. Large photo lightbox, about, phone/
+  email with copy, common groups, shared media/links, actions (message, voice/video call
+  placeholders, mute/unmute, block/unblock, report with reasons).
+- Verified: `server/test/integration/profile.test.js` 57/57, `tests/e2e/profile.spec.js` 8/8.
+
+
+### E (rest). Groups - DONE except two items (commit 603abe7)
+- Chat model: `groupDescription`, `groupCreatedBy`, `groupSettings
+  {whoCanEditInfo,whoCanSendMessages,whoCanAddMembers}`, `inviteToken`/`inviteEnabled`,
+  `pinnedMessageId`. Message model: `type: 'system'` + `mentionUserIds`.
+- Server: permission-aware `PATCH /api/chats/:id` (name/description/settings, system
+  messages), `POST/DELETE /api/chats/:id/admins` (last-admin guard), add/remove members
+  with "who can add" privacy + system messages, invite link endpoints
+  (`GET/POST/DELETE /:id/invite`, `GET /invite/:token`, `POST /invite/:token/join`),
+  `POST/DELETE /:id/pin`, `GET /:id/media`, `GET /api/messages/:id/readers`,
+  @mention detection + `message:mention` socket event, group send-permission check on
+  both REST and socket paths.
+- UI: rewritten group info panel (roster search, admin badges, add members, promote/
+  demote, remove, edit name/description, permission toggles, invite link, mute, leave),
+  media tab, pinned banner, "seen by" modal, centred system messages, invite preview
+  page, live list updates.
+- Verified: `server/test/integration/groups.test.js` 61/61; `tests/e2e/groups.spec.js`
+  5/5 (three-user roster + live update, non-admin controls hidden, promote + leave with
+  live system message, invite preview/join/land, pin banner).
+- Known gaps: no group photo upload UI; no join-request approval mode (links join
+  directly, which matches WhatsApp-style links).
+
+
+
+### A4 + test suites - DONE (commit: e2e)
+- Local staging stack: `scripts/start-staging.ps1` + `docs/local-staging.md` (local Mongo,
+  every real provider disabled, rate limits off for tests only outside production).
+- `tests/e2e/fixtures/generate-fixtures.js` produces real PNG/WebM video/audio via Chromium
+  MediaRecorder (no ffmpeg encoders in this environment).
+- Playwright suites (all passing, 31/31): status media 9, profile 8, groups 5, settings 4,
+  realtime (two isolated contexts: typing, live message, read ticks, unread badge) 1,
+  security (XSS rendered as text, cross-user authorization, login throttle) 3, mobile 1.
+- Bug found+fixed while testing: incoming messages in an open conversation were never
+  marked read, so senders never saw blue ticks. ChatWindow now sends read receipts for
+  unread incoming messages while the window is visible.
+- Integration suites (238 assertions total): changePassword 30, statusMedia 45,
+  statusCleanup 13, profile 57, groups 61, accountSettings 32.
+- Run with: `npm run test:integration` and `npm run test:e2e` (see docs/local-staging.md).
+
+
+
+---
+
+## Session 3 log (2026-10-21 to 2026-10-24)
+
+### F. Settings audit - DONE (commit 2dee8e8)
+Account (profile, password, email/phone with verification + current password, sessions/log out
+others, delete account with full data cleanup, 2FA), Privacy (all switches, hide-from list,
+blocked users with unblock), Notifications (permission, sounds, muted chats), Appearance (theme +
+text size), Language (en/rw/fr/sw persistence), Time format. Server: new /api/auth/account/*
+endpoints. Verified: 32 integration assertions + 4 Playwright tests.
+
+### A4 + suites - DONE (commit 2151957)
+Local staging stack (scripts/start-staging.ps1, docs/local-staging.md), real media fixtures
+generated via Chromium MediaRecorder, 31 Playwright tests, 238 integration assertions. Found and
+fixed: incoming messages in an open chat were never marked read (no blue ticks for senders).
+
+### W. Help centre + 3-tab widget - DONE except noted gaps (commit a1eaec0)
+Backend server/src/help/: models, seed (10 collections / 37 articles), public search/articles,
+guest+user conversations with assistant replies grounded on articles, handoff to a real
+SupportTicket, human reply bridge, transcript email, feedback, resolve/delete, admin article
+editor, GET /api/status/health. Widget rewritten: launcher, Home (greeting, recent message,
+status card, suggested articles), Messages (server-backed list), conversation (typing, citations,
+thumbs, attachments, emoji, handoff, email transcript, resolve, delete), Help (search, collections,
+article reader, was-this-helpful). Verified: 54 integration assertions + 5 Playwright tests.
+
+### P. Provider-agnostic AI layer - DONE except switching the live assistant (commit: ai)
+server/src/ai/: adapters (OpenAI-compatible family, Anthropic, Gemini, Cohere), one
+chat()/streamChat() interface, env-first + encrypted DB settings, fallback chain, retries,
+timeouts, abort support, circuit breaker, daily token budget, redaction, SSRF validation, admin
+API (GET/PUT /api/support/admin/ai, POST /test) and an admin panel with provider/model/key/limits/
+fallbacks + Test connection. 29 unit tests with mocked provider servers. Still to do: point the
+support assistant/agent at this layer (see "next session starts here").
+
+### Not done this session
+Section 9 (calls, edit/forward/star, push notifications, offline queue, virtualization, Android
+APK build, FCM) and the remaining quality-gate polish (bundle split, dead code, admin types).
