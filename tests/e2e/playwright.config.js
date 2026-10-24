@@ -28,6 +28,10 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
     video: 'off',
     viewport: { width: 1280, height: 800 },
+    launchOptions: {
+      // WebRTC calls need a camera/microphone in CI: use Chrome's fake devices.
+      args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+    },
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: '**/mobile.spec.js' },

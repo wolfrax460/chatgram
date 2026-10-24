@@ -475,6 +475,11 @@ export class ApiClient {
     };
   }
 
+  /** ICE servers (STUN/TURN) for WebRTC calls; TURN credentials stay server-side. */
+  iceServers() {
+    return this.request<{ iceServers: RTCIceServer[]; hasTurn: boolean; ttlSeconds: number }>('/api/calls/ice');
+  }
+
   /** Do-not-disturb schedule for desktop notifications and sounds. */
   notificationPrefs() {
     return this.request<{ dndEnabled: boolean; dndStart: string; dndEnd: string }>('/api/users/me/notifications');

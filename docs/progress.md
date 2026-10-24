@@ -1009,3 +1009,16 @@ DB `chatgram-backups/20261024-105120.tgz`, nginx `.bak-20261024`. Recorded in
   401 unauthenticated, PM2 online with no unstable restarts.
 - Rollback: previous Vercel deployment, `src.bak-20261024-114214`,
   `chatgram-backups/20261024-114214.tgz`.
+
+### Session 8 — WebRTC 1:1 calls (2026-10-24)
+- Server: `GET /api/calls/ice` (STUN/TURN from env, TURN credentials never exposed to the
+  client beyond the ICE payload) and authenticated socket signalling (`call:offer`,
+  `call:answer`, `call:ice`, `call:reject`, `call:end`) with shared-chat + block checks,
+  `call:unavailable` for offline users and `CALL_FORBIDDEN` for non-participants.
+- Web: `lib/calls.ts` (RTCPeerConnection, media, mute/camera, state store) + full-screen
+  `CallOverlay` (ring, accept/decline, timer, hang-up); ChatHeader phone button starts a
+  voice call in direct chats. Fake-media Playwright args enabled for the test suite.
+- Verified: `server/test/integration/calls.test.js` **16/16** and Playwright
+  `calls.spec.js` **2/2** (decline flow + accept → live timer → hang-up).
+- TURN is optional (`TURN_URLS/TURN_USERNAME/TURN_CREDENTIAL`); P2P works without it,
+  strict-NAT users need it configured on the server.

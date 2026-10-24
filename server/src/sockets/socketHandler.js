@@ -9,6 +9,7 @@
 //  * `message:send` echoes a client-generated `clientId` so the Flutter client
 //    can replace its optimistic bubble instead of showing a duplicate
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Chat = require('../models/Chat');
 const Message = require('../models/Message');
@@ -270,6 +271,94 @@ function registerSocketHandlers(io) {
           chatId,
           userId: socket.userId,
         });
+      }
+    });
+
+    // ---------------------------------------------------------------- calls
+    //
+    // 1:1 WebRTC calls. The server never touches media; it validates that the
+    // two users share the chat (and are not blocked) and forwards the
+    // offer/answer/ICE/end payloads to the other user's personal room.
+    async function callTarget(data = {}) {
+      const { toUserId, chatId } = data;
+      if (!socket.userId || !toUserId || !mongoose.Types.ObjectId.isValid(String(toUserId))) return null;
+      if (String(toUserId) === socket.userId) return null;
+      if (chatId) {
+        if (!mongoose.Types.ObjectId.isValid(String(chatId))) return null;
+        const shared = await Chat.exists({ _id: chatId, participants: { $all: [socket.userId, toUserId] } });
+        if (!shared) return null;
+      }
+      if (await blockedBetween(socket.userId, toUserId)) return null;
+      return String(toUserId);
+    }
+
+    socket.on('call:offer', async (data = {}) => {
+      try {
+        const target = await callTarget(data);
+        if (!target) return socket.emit('call:error', { message: 'Cannot call this person.', code: 'CALL_FORBIDDEN' });
+        if (!realtime.isUserOnline(target)) {
+          return socket.emit('call:unavailable', { chatId: data.chatId, callId: data.callId, toUserId: target });
+        }
+        const me = await User.findById(socket.userId).select('displayName avatarUrl');
+        realtime.emitToUser(target, 'call:incoming', {
+          callId: data.callId,
+          chatId: data.chatId,
+          video: data.video === true,
+          sdp: data.sdp,
+          from: me ? { id: socket.userId, displayName: me.displayName, avatarUrl: me.avatarUrl } : { id: socket.userId },
+        });
+        socket.emit('call:ringing', { chatId: data.chatId, callId: data.callId });
+      } catch (error) {
+        console.error('Call offer error:', error.message);
+        socket.emit('call:error', { message: 'Could not start the call.' });
+      }
+    });
+
+    socket.on('call:answer', async (data = {}) => {
+      try {
+        const target = await callTarget(data);
+        if (!target) return;
+        realtime.emitToUser(target, 'call:answer', { chatId: data.chatId, callId: data.callId, sdp: data.sdp });
+      } catch (error) {
+        console.error('Call answer error:', error.message);
+      }
+    });
+
+    socket.on('call:ice', async (data = {}) => {
+      try {
+        const target = await callTarget(data);
+        if (!target) return;
+        realtime.emitToUser(target, 'call:ice', { chatId: data.chatId, callId: data.callId, candidate: data.candidate });
+      } catch (error) {
+        console.error('Call ICE error:', error.message);
+      }
+    });
+
+    socket.on('call:end', async (data = {}) => {
+      try {
+        const target = await callTarget(data);
+        if (!target) return;
+        realtime.emitToUser(target, 'call:end', {
+          chatId: data.chatId,
+          callId: data.callId,
+          reason: data.reason || 'hangup',
+        });
+      } catch (error) {
+        console.error('Call end error:', error.message);
+      }
+    });
+
+    socket.on('call:reject', async (data = {}) => {
+      try {
+        const target = await callTarget(data);
+        if (!target) return;
+        realtime.emitToUser(target, 'call:end', {
+          chatId: data.chatId,
+          callId: data.callId,
+          reason: 'declined',
+        });
+      } catch (error) {
+        console.error('Call reject error:', error.message);
       }
     });
 

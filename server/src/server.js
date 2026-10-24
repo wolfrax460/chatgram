@@ -260,6 +260,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/chats', chatRoutes);
+app.use('/api/calls', require('./routes/callRoutes'));
 app.use('/api/messages', messageRoutes);
 
 // Health details for the help widget's Status card. NOTE: `/api/status` is the

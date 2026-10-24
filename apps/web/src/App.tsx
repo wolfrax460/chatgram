@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Moon, Sun, Monitor, MessageCircle, LogOut, Users, BookUser, CircleDashed,
@@ -22,6 +22,8 @@ import { ChatList } from './components/ChatList';
 import { ChatHeader } from './components/ChatHeader';
 import { MessageBubble } from './components/MessageBubble';
 import Composer from './components/Composer';
+import { CallOverlay } from './components/CallOverlay';
+import { getCallState, startCall, subscribeCalls } from './lib/calls';
 import Groups from './pages/Groups';
 import Contacts from './pages/Contacts';
 import Status from './pages/Status';
@@ -383,7 +385,13 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
           setInChatSearch('');
         }}
         onOpenProfile={partner ? () => profilePanel.openProfile(partner.id, chat.id) : undefined}
-        onCall={() => setNotice('Voice calls are still being deployed — coming soon.')}
+        onCall={() => {
+          if (chat.type !== 'direct' || !partner) {
+            setNotice('Calls are available in one-to-one chats.');
+            return;
+          }
+          void startCall(partner, chat.id, { video: false });
+        }}
         menu={{
           onContactInfo: () => (partner ? profilePanel.openProfile(partner.id, chat.id) : undefined),
           onMute: async () => {
@@ -704,6 +712,7 @@ function Shell() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [profileTarget, setProfileTarget] = useState<{ userId: string; chatId?: string } | null>(null);
+  const callState = useSyncExternalStore(subscribeCalls, getCallState);
 
   useRealtimeBridge();
 
@@ -767,6 +776,7 @@ function Shell() {
   return (
     <ProfilePanelContext.Provider value={profileApi}>
     <div className="flex h-full">
+      <CallOverlay call={callState} />
       <nav className="hidden w-[76px] shrink-0 flex-col items-center gap-1 border-r border-ink-200 py-4 dark:border-white/10 sm:flex">
         {NAV.map(({ key, label, Icon }) => (
           <button

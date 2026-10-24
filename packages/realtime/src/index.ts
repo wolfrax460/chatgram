@@ -44,6 +44,14 @@ export interface RealtimeHandlers {
   onMessageDeleted?: (payload: { messageId: string; chatId: string; scope: string }) => void;
   /** The sender edited the text of a message. */
   onMessageEdited?: (payload: { messageId: string; chatId: string; content: string; editedAt: string }) => void;
+  /** WebRTC call signalling. */
+  onCallIncoming?: (payload: CallIncoming) => void;
+  onCallRinging?: (payload: { callId: string; chatId: string }) => void;
+  onCallAnswer?: (payload: CallAnswer) => void;
+  onCallIce?: (payload: CallIce) => void;
+  onCallEnd?: (payload: CallEnd) => void;
+  onCallUnavailable?: (payload: CallUnavailable) => void;
+  onCallError?: (payload: { message: string; code?: string }) => void;
   /** A group member list changed (add/remove/leave/promote). */
   onGroupMembers?: (payload: { chatId: string }) => void;
   /** Somebody @mentioned me in a group. */
@@ -53,6 +61,38 @@ export interface RealtimeHandlers {
     groupName: string;
     chatType: string;
   }) => void;
+}
+
+export interface CallIncoming {
+  callId: string;
+  chatId: string;
+  video: boolean;
+  sdp: unknown;
+  from: { id: string; displayName?: string; avatarUrl?: string };
+}
+
+export interface CallAnswer {
+  callId: string;
+  chatId: string;
+  sdp: unknown;
+}
+
+export interface CallIce {
+  callId: string;
+  chatId: string;
+  candidate: unknown;
+}
+
+export interface CallEnd {
+  callId: string;
+  chatId: string;
+  reason: string;
+}
+
+export interface CallUnavailable {
+  callId: string;
+  chatId: string;
+  toUserId: string;
 }
 
 export interface RealtimeOptions {
@@ -87,6 +127,11 @@ export class RealtimeClient {
     });
 
     this.bind();
+  }
+
+  /** Send a call signalling event through the authenticated socket. */
+  emit(event: string, payload: unknown): void {
+    this.socket?.emit(event, payload);
   }
 
   private bind(): void {
@@ -149,6 +194,13 @@ export class RealtimeClient {
     socket.on('message:edited', (data: { messageId: string; chatId: string; content: string; editedAt: string }) =>
       h.onMessageEdited?.(data),
     );
+    socket.on('call:incoming', (data: CallIncoming) => h.onCallIncoming?.(data));
+    socket.on('call:ringing', (data: { callId: string; chatId: string }) => h.onCallRinging?.(data));
+    socket.on('call:answer', (data: CallAnswer) => h.onCallAnswer?.(data));
+    socket.on('call:ice', (data: CallIce) => h.onCallIce?.(data));
+    socket.on('call:end', (data: CallEnd) => h.onCallEnd?.(data));
+    socket.on('call:unavailable', (data: CallUnavailable) => h.onCallUnavailable?.(data));
+    socket.on('call:error', (data: { message: string; code?: string }) => h.onCallError?.(data));
     socket.on('message:mention', (data: unknown) => {
       const payload = (data ?? {}) as {
         message?: unknown;

@@ -3,6 +3,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { usePrefs, useRealtime, useSession, type Message } from '@chatgram/core';
 import { playMessageSound, showNotification } from './notify';
 import { api, realtime, SOCKET_URL } from './api';
+import {
+  handleAnswer,
+  handleCallError,
+  handleIce,
+  handleIncoming,
+  handleRemoteEnd,
+  handleUnavailable,
+} from './calls';
 
 /**
  * Bridges the socket connection into React state.
@@ -151,6 +159,14 @@ export function useRealtimeBridge(): void {
           void queryClient.invalidateQueries({ queryKey: ['chats'] });
           void queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
         },
+
+        // ------------------------------------------------------ WebRTC calls
+        onCallIncoming: (payload) => handleIncoming(payload),
+        onCallAnswer: (payload) => void handleAnswer(payload),
+        onCallIce: (payload) => void handleIce(payload),
+        onCallEnd: (payload) => handleRemoteEnd(payload.reason),
+        onCallUnavailable: () => handleUnavailable(),
+        onCallError: (payload) => handleCallError(payload.message),
 
         onUserUpdated: (updated) => {
           // The signed-in user may have changed their own profile elsewhere.

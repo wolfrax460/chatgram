@@ -305,3 +305,23 @@ Socket: `group:join-request` is emitted to the group room so admins see new requ
 The web client loads these on sign-in and silences desktop notifications and the message
 chime while the window is active (start > end means the window wraps over midnight).
 Mentions still highlight in-app; nothing is dropped.
+
+## Session 8 additions (2026-10-24) — WebRTC 1:1 calls
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/calls/ice` | auth required; `{ iceServers, hasTurn, ttlSeconds }` built from `STUN_URLS` / `TURN_URLS` / `TURN_USERNAME` / `TURN_CREDENTIAL` |
+
+Socket signalling (all authenticated; the server forwards, never sees media):
+
+| Client → server | Server → client | Payload |
+|---|---|---|
+| `call:offer` | `call:incoming` (callee) / `call:ringing` (caller) / `call:unavailable` (offline) / `call:error` (forbidden) | `{ toUserId, chatId, callId, video, sdp }` |
+| `call:answer` | `call:answer` | `{ callId, sdp }` |
+| `call:ice` | `call:ice` | `{ callId, candidate }` |
+| `call:reject` | `call:end` with `reason: "declined"` | `{ callId }` |
+| `call:end` | `call:end` | `{ callId, reason }` |
+
+Both users must share the chat (`call:offer` etc. are rejected with `CALL_FORBIDDEN` otherwise)
+and blocked users cannot call each other. The web app shows a full-screen call overlay
+(ring/accept/decline, mute, camera, hang-up) and works in a one-to-one chat.
