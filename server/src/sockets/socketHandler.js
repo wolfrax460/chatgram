@@ -250,6 +250,11 @@ function registerSocketHandlers(io) {
           console.warn('Mention notification failed:', mentionError.message);
         }
       }
+
+      // Group "@Chatgram AI" mentions: off by default, rate limited, silent on error.
+      require('../ai/groupMentions')
+        .maybeAnswer({ chat, message: payload, io })
+        .catch(() => {});
       } catch (error) {
         console.error('Message send error:', error);
         socket.emit('message:error', {

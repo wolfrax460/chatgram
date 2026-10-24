@@ -257,6 +257,7 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
     whoCanSendMessages: 'all',
     whoCanAddMembers: 'admins',
     requireApproval: false,
+    aiMentions: false,
   };
   const muted = (mutedQuery.data ?? []).some((entry) => entry.chatId === chat.id);
 
@@ -681,6 +682,34 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
                     <span
                       className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
                         settings.requireApproval ? 'left-[22px]' : 'left-0.5'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-ink-200 px-3 py-2 dark:border-white/10">
+                  <div>
+                    <p className="text-[12px] font-semibold">Chatgram AI mentions</p>
+                    <p className="text-[11px] text-ink-500 dark:text-ink-400">
+                      Members can write &quot;@Chatgram AI …&quot; and the assistant answers in this group. Off by default;
+                      only mentioning messages are sent to the AI provider.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={settings.aiMentions === true}
+                    aria-label="Chatgram AI mentions"
+                    data-testid="ai-mentions-toggle"
+                    disabled={saveSettings.isPending}
+                    onClick={() => saveSettings.mutate({ aiMentions: !settings.aiMentions })}
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                      settings.aiMentions ? 'bg-brand-600' : 'bg-ink-300 dark:bg-white/20'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                        settings.aiMentions ? 'left-[22px]' : 'left-0.5'
                       }`}
                     />
                   </button>

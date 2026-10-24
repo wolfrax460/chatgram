@@ -22,6 +22,12 @@ export interface ComposerProps {
   busy?: boolean;
   notice?: string | null;
   onDismissNotice: () => void;
+  /**
+   * Text-only conversation (Chatgram AI): no attach menu, no file inputs and no
+   * voice note button, because the configured AI providers read text only.
+   */
+  textOnly?: boolean;
+  placeholder?: string;
 }
 
 /**
@@ -40,6 +46,8 @@ export default function Composer({
   busy,
   notice,
   onDismissNotice,
+  textOnly = false,
+  placeholder,
 }: ComposerProps) {
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -163,8 +171,8 @@ export default function Composer({
         </div>
       ) : null}
 
-      {/* attach menu */}
-      {attachOpen ? (
+      {/* attach menu (hidden in text-only conversations) */}
+      {!textOnly && attachOpen ? (
         <div className="absolute bottom-full left-3 z-30 mb-1 w-44 overflow-hidden rounded-xl border border-ink-200 bg-white py-1 shadow-xl dark:border-white/10 dark:bg-ink-700">
           <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10" onClick={() => pick(imageRef)}>
             <ImageIcon className="h-4 w-4" /> Photo
@@ -191,22 +199,28 @@ export default function Composer({
           <Smile className="h-5 w-5" />
         </button>
 
-        <button
-          type="button"
-          className="btn-ghost !px-2"
-          title="Attach"
-          onClick={() => {
-            setAttachOpen((v) => !v);
-            setEmojiOpen(false);
-          }}
-          disabled={busy}
-        >
-          {busy ? <span className="text-xs">…</span> : <Paperclip className="h-5 w-5" />}
-        </button>
+        {!textOnly ? (
+          <button
+            type="button"
+            className="btn-ghost !px-2"
+            title="Attach"
+            onClick={() => {
+              setAttachOpen((v) => !v);
+              setEmojiOpen(false);
+            }}
+            disabled={busy}
+          >
+            {busy ? <span className="text-xs">…</span> : <Paperclip className="h-5 w-5" />}
+          </button>
+        ) : null}
 
-        <input ref={imageRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onSendFile(f, 'image'); }} />
-        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onSendFile(f, 'image'); }} />
-        <input ref={fileRef} type="file" multiple accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" className="hidden" onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; for (const f of files) onSendFile(f); }} />
+        {!textOnly ? (
+          <>
+            <input ref={imageRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onSendFile(f, 'image'); }} />
+            <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onSendFile(f, 'image'); }} />
+            <input ref={fileRef} type="file" multiple accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" className="hidden" onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ''; for (const f of files) onSendFile(f); }} />
+          </>
+        ) : null}
 
         <textarea
           ref={textRef}
@@ -219,12 +233,12 @@ export default function Composer({
               submit();
             }
           }}
-          placeholder={connected ? 'Type a message' : 'Reconnecting…'}
+          placeholder={placeholder ?? (connected ? 'Type a message' : 'Reconnecting…')}
           className="field max-h-[120px] min-h-[42px] flex-1 resize-none py-2.5 leading-6"
         />
 
-        {draft.trim() ? (
-          <button type="submit" className="btn-primary !px-3" disabled={busy} title="Send" aria-label="Send message">
+        {draft.trim() || textOnly ? (
+          <button type="submit" className="btn-primary !px-3" disabled={busy || !draft.trim()} title="Send" aria-label="Send message">
             <Send className="h-5 w-5" />
           </button>
         ) : (

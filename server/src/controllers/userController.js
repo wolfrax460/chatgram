@@ -78,6 +78,8 @@ const searchUsers = async (req, res) => {
 
     const users = await User.find({
       _id: { $ne: req.user._id },
+      // The Chatgram AI contact is a system account, not a person to add.
+      isAiAccount: { $ne: true },
       $or: [
         { displayName: { $regex: searchRegex } },
         { phone: { $regex: searchRegex } },

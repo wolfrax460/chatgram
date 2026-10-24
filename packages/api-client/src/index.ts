@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Typed REST client for the Chatgram backend.
  *
  * Responsibilities:
@@ -7,7 +7,7 @@
  *  - normalise the backend's `{ message, code }` error shape into ApiError,
  *  - expose one typed method per endpoint in docs/api-contract.md.
  *
- * No React, no browser-only globals beyond fetch/FormData â€” so the same client
+ * No React, no browser-only globals beyond fetch/FormData Ã¢â‚¬â€ so the same client
  * works in the browser, Electron and Capacitor.
  */
 import {
@@ -646,7 +646,7 @@ export class ApiClient {
         avatarUrl: string;
         createdBy: { id: string; displayName: string } | null;
         createdAt: string | null;
-        settings: { whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins'; requireApproval?: boolean };
+        settings: { whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins'; requireApproval?: boolean; aiMentions?: boolean };
         inviteEnabled: boolean;
         inviteToken: string | null;
         pinnedMessageId: string | null;
@@ -695,7 +695,7 @@ export class ApiClient {
       groupName?: string;
       groupDescription?: string;
       groupAvatar?: string;
-      groupSettings?: Partial<{ whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins'; requireApproval: boolean }>;
+      groupSettings?: Partial<{ whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins'; requireApproval: boolean; aiMentions: boolean }>;
     },
   ) {
     return this.request(`/api/chats/${chatId}`, { method: 'PATCH', body: fields });

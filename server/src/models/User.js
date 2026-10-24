@@ -56,6 +56,14 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // The built-in Chatgram AI contact. Never returned by people search and never
+  // signed into; it exists so the AI can answer in group conversations when a
+  // group opts in to "@Chatgram AI" mentions.
+  isAiAccount: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
   // Google accounts have no local password until the user sets one.
   password: {
     type: String,

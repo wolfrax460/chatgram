@@ -46,7 +46,10 @@ const chatSchema = new mongoose.Schema({
     whoCanSendMessages: { type: String, enum: ['all', 'admins'], default: 'all' },
     whoCanAddMembers: { type: String, enum: ['all', 'admins'], default: 'admins' },
     // When true, join requests (and invite links) need an admin's approval.
-    requireApproval: { type: Boolean, default: false }
+    requireApproval: { type: Boolean, default: false },
+    // Off by default: when enabled an admin lets members ask the AI by writing
+    // "@Chatgram AI ..." in the group. Only those messages reach the provider.
+    aiMentions: { type: Boolean, default: false }
   },
   // Pending join requests; approved by an admin, then the user becomes a member.
   joinRequests: [{

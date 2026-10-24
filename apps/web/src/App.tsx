@@ -33,11 +33,12 @@ import SettingsPage from './pages/Settings';
 import Auth from './pages/Auth';
 import SupportWidget from './components/SupportWidget';
 import AdminGate from './pages/AdminGate';
-import AiChat from './pages/AiChat';
+import { AiThread } from './components/AiThread';
+import { useAiThread } from './lib/aiThread';
 import JoinGroup from './pages/JoinGroup';
 import { ProfilePanel } from './components/ProfilePanel';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
-import { dateSeparatorLabel, sameDay, statusOf } from './lib/ui';
+import { dateSeparatorLabel, formatTime, sameDay, statusOf } from './lib/ui';
 
 type Tab = 'chats' | 'status' | 'groups' | 'contacts' | 'settings' | 'ai';
 
@@ -720,7 +721,6 @@ const NAV: { key: Tab; label: string; Icon: typeof MessageCircle }[] = [
   { key: 'status', label: 'Status', Icon: CircleDashed },
   { key: 'groups', label: 'Groups', Icon: Users },
   { key: 'contacts', label: 'Contacts', Icon: BookUser },
-  { key: 'ai', label: 'Chatgram AI', Icon: Sparkles },
   { key: 'settings', label: 'Settings', Icon: SettingsIcon },
 ];
 
@@ -737,6 +737,12 @@ function Shell() {
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [profileTarget, setProfileTarget] = useState<{ userId: string; chatId?: string } | null>(null);
   const callState = useSyncExternalStore(subscribeCalls, getCallState);
+
+  // Chatgram AI thread state (pinned row preview, unread badge).
+  const aiUnread = useAiThread((s) => s.unread);
+  const aiPreview = useAiThread((s) => s.lastMessage);
+  const aiPreviewAt = useAiThread((s) => s.lastAt);
+  const [aiPendingQuestion, setAiPendingQuestion] = useState<string | null>(null);
 
   useRealtimeBridge();
 
@@ -819,6 +825,29 @@ function Shell() {
             {label}
           </button>
         ))}
+        <span className="my-1 h-px w-9 bg-ink-200 dark:bg-white/10" aria-hidden="true" />
+        <button
+          type="button"
+          onClick={() => setTab('ai')}
+          title="Chatgram AI"
+          aria-label="Chatgram AI"
+          data-testid="sidebar-ai"
+          className={`flex w-14 flex-col items-center gap-1 rounded-xl py-2 text-[11.5px] font-semibold transition ${
+            tab === 'ai'
+              ? 'bg-brand-600/10 text-brand-700 dark:text-brand-300'
+              : 'text-ink-600 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-white/5'
+          }`}
+        >
+          <span className="relative">
+            <Sparkles className="h-5 w-5" />
+            {aiUnread > 0 ? (
+              <span className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-brand-600 px-1 text-[9px] font-bold text-white">
+                {aiUnread > 9 ? '9+' : aiUnread}
+              </span>
+            ) : null}
+          </span>
+          AI
+        </button>
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('chatgram-open-help'))}
@@ -845,15 +874,18 @@ function Shell() {
         </button>
       </nav>
 
-      {tab === 'chats' ? (
+      {tab === 'chats' || tab === 'ai' ? (
         <>
           <aside
-            className={`${selected ? 'hidden lg:flex' : 'flex'} w-full shrink-0 flex-col border-r border-ink-200 dark:border-white/10 sm:w-[330px]`}
+            className={`${tab === 'ai' || selected ? 'hidden lg:flex' : 'flex'} w-full shrink-0 flex-col border-r border-ink-200 dark:border-white/10 sm:w-[330px]`}
           >
             <button
               type="button"
               onClick={() => setTab('ai')}
-              className="flex w-full items-center gap-3 border-b border-ink-200 px-3 py-2.5 text-left hover:bg-ink-100/70 dark:border-white/10 dark:hover:bg-white/[.04]"
+              aria-current={tab === 'ai' ? 'page' : undefined}
+              className={`flex w-full items-center gap-3 border-b border-ink-200 px-3 py-2.5 text-left dark:border-white/10 ${
+                tab === 'ai' ? 'bg-ink-100/80 dark:bg-white/[.06]' : 'hover:bg-ink-100/70 dark:hover:bg-white/[.04]'
+              }`}
               data-testid="ai-pinned-entry"
             >
               <span className="relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-brand-600 text-white">
@@ -861,13 +893,30 @@ function Shell() {
                 <BadgeCheck className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-white text-brand-600 dark:bg-ink-800 dark:text-brand-300" aria-label="Official Chatgram AI" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-semibold">Chatgram AI</span>
-                <span className="block truncate text-[11.5px] text-ink-500 dark:text-ink-400">Official · Ask anything</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="min-w-0 flex-1 truncate font-semibold">Chatgram AI</span>
+                  {aiPreviewAt ? (
+                    <span className="shrink-0 text-[10.5px] font-medium text-ink-500 dark:text-ink-400">{formatTime(aiPreviewAt, timeFormat)}</span>
+                  ) : null}
+                </span>
+                <span className="mt-0.5 flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-500 dark:text-ink-400">
+                    {aiPreview || 'Official · Ask anything'}
+                  </span>
+                  {aiUnread > 0 ? (
+                    <span
+                      className="grid h-5 min-w-[20px] shrink-0 place-items-center rounded-full bg-brand-600 px-1.5 text-[10.5px] font-bold text-white"
+                      data-testid="ai-unread-badge"
+                    >
+                      {aiUnread > 9 ? '9+' : aiUnread}
+                    </span>
+                  ) : null}
+                </span>
               </span>
             </button>
             <ChatList
               onAskAi={(text: string) => {
-                window.dispatchEvent(new CustomEvent('chatgram-ai-ask', { detail: { text } }));
+                setAiPendingQuestion(text);
                 setTab('ai');
               }}
               chats={chats.data ?? []}
@@ -881,7 +930,13 @@ function Shell() {
             />
           </aside>
 
-          {selected ? (
+          {tab === 'ai' ? (
+            <AiThread
+              onBack={() => setTab('chats')}
+              initialQuestion={aiPendingQuestion}
+              onQuestionHandled={() => setAiPendingQuestion(null)}
+            />
+          ) : selected ? (
             <ChatWindow chat={selected} meId={meId} onBack={() => setSelectedId(null)} />
           ) : (
             <section className="hidden flex-1 place-items-center overflow-y-auto px-6 py-6 text-center sm:grid">
@@ -936,8 +991,6 @@ function Shell() {
             </section>
           )}
         </>
-      ) : tab === 'ai' ? (
-        <AiChat />
       ) : tab === 'status' ? (
         <Status />
       ) : tab === 'groups' ? (

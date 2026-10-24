@@ -8,7 +8,15 @@ const { registerUser, signIn } = require('./helpers');
 test.describe.configure({ timeout: 150_000 });
 
 async function openWidget(page) {
-  await page.getByTestId('help-launcher').click();
+  // Guests get the floating launcher; signed-in users open the same widget from
+  // the sidebar Help button (the floating launcher is hidden in the app so it
+  // never covers the composer).
+  const sidebar = page.getByTestId('sidebar-help');
+  if ((await sidebar.count()) > 0) {
+    await sidebar.first().click();
+  } else {
+    await page.getByTestId('help-launcher').click();
+  }
   await expect(page.getByTestId('help-widget')).toBeVisible({ timeout: 15_000 });
 }
 
@@ -107,7 +115,7 @@ test.describe('help widget', () => {
 
     // Reload: the Messages tab reads the conversation back from the server.
     await page.reload();
-    await expect(page.getByTestId('help-launcher')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('sidebar-help')).toBeVisible({ timeout: 20_000 });
     await openWidget(page);
     await page.getByRole('button', { name: 'Messages', exact: true }).click();
     await expect(page.getByText(/Chatgram Assistant|Support Â·/).first()).toBeVisible({ timeout: 20_000 });

@@ -73,6 +73,8 @@ export interface Chat {
     whoCanSendMessages: 'all' | 'admins';
     whoCanAddMembers: 'all' | 'admins';
     requireApproval: boolean;
+    /** "@Chatgram AI" mentions are allowed in this group (off by default). */
+    aiMentions?: boolean;
   };
   inviteEnabled?: boolean;
   pinnedMessageId?: string;
@@ -199,6 +201,7 @@ export function chatFromJson(json: unknown): Chat {
         whoCanSendMessages: raw.whoCanSendMessages === 'admins' ? ('admins' as const) : ('all' as const),
         whoCanAddMembers: raw.whoCanAddMembers === 'admins' ? ('admins' as const) : ('all' as const),
         requireApproval: raw.requireApproval === true,
+        aiMentions: raw.aiMentions === true,
       };
     })(),
     inviteEnabled: j.inviteEnabled === true,

@@ -118,6 +118,11 @@ const sendMessage = async (req, res) => {
       }
     }
 
+    // Group "@Chatgram AI" mentions: off by default, rate limited, silent on error.
+    require('../ai/groupMentions')
+      .maybeAnswer({ chat, message: populated, io: realtime.getIo() })
+      .catch(() => {});
+
     res.status(201).json(populated);
   } catch (error) {
     console.error('Send message error:', error);

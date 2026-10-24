@@ -261,6 +261,10 @@ const updateGroup = async (req, res) => {
         next.requireApproval = Boolean(body.groupSettings.requireApproval);
         settingsChanged = true;
       }
+      if (body.groupSettings.aiMentions !== undefined) {
+        next.aiMentions = Boolean(body.groupSettings.aiMentions);
+        settingsChanged = true;
+      }
       chat.groupSettings = next;
       if (settingsChanged) changes.push('changed the group permissions');
     }

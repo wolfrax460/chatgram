@@ -99,6 +99,8 @@ const searchDirectory = async (req, res) => {
 
     const matches = await User.find({
       _id: { $ne: req.user._id },
+      // System accounts (Chatgram AI) are never people-search results.
+      isAiAccount: { $ne: true },
       $or: [
         { displayName: { $regex: regex } },
         { phone: { $regex: regex } },

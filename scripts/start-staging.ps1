@@ -47,6 +47,9 @@ $env:REQUIRE_VERIFICATION = 'false'
 $env:DEV_SHOW_CODES = 'true'
 $env:SUPPORT_AI_ENABLED = 'false'
 $env:SUPPORT_AGENT_ENABLED = 'false'
+# The Playwright AI specs start a mock OpenAI-compatible provider on this port
+# (see tests/e2e/mockAiProvider.js). The SSRF guard only allows it via this list.
+$env:AI_ALLOWED_LOCAL_HOSTS = '127.0.0.1:5099,localhost:5099'
 $env:AUTH_REVEAL_ACCOUNT_EXISTS = 'true'
 # The Playwright suite creates a fresh account per test. This escape hatch is
 # ignored in production (see middleware/authLimiter.js).
