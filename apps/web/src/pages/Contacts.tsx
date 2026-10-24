@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, UserPlus, MessageCircle, BookUser } from 'lucide-react';
 import { useSession, type User } from '@chatgram/core';
 import { api } from '../lib/api';
+import { onlineNow, usePresenceView } from '../lib/presence';
 import { useProfilePanel } from '../lib/profilePanel';
 
 /**
@@ -15,6 +16,7 @@ export default function Contacts({ onOpenChat }: { onOpenChat: (chatId: string) 
   const me = useSession((s) => s.user);
   const queryClient = useQueryClient();
   const profilePanel = useProfilePanel();
+  const presenceView = usePresenceView();
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [error, setError] = useState('');
@@ -114,7 +116,7 @@ export default function Contacts({ onOpenChat }: { onOpenChat: (chatId: string) 
                   person.displayName.slice(0, 2).toUpperCase()
                 )}
               </div>
-              {person.isOnline ? (
+              {onlineNow(presenceView, person.id, person.isOnline) ? (
                 <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-ink-900" />
               ) : null}
             </button>

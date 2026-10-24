@@ -15,9 +15,9 @@
     "test": "npm run test --workspaces --if-present",
     "start:staging": "powershell -ExecutionPolicy Bypass -File scripts/start-staging.ps1",
     "test:e2e": "playwright test --config tests/e2e/playwright.config.js",
-    "test:integration": "node server/test/integration/changePassword.test.js && node server/test/integration/statusMedia.test.js && node server/test/integration/statusCleanup.test.js && node server/test/integration/profile.test.js && node server/test/integration/groups.test.js && node server/test/integration/accountSettings.test.js && node server/test/integration/helpCenter.test.js && node server/test/integration/messageFeatures.test.js && node server/test/integration/joinRequests.test.js && node server/test/integration/notificationPrefs.test.js && node server/test/integration/calls.test.js && node server/test/integration/supportReply.test.js && node server/test/integration/adminAuth.test.js",
+    "test:integration": "node server/test/integration/changePassword.test.js && node server/test/integration/statusMedia.test.js && node server/test/integration/statusCleanup.test.js && node server/test/integration/profile.test.js && node server/test/integration/groups.test.js && node server/test/integration/accountSettings.test.js && node server/test/integration/helpCenter.test.js && node server/test/integration/messageFeatures.test.js && node server/test/integration/joinRequests.test.js && node server/test/integration/notificationPrefs.test.js && node server/test/integration/calls.test.js && node server/test/integration/supportReply.test.js && node server/test/integration/adminAuth.test.js && node server/test/integration/presenceReset.test.js && node server/test/integration/presence.test.js",
     "test:ai": "node server/test/ai/ai.test.js && node server/test/ai/layerSwitch.test.js && node server/test/ai/providers.test.js && node server/test/ai/chatgramAi.test.js",
-    "test:unit": "node server/test/unit/twoFactor.test.js && node server/test/unit/callRegistry.test.js",
+    "test:unit": "node server/test/unit/twoFactor.test.js && node server/test/unit/callRegistry.test.js && node server/test/unit/presence.test.js",
     "test:all": "npm run test:unit && npm run test:integration && npm run test:ai && npm run test:e2e"
   },
   "engines": {

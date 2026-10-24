@@ -20,7 +20,7 @@ const getContacts = async (req, res) => {
       .filter((c) => c && c._id)
       .sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()));
 
-    res.json(presence.maskPresenceList(contacts, req.user._id));
+    res.json(presence.sortByPresence(presence.maskPresenceList(contacts, req.user._id)));
   } catch (error) {
     console.error('Get contacts error:', error);
     res.status(500).json({ message: 'Server error fetching contacts' });
@@ -106,15 +106,17 @@ const searchDirectory = async (req, res) => {
       ],
     })
       .select(PUBLIC_FIELDS)
-      .sort({ isOnline: -1, displayName: 1 })
+      .sort({ displayName: 1 })
       .limit(25);
 
     res.json(
-      matches.map((user) => ({
-        // Masked so the directory never reveals presence someone hid.
-        ...presence.maskPresence(user, req.user._id),
-        isContact: myContactIds.includes(user._id.toString()),
-      }))
+      presence.sortByPresence(
+        matches.map((user) => ({
+          // Masked so the directory never reveals presence someone hid.
+          ...presence.maskPresence(user, req.user._id),
+          isContact: myContactIds.includes(user._id.toString()),
+        })),
+      )
     );
   } catch (error) {
     console.error('Search directory error:', error);
@@ -146,7 +148,7 @@ const getSuggestions = async (req, res) => {
       }
     }
 
-    res.json(presence.maskPresenceList(suggestions.slice(0, 20), req.user._id));
+    res.json(presence.sortByPresence(presence.maskPresenceList(suggestions.slice(0, 20), req.user._id)));
   } catch (error) {
     console.error('Contact suggestions error:', error);
     res.status(500).json({ message: 'Server error fetching suggestions' });

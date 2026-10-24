@@ -110,20 +110,31 @@ export const useTheme = create<ThemeState>((set, get) => ({
 
 interface RealtimeState {
   connected: boolean;
+  /**
+   * True while the socket is connected. When it is false, presence is unknown:
+   * the UI must not fall back to a REST snapshot that may be stale, so everyone
+   * renders as offline until the connection is re-established.
+   */
+  presenceTrusted: boolean;
   online: Record<string, boolean>;
   typing: Record<string, string | null>;
   setConnected: (connected: boolean) => void;
   setOnline: (userId: string, isOnline: boolean) => void;
+  /** Socket dropped: forget every known presence value. */
+  clearOnline: () => void;
   setTyping: (chatId: string, userId: string | null) => void;
 }
 
 export const useRealtime = create<RealtimeState>((set) => ({
   connected: false,
+  presenceTrusted: false,
   online: {},
   typing: {},
-  setConnected: (connected) => set({ connected }),
+  setConnected: (connected) =>
+    set(connected ? { connected, presenceTrusted: true } : { connected, presenceTrusted: false, online: {} }),
   setOnline: (userId, isOnline) =>
     set((state) => ({ online: { ...state.online, [userId]: isOnline } })),
+  clearOnline: () => set({ online: {}, presenceTrusted: false }),
   setTyping: (chatId, userId) =>
     set((state) => ({ typing: { ...state.typing, [chatId]: userId } })),
 }));

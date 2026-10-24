@@ -1,3 +1,4 @@
+import { onlineNow, usePresenceView } from '../lib/presence';
 import { useMemo, useState } from 'react';
 import { Search, SquarePen, Check, CheckCheck } from 'lucide-react';
 import type { Chat } from '@chatgram/core';
@@ -13,7 +14,6 @@ export function ChatList({
   meId,
   selectedId,
   typingByChat,
-  online,
   timeFormat,
   onSelect,
   onNewChat,
@@ -23,13 +23,13 @@ export function ChatList({
   meId: string;
   selectedId: string | null;
   typingByChat: Record<string, string | null>;
-  online: Record<string, boolean>;
   timeFormat: TimeFormat;
   onSelect: (id: string) => void;
   onNewChat: () => void;
   /** Open a direct chat partner's profile from their avatar. */
   onOpenProfile?: (userId: string, chatId: string) => void;
 }) {
+  const presenceView = usePresenceView();
   const [query, setQuery] = useState('');
 
   const visible = useMemo(() => {
@@ -73,7 +73,7 @@ export function ChatList({
 
         {visible.map((chat) => {
           const partner = chatPartner(chat, meId);
-          const onlineNow = partner ? (online[partner.id] ?? partner.isOnline ?? false) : false;
+          const partnerOnline = onlineNow(presenceView, partner?.id, partner?.isOnline);
           const unread = chat.unreadCount ?? 0;
           const typing = Boolean(typingByChat[chat.id]);
           const last = chat.lastMessage;
@@ -112,7 +112,7 @@ export function ChatList({
                     initialsFor(chat.type === 'group' ? chat.groupName : chatTitle(chat, meId))
                   )}
                 </div>
-                {onlineNow ? (
+                {partnerOnline ? (
                   <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-ink-900" />
                 ) : null}
               </button>

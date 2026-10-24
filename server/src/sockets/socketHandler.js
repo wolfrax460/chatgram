@@ -63,6 +63,22 @@ async function attachUser(socket, user) {
 }
 
 function registerSocketHandlers(io) {
+  // Presence sweeper: drop sockets whose heartbeat expired. Disconnecting the
+  // socket runs the normal disconnect handler, which updates lastSeen and
+  // broadcasts presence:offline when it was the user's last connection.
+  const presenceSweepMs = Number(process.env.PRESENCE_SWEEP_MS || 15_000);
+  const presenceSweeper = setInterval(() => {
+    for (const { socketId, userId } of realtime.staleSocketIds()) {
+      const socket = io.sockets.sockets.get(socketId);
+      if (!socket) {
+        realtime.untrackSocket(userId, socketId);
+        continue;
+      }
+      console.warn(`Presence: dropping stale socket ${socketId} (user ${userId})`);
+      socket.disconnect(true);
+    }
+  }, presenceSweepMs);
+  if (typeof presenceSweeper.unref === 'function') presenceSweeper.unref();
   io.on('connection', (socket) => {
     if (process.env.NODE_ENV !== 'production') {
       console.log('Socket connected:', socket.id);
@@ -82,6 +98,17 @@ function registerSocketHandlers(io) {
         .catch(() => socket.emit('auth_error', { message: 'Invalid token' }));
     }
 
+    // Presence heartbeat. The client pings every ~25 s; a socket that stops
+    // pinging is swept below. This keeps a half-open connection (killed tab,
+    // sleeping phone, dropped Wi-Fi) from holding a user "online" forever.
+    socket.on('presence:ping', () => {
+      if (!socket.userId) return;
+      realtime.touchSocket(socket.id);
+      if (realtime.shouldPersistSeen(socket.id)) {
+        User.findByIdAndUpdate(socket.userId, { lastSeen: new Date() }).catch(() => {});
+      }
+      socket.emit('presence:pong', { at: Date.now() });
+    });
     // Backwards-compatible explicit authenticate event.
     socket.on('authenticate', async (token) => {
       try {

@@ -7,6 +7,7 @@ import {
 import { api } from '../lib/api';
 import { useSession } from '@chatgram/core';
 import { avatarGradient, initialsFor, lastSeenLabel } from '../lib/ui';
+import { useIsOnline } from '../lib/presence';
 
 const REPORT_REASONS: { key: string; label: string }[] = [
   { key: 'spam', label: 'Spam or unwanted messages' },
@@ -76,12 +77,14 @@ export function ProfilePanel({
 
   const title = profile?.displayName ?? 'Contact info';
 
+  // Live socket presence wins over the REST snapshot in profile.
+  const isOnline = useIsOnline(profile?.id, profile?.isOnline);
   const presence = useMemo(() => {
     if (!profile) return '';
     if (profile.presenceHidden) return 'Last seen hidden';
-    if (profile.isOnline) return 'online';
+    if (isOnline) return 'online';
     return lastSeenLabel(profile.lastSeen ?? undefined, '24h');
-  }, [profile]);
+  }, [profile, isOnline]);
 
   async function copyValue(label: string, value: string) {
     try {
@@ -235,7 +238,7 @@ export function ProfilePanel({
                 {isSelf ? 'This is you' : optionsSuffix(data)}
               </p>
               <p
-                className={`mt-0.5 text-sm ${profile.isOnline ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'text-ink-500 dark:text-ink-400'}`}
+                className={`mt-0.5 text-sm ${isOnline ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'text-ink-500 dark:text-ink-400'}`}
                 data-testid="profile-presence"
               >
                 {presence}

@@ -29,6 +29,7 @@ export function useRealtimeBridge(): void {
   const user = useSession((s) => s.user);
   const setConnected = useRealtime((s) => s.setConnected);
   const setOnline = useRealtime((s) => s.setOnline);
+  const clearOnline = useRealtime((s) => s.clearOnline);
   const setTyping = useRealtime((s) => s.setTyping);
   const notifications = usePrefs((s) => s.notifications);
   const sounds = usePrefs((s) => s.sounds);
@@ -44,8 +45,18 @@ export function useRealtimeBridge(): void {
       url: SOCKET_URL,
       token,
       handlers: {
-        onConnected: () => setConnected(true),
-        onDisconnected: () => setConnected(false),
+        onConnected: () => {
+          setConnected(true);
+          // Re-sync presence snapshots after a reconnect or a cold start.
+          void queryClient.invalidateQueries({ queryKey: ['chats'] });
+          void queryClient.invalidateQueries({ queryKey: ['contacts'] });
+        },
+        onDisconnected: () => {
+          // Presence is unknown while we are offline: drop every cached value
+          // instead of leaving green dots behind on a dead connection.
+          setConnected(false);
+          clearOnline();
+        },
 
         onMessageNew: (message: Message) => {
           const hadCache = Boolean(queryClient.getQueryData<Message[]>(['messages', message.chatId]));
@@ -188,9 +199,20 @@ export function useRealtimeBridge(): void {
       },
     });
 
+    // Presence heartbeat: the server drops a socket that has not pinged for
+    // PRESENCE_STALE_MS (60s in production), which keeps a dead tab or a
+    // sleeping phone from holding this user 'online' forever.
+    const heartbeat = window.setInterval(() => {
+      if (realtime.isConnected()) realtime.emit('presence:ping', {});
+    }, 25_000);
+    // Also run immediately so a freshly connected client is never stale.
+    if (realtime.isConnected()) realtime.emit('presence:ping', {});
+
     return () => {
+      window.clearInterval(heartbeat);
       realtime.disconnect();
       setConnected(false);
+      clearOnline();
     };
   }, [userId, queryClient, setConnected, setOnline, setTyping, notifications, sounds]);
 }

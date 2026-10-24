@@ -124,7 +124,7 @@ const googleCallback = async (req, res) => {
 
     const { user, created, linked } = await findOrCreateGoogleUser(profile);
 
-    user.isOnline = true;
+    // Presence is owned by the socket layer, not by an OAuth callback.
     user.lastSeen = new Date();
     await user.save({ validateBeforeSave: false });
 

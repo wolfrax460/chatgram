@@ -215,8 +215,10 @@ const loginUser = async (req, res) => {
     const accessToken = generateToken(user._id, tokenVersionOf(user));
     const refreshToken = generateRefreshToken(user._id, tokenVersionOf(user));
 
+    // Do NOT mark the user online here: presence comes from live sockets.
+    // Setting it on a REST login is what left flags stuck when the socket
+    // never connected (or the process died before a clean disconnect).
     user.lastSeen = new Date();
-    user.isOnline = true;
     await user.save({ validateBeforeSave: false });
 
     return res.json(userPayload(user, accessToken, refreshToken));

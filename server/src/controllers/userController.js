@@ -52,9 +52,9 @@ const getUsers = async (req, res) => {
   try {
     const users = await User.find({ _id: { $ne: req.user._id } })
       .select(PUBLIC_FIELDS)
-      .sort({ isOnline: -1, displayName: 1 });
+      .sort({ displayName: 1 });
 
-    res.json(presence.maskPresenceList(users, req.user._id));
+    res.json(presence.sortByPresence(presence.maskPresenceList(users, req.user._id)));
   } catch (error) {
     console.error('Get users error:', error);
     res.status(500).json({ message: 'Server error fetching users' });
@@ -85,10 +85,10 @@ const searchUsers = async (req, res) => {
       ],
     })
       .select(PUBLIC_FIELDS)
-      .sort({ isOnline: -1, displayName: 1 })
+      .sort({ displayName: 1 })
       .limit(50);
 
-    res.json(presence.maskPresenceList(users, req.user._id));
+    res.json(presence.sortByPresence(presence.maskPresenceList(users, req.user._id)));
   } catch (error) {
     console.error('Search users error:', error);
     res.status(500).json({ message: 'Server error searching users' });
@@ -369,7 +369,8 @@ const getProfile = async (req, res) => {
       photoHidden: !photoAllowed,
       about: aboutAllowed ? target.about || '' : '',
       aboutHidden: !aboutAllowed,
-      isOnline: presenceAllowed ? target.isOnline === true : false,
+      // Live sockets only: the persisted flag can be left stuck by a restart.
+      isOnline: presenceAllowed ? presence.livePresence(target._id) : false,
       lastSeen: presenceAllowed ? target.lastSeen || null : null,
       presenceHidden: !presenceAllowed,
       phone: phoneAllowed ? target.phone || null : null,

@@ -120,6 +120,22 @@ registerSupportGuestNamespace(io);
 // users always have somewhere to report bugs and request changes.
 connectDB().then(() => {
   if (mongoose.connection.readyState !== 1) return;
+
+  // Presence truth lives in live sockets. A crash or PM2 restart kills every
+  // socket without running the disconnect handler, which used to leave users
+  // flagged online forever. Clear those flags on every boot.
+  require('./utils/presence')
+    .resetStuckPresence()
+    .then((result) => {
+      if (result.scanned > 0) {
+        console.log(
+          `Presence: reset ${result.changed}/${result.scanned} stuck online flag(s) on startup` +
+            (result.users.length ? ` e.g. ${result.users.map((u) => u.displayName).join(', ')}` : ''),
+        );
+      }
+    })
+    .catch((error) => console.error('Presence reset failed:', error.message));
+
   supportAccount
     .ensureSupportUser()
     .catch((error) => console.error('Support account setup failed:', error.message));

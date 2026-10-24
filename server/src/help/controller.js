@@ -68,6 +68,13 @@ const getServiceStatus = async (req, res) => {
     database,
     socket,
     storage: storageState,
+    // Presence diagnostics: how many live sockets/users the registry holds, and
+    // how long a socket may go without a heartbeat before it is dropped.
+    presence: {
+      usersOnline: realtime.onlineCount(),
+      sockets: realtime.socketCount(),
+      staleMs: realtime.staleAfterMs(),
+    },
     time: new Date().toISOString(),
   });
 };

@@ -4,6 +4,7 @@ const User = require('../models/User');
 const Message = require('../models/Message');
 const mongoose = require('mongoose');
 const realtime = require('../utils/realtime');
+const { livePresence, chatWithLivePresence } = require('../utils/presence');
 const { blockedBetween } = require('../utils/blocks');
 const groupSystem = require('../utils/groupSystem');
 const crypto = require('crypto');
@@ -73,7 +74,7 @@ const createChat = async (req, res) => {
       realtime.emitToUser(participantId, 'chat:new', populatedChat);
       realtime.emitToUser(req.user._id, 'chat:new', populatedChat);
 
-      return res.status(201).json(populatedChat);
+      return res.status(201).json(chatWithLivePresence(populatedChat, req.user._id));
     }
 
     // -------------------------------------------------------------- group
@@ -144,7 +145,7 @@ const createChat = async (req, res) => {
       realtime.emitToUser(id, 'chat:new', populatedChat);
     }
 
-    return res.status(201).json(populatedChat);
+    return res.status(201).json(chatWithLivePresence(populatedChat, req.user._id));
   } catch (error) {
     console.error('Create chat error:', error);
     if (error.code === 11000) {
@@ -175,13 +176,16 @@ const getGroups = async (req, res) => {
       .lean();
 
     res.json(
-      groups.map((group) => ({
-        ...group,
-        memberCount: group.participants.length,
-        isAdmin: (group.groupAdmins || []).some(
-          (a) => a.toString() === req.user._id.toString()
-        ),
-      }))
+      groups.map((group) => {
+        const shaped = chatWithLivePresence(group, req.user._id);
+        return {
+          ...shaped,
+          memberCount: shaped.participants.length,
+          isAdmin: (group.groupAdmins || []).some(
+            (a) => a.toString() === req.user._id.toString()
+          ),
+        };
+      })
     );
   } catch (error) {
     console.error('Get groups error:', error);
@@ -275,7 +279,7 @@ const updateGroup = async (req, res) => {
 
     const populated = await groupSystem.broadcastChatUpdate(chat._id);
     groupSystem.broadcastMemberList(chat._id);
-    res.json(populated);
+    res.json(chatWithLivePresence(populated, req.user._id));
   } catch (error) {
     console.error('Update group error:', error);
     res.status(500).json({ message: 'Server error updating the group' });
@@ -336,7 +340,7 @@ const setGroupAdmin = async (req, res) => {
     const populated = await groupSystem.broadcastChatUpdate(chat._id);
     groupSystem.broadcastMemberList(chat._id);
 
-    res.json(populated);
+    res.json(chatWithLivePresence(populated, req.user._id));
   } catch (error) {
     console.error('Set group admin error:', error);
     res.status(500).json({ message: 'Server error updating admins' });
@@ -375,7 +379,7 @@ const getChats = async (req, res) => {
     const unreadMap = new Map(unread.map((u) => [u._id.toString(), u.count]));
 
     const result = chats.map((chat) => ({
-      ...chat,
+      ...chatWithLivePresence(chat, req.user._id),
       unreadCount: unreadMap.get(chat._id.toString()) || 0,
     }));
 
@@ -412,7 +416,7 @@ const getChatById = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to access this chat' });
     }
 
-    res.json(chat);
+    res.json(chatWithLivePresence(chat, req.user._id));
   } catch (error) {
     console.error('Get chat by ID error:', error);
     if (error.kind === 'ObjectId') {
@@ -495,7 +499,7 @@ const addParticipants = async (req, res) => {
     const populated = await groupSystem.broadcastChatUpdate(chat._id);
     groupSystem.broadcastMemberList(chat._id);
 
-    res.json(populated);
+    res.json(chatWithLivePresence(populated, req.user._id));
   } catch (error) {
     console.error('Add participants error:', error);
     res.status(500).json({ message: 'Server error adding members' });
@@ -543,7 +547,7 @@ const removeParticipant = async (req, res) => {
     const populated = await groupSystem.broadcastChatUpdate(chat._id);
     groupSystem.broadcastMemberList(chat._id);
 
-    res.json(populated);
+    res.json(chatWithLivePresence(populated, req.user._id));
   } catch (error) {
     console.error('Remove participant error:', error);
     res.status(500).json({ message: 'Server error removing member' });
@@ -580,7 +584,8 @@ const getGroupMembers = async (req, res) => {
       isAdmin: adminIds.includes(String(p._id)),
       isYou: String(p._id) === me,
       // Respect the privacy setting: hide presence when the member opted out.
-      isOnline: p.showOnlineStatus === false ? false : Boolean(p.isOnline),
+      // Live sockets only: the persisted flag can be left stuck by a restart.
+      isOnline: p.showOnlineStatus === false ? false : livePresence(p._id),
       lastSeen: p.showOnlineStatus === false ? null : p.lastSeen,
     }));
 
@@ -643,7 +648,6 @@ const leaveGroup = async (req, res) => {
       } catch { /* history cleanup is best effort */ }
       await Chat.deleteOne({ _id: chat._id });
       try {
-        const realtime = require('../utils/realtime');
         realtime.emitToUser(me, 'chat:removed', { chatId: chat._id });
       } catch { /* sockets are best effort */ }
       return res.json({ message: 'You left the group', removed: true, deleted: true });

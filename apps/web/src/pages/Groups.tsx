@@ -7,6 +7,7 @@ import {
 import { chatTitle, useSession, type Chat, type User } from '@chatgram/core';
 import { api } from '../lib/api';
 import { useProfilePanel } from '../lib/profilePanel';
+import { onlineNow, usePresenceView } from '../lib/presence';
 
 /* ------------------------------------------------------------ create modal */
 
@@ -181,6 +182,7 @@ type GroupTab = 'members' | 'media' | 'settings';
 
 function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const presenceView = usePresenceView();
   const profilePanel = useProfilePanel();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -547,7 +549,7 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
                       </p>
                       <p className="text-[11px] text-ink-500 dark:text-ink-400">
                         {personIsAdmin ? 'Admin' : 'Member'}
-                        {person.isOnline ? ' · online' : ''}
+                        {onlineNow(presenceView, person._id, person.isOnline) ? ' - online' : ''}
                       </p>
                     </div>
                   </button>

@@ -198,6 +198,11 @@ export class RealtimeClient {
     this.socket?.emit(event, payload);
   }
 
+  /** True while the underlying socket is connected. */
+  isConnected(): boolean {
+    return Boolean(this.socket?.connected);
+  }
+
   private bind(): void {
     const socket = this.socket;
     if (!socket) return;
