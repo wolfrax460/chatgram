@@ -67,10 +67,11 @@ Write-Host '==> assembling .vercel/output (Build Output API)' -ForegroundColor C
 Remove-Item -Recurse -Force $output -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path (Join-Path $output 'static') -Force | Out-Null
 Copy-Item -Recurse -Path (Join-Path $dist '*') -Destination (Join-Path $output 'static')
-$config | Set-Content -Path (Join-Path $output 'config.json') -Encoding utf8
+# Write without a BOM: Vercel rejects a config.json it cannot parse.
+[System.IO.File]::WriteAllText((Join-Path $output 'config.json'), $config, (New-Object System.Text.UTF8Encoding($false)))
 
 # Guard: never deploy without the app and the static docs page.
-foreach ($required in @('index.html', 'web\index.html', 'docs\index.html')) {
+foreach ($required in @('..\config.json', 'index.html', 'web\index.html', 'docs\index.html')) {
   if (-not (Test-Path (Join-Path $output "static\$required"))) {
     throw "prebuilt output is missing $required - refusing to deploy"
   }
