@@ -6,11 +6,12 @@ Last updated: 2026-10-24 (session 3)
 
 ---
 
-## SESSION 4 - NEXT SESSION STARTS HERE
+## SESSION 5 - NEXT SESSION STARTS HERE
 
 Last updated: 2026-10-24 (session 4) — session 3 header kept below for history.
 
-Branch: master. Session started at a5a325a; work is committed locally in small commits.
+Branch: master. Production is deployed and green (see "Production deploy" at the bottom).
+Work from earlier sessions is committed locally in small commits.
 Deploy policy: **deploy-after-green** (owner authorised production deploys on 2026-10-24).
 Deploy record + rollback commands: `docs/deploy.md`.
 
@@ -36,7 +37,7 @@ Deploy record + rollback commands: `docs/deploy.md`.
 
     admin page uses any types.
 
-### Next session starts here (in order)
+### Next session starts here (in order — remaining queue)
 
 1. Section 9 remainder: chat-list pin/archive/mark-unread/delete, link previews, offline send
    queue, list virtualization, @mention highlighting in the list.

@@ -63,3 +63,6 @@ playwright-report/
 client/landing/.vercel/
 **/.vercel/
 client/landing/.env.local
+
+# Production database backups (never commit user data)
+backups/
