@@ -16,6 +16,7 @@ import {
 } from '@chatgram/core';
 import { api, realtime } from './lib/api';
 import { useRealtimeBridge } from './lib/useRealtime';
+import { setDoNotDisturb } from './lib/notify';
 import { useProfilePanel } from './lib/profilePanel';
 import { ChatList } from './components/ChatList';
 import { ChatHeader } from './components/ChatHeader';
@@ -705,6 +706,16 @@ function Shell() {
   const [profileTarget, setProfileTarget] = useState<{ userId: string; chatId?: string } | null>(null);
 
   useRealtimeBridge();
+
+  // Load the user's do-not-disturb schedule; notifications/sounds honour it.
+  const notificationPrefs = useQuery({
+    queryKey: ['notification-prefs'],
+    queryFn: () => api.notificationPrefs(),
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (notificationPrefs.data) setDoNotDisturb(notificationPrefs.data);
+  }, [notificationPrefs.data]);
 
   // A group created / joined just before a reload asks to be opened.
   useEffect(() => {

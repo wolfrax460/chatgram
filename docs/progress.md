@@ -989,3 +989,11 @@ DB `chatgram-backups/20261024-105120.tgz`, nginx `.bak-20261024`. Recorded in
   and `qrcode` declared, 22-assertion `server/test/unit/twoFactor.test.js`). Verified on
   the production server: installed otplib **12.0.1**, `authenticator` helper present,
   both dependencies declared. `npm run test:unit` → 22/22.
+
+### Session 7 — do-not-disturb notifications (2026-10-24)
+- `User.notificationPrefs` (dndEnabled/dndStart/dndEnd) with `GET/PUT /api/users/me/notifications`,
+  HH:mm validation, defaults 22:00 → 07:00.
+- Web: Settings → Notifications "Do not disturb" switch + From/To time inputs (saved on change),
+  client gate in `lib/notify.ts` (`isDoNotDisturbActive`, wrap-over-midnight aware) silences both
+  desktop notifications and the message chime; loaded on sign-in.
+- Verified: `notificationPrefs.test.js` 14/14 + Playwright persistence test.

@@ -111,6 +111,12 @@ const userSchema = new mongoose.Schema({
   // WhatsApp-style read receipts. When false this user still receives messages
   // but does not publish read receipts to senders.
   readReceipts: { type: Boolean, default: true },
+  // Do-not-disturb schedule for desktop/push notifications and sounds.
+  notificationPrefs: {
+    dndEnabled: { type: Boolean, default: false },
+    dndStart: { type: String, default: '22:00' },
+    dndEnd: { type: String, default: '07:00' },
+  },
   // Users this account has blocked, and chats this account muted.
   // Muted chats suppress notifications only; messages still arrive.
   blocked: [{

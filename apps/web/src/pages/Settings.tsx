@@ -341,12 +341,35 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
   const blocked = useQuery({ queryKey: ['blocked-users'], queryFn: () => api.blockedUsers() });
   const muted = useQuery({ queryKey: ['muted-chats'], queryFn: () => api.mutedChats() });
   const contacts = useQuery({ queryKey: ['contacts'], queryFn: () => api.contacts() });
+  const notificationPrefs = useQuery({ queryKey: ['notification-prefs'], queryFn: () => api.notificationPrefs() });
 
   const [showOnline, setShowOnline] = useState(true);
+  const [dndEnabled, setDndEnabled] = useState(false);
+  const [dndStart, setDndStart] = useState('22:00');
+  const [dndEnd, setDndEnd] = useState('07:00');
 
   useEffect(() => {
     if (privacy.data) setShowOnline(privacy.data.showOnlineStatus);
   }, [privacy.data]);
+
+  useEffect(() => {
+    if (!notificationPrefs.data) return;
+    setDndEnabled(notificationPrefs.data.dndEnabled);
+    setDndStart(notificationPrefs.data.dndStart);
+    setDndEnd(notificationPrefs.data.dndEnd);
+  }, [notificationPrefs.data]);
+
+  const saveDnd = useMutation({
+    mutationFn: (patch: { dndEnabled?: boolean; dndStart?: string; dndEnd?: string }) => api.updateNotificationPrefs(patch),
+    onSuccess: () => {
+      setNotice('Notification settings saved.');
+      void queryClient.invalidateQueries({ queryKey: ['notification-prefs'] });
+    },
+    onError: (err: unknown) => {
+      setError(err instanceof Error ? err.message : 'Could not save notification settings');
+      void queryClient.invalidateQueries({ queryKey: ['notification-prefs'] });
+    },
+  });
 
   useEffect(() => {
     setDisplayName(user?.displayName ?? '');
@@ -737,6 +760,43 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
           onChange={(next) => prefs.setPref('sounds', next)}
           testId="notifications-sounds"
         />
+        <ToggleRow
+          icon={Bell}
+          title="Do not disturb"
+          subtitle="Silence desktop notifications and sounds during the hours below"
+          value={dndEnabled}
+          onChange={(next) => {
+            setDndEnabled(next);
+            saveDnd.mutate({ dndEnabled: next });
+          }}
+          testId="notifications-dnd"
+        />
+        {dndEnabled ? (
+          <div className="flex items-center gap-3 px-4 pb-3 text-[13px]">
+            <label className="flex items-center gap-2">
+              From
+              <input
+                type="time"
+                className="field h-9 w-[110px]"
+                value={dndStart}
+                data-testid="dnd-start"
+                onChange={(event) => setDndStart(event.target.value)}
+                onBlur={() => saveDnd.mutate({ dndStart })}
+              />
+            </label>
+            <label className="flex items-center gap-2">
+              To
+              <input
+                type="time"
+                className="field h-9 w-[110px]"
+                value={dndEnd}
+                data-testid="dnd-end"
+                onChange={(event) => setDndEnd(event.target.value)}
+                onBlur={() => saveDnd.mutate({ dndEnd })}
+              />
+            </label>
+          </div>
+        ) : null}
         {(muted.data ?? []).length > 0 ? (
           <div className="px-4 py-2">
             <p className="text-[13px] font-semibold">Muted chats</p>

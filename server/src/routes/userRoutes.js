@@ -18,6 +18,8 @@ const {
   updateAvatar,
   getPrivacy,
   updatePrivacy,
+  getNotificationPrefs,
+  updateNotificationPrefs,
 } = require('../controllers/userController');
 const upload = require('../utils/upload');
 
@@ -33,6 +35,10 @@ router.get('/search', searchUsers);
 // Privacy settings — also before `/:id` so "me" is not read as a user id.
 router.get('/me/privacy', getPrivacy);
 router.put('/me/privacy', updatePrivacy);
+
+// Do-not-disturb schedule for desktop notifications and sounds.
+router.get('/me/notifications', getNotificationPrefs);
+router.put('/me/notifications', updateNotificationPrefs);
 
 // Blocked users and muted chats (before `/:id`, they start with "me").
 router.get('/me/blocked', getBlockedUsers);

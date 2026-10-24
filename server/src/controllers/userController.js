@@ -23,6 +23,15 @@ const bool = (value) => value === true || value === 'true';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+function notificationPrefsShape(me) {
+  const prefs = me?.notificationPrefs || {};
+  return {
+    dndEnabled: prefs.dndEnabled === true,
+    dndStart: prefs.dndStart || '22:00',
+    dndEnd: prefs.dndEnd || '07:00',
+  };
+}
+
 function privacyShape(me) {
   return {
     showOnlineStatus: me?.showOnlineStatus !== false,
@@ -157,6 +166,50 @@ const updatePrivacy = async (req, res) => {
   } catch (error) {
     console.error('Update privacy error:', error);
     res.status(500).json({ message: 'Server error saving privacy settings' });
+  }
+};
+
+// @desc    Read my notification preferences (DND schedule)
+// @route   GET /api/users/me/notifications
+// @access  Private
+const getNotificationPrefs = async (req, res) => {
+  try {
+    const me = await User.findById(req.user._id).select('notificationPrefs');
+    res.json(notificationPrefsShape(me));
+  } catch (error) {
+    console.error('Get notification prefs error:', error);
+    res.status(500).json({ message: 'Server error fetching notification settings' });
+  }
+};
+
+// @desc    Update my notification preferences (DND schedule)
+// @route   PUT /api/users/me/notifications
+// @access  Private
+const updateNotificationPrefs = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const timePattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    const update = {};
+
+    if (body.dndEnabled !== undefined) update['notificationPrefs.dndEnabled'] = bool(body.dndEnabled);
+    if (body.dndStart !== undefined) {
+      if (!timePattern.test(String(body.dndStart))) {
+        return res.status(400).json({ message: 'Use a 24-hour time like 22:00 for the start.', code: 'INVALID_TIME' });
+      }
+      update['notificationPrefs.dndStart'] = String(body.dndStart);
+    }
+    if (body.dndEnd !== undefined) {
+      if (!timePattern.test(String(body.dndEnd))) {
+        return res.status(400).json({ message: 'Use a 24-hour time like 07:00 for the end.', code: 'INVALID_TIME' });
+      }
+      update['notificationPrefs.dndEnd'] = String(body.dndEnd);
+    }
+
+    const me = await User.findByIdAndUpdate(req.user._id, { $set: update }, { new: true }).select('notificationPrefs');
+    res.json({ message: 'Notification settings saved', ...notificationPrefsShape(me) });
+  } catch (error) {
+    console.error('Update notification prefs error:', error);
+    res.status(500).json({ message: 'Server error saving notification settings' });
   }
 };
 
@@ -604,6 +657,8 @@ const reportUser = async (req, res) => {
 };
 
 module.exports = {
+  getNotificationPrefs,
+  updateNotificationPrefs,
   getUsers,
   getPrivacy,
   updatePrivacy,

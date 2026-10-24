@@ -475,6 +475,18 @@ export class ApiClient {
     };
   }
 
+  /** Do-not-disturb schedule for desktop notifications and sounds. */
+  notificationPrefs() {
+    return this.request<{ dndEnabled: boolean; dndStart: string; dndEnd: string }>('/api/users/me/notifications');
+  }
+
+  updateNotificationPrefs(input: { dndEnabled?: boolean; dndStart?: string; dndEnd?: string }) {
+    return this.request<{ message: string; dndEnabled: boolean; dndStart: string; dndEnd: string }>(
+      '/api/users/me/notifications',
+      { method: 'PUT', body: input },
+    );
+  }
+
   updatePrivacy(input: {
     showOnlineStatus?: boolean;
     hiddenFrom?: string[];

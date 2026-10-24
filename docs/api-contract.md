@@ -294,3 +294,14 @@ Socket: new server→client event `message:edited` `{ messageId, chatId, content
 | PATCH | `/api/chats/:id` | `groupSettings.requireApproval` boolean; invite links then return `202 { pending:true }` instead of joining |
 
 Socket: `group:join-request` is emitted to the group room so admins see new requests.
+
+## Session 7 additions (2026-10-24) — notification preferences (do-not-disturb)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/users/me/notifications` | `{ dndEnabled, dndStart: "22:00", dndEnd: "07:00" }` |
+| PUT | `/api/users/me/notifications` | partial update; times must be 24-hour `HH:mm` (400 `INVALID_TIME` otherwise) |
+
+The web client loads these on sign-in and silences desktop notifications and the message
+chime while the window is active (start > end means the window wraps over midnight).
+Mentions still highlight in-app; nothing is dropped.

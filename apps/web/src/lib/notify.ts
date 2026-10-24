@@ -26,7 +26,36 @@ export async function requestNotificationPermission(): Promise<PermissionState> 
   }
 }
 
+
+/** Do-not-disturb schedule, loaded from the user's server-side preferences. */
+export type DoNotDisturb = { dndEnabled: boolean; dndStart: string; dndEnd: string };
+
+let doNotDisturb: DoNotDisturb = { dndEnabled: false, dndStart: '22:00', dndEnd: '07:00' };
+
+export function setDoNotDisturb(next: Partial<DoNotDisturb>): void {
+  doNotDisturb = { ...doNotDisturb, ...next };
+}
+
+function minutesOf(time: string): number {
+  const parts = String(time || '00:00').split(':');
+  const hours = Number(parts[0] ?? 0);
+  const minutes = Number(parts[1] ?? 0);
+  return (Number.isFinite(hours) ? hours : 0) * 60 + (Number.isFinite(minutes) ? minutes : 0);
+}
+
+/** True while notifications and the message chime should stay silent. */
+export function isDoNotDisturbActive(now: Date = new Date()): boolean {
+  if (!doNotDisturb.dndEnabled) return false;
+  const current = now.getHours() * 60 + now.getMinutes();
+  const start = minutesOf(doNotDisturb.dndStart);
+  const end = minutesOf(doNotDisturb.dndEnd);
+  if (start === end) return false;
+  // The window may wrap over midnight (22:00 → 07:00).
+  return start < end ? current >= start && current < end : current >= start || current < end;
+}
+
 export function showNotification(title: string, body: string, onClick?: () => void): void {
+  if (isDoNotDisturbActive()) return;
   if (notificationPermission() !== 'granted') return;
   try {
     const notification = new Notification(title, {
@@ -50,6 +79,7 @@ let audioContext: AudioContext | null = null;
 
 /** Short two-tone chime, synthesised so no audio asset is needed. */
 export function playMessageSound(): void {
+  if (isDoNotDisturbActive()) return;
   try {
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;

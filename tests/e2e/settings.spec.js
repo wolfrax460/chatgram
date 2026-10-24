@@ -164,4 +164,51 @@ test.describe('settings', () => {
     });
     expect(loginAfter.status).toBe(401);
   });
+
+  test('do-not-disturb schedule saves on the server and survives a reload', async ({ page }) => {
+    const me = await registerUser('set-dnd');
+    await signIn(page, me);
+    await openSettings(page);
+
+    const dndSwitch = page.getByTestId('notifications-dnd');
+    await dndSwitch.scrollIntoViewIfNeeded();
+    await expect(dndSwitch).toHaveAttribute('aria-checked', 'false');
+    await dndSwitch.click();
+    await expect(dndSwitch).toHaveAttribute('aria-checked', 'true');
+
+    const start = page.getByTestId('dnd-start');
+    const end = page.getByTestId('dnd-end');
+    await expect(start).toBeVisible();
+    await start.fill('21:15');
+    await start.blur();
+    await end.fill('06:30');
+    await end.blur();
+
+    // Server persisted both the switch and the window.
+    await expect
+      .poll(
+        async () => {
+          const prefs = await apiRequest('GET', '/api/users/me/notifications', { token: me.accessToken });
+          return `${prefs.body?.dndEnabled}-${prefs.body?.dndStart}-${prefs.body?.dndEnd}`;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe('true-21:15-06:30');
+
+    // A reload loads them back from the server.
+    await page.reload();
+    await openSettings(page);
+    const dndAfter = page.getByTestId('notifications-dnd');
+    await dndAfter.scrollIntoViewIfNeeded();
+    await expect(dndAfter).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByTestId('dnd-start')).toHaveValue('21:15');
+    await expect(page.getByTestId('dnd-end')).toHaveValue('06:30');
+
+    // Invalid times are rejected by the API (client shows the message).
+    const invalid = await apiRequest('PUT', '/api/users/me/notifications', {
+      token: me.accessToken,
+      body: { dndStart: '99:99' },
+    });
+    expect(invalid.status).toBe(400);
+  });
 });
