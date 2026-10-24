@@ -224,7 +224,7 @@ export default function Composer({
         />
 
         {draft.trim() ? (
-          <button type="submit" className="btn-primary !px-3" disabled={busy} title="Send">
+          <button type="submit" className="btn-primary !px-3" disabled={busy} title="Send" aria-label="Send message">
             <Send className="h-5 w-5" />
           </button>
         ) : (
