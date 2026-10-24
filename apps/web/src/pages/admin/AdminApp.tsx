@@ -15,6 +15,8 @@ const UserDetailPage = lazy(() => import('./UserDetailPage'));
 const InboxPage = lazy(() => import('./InboxPage'));
 const ProvidersPage = lazy(() => import('./ProvidersPage'));
 const AnnouncementsPage = lazy(() => import('./AnnouncementsPage'));
+const HealthPage = lazy(() => import('./HealthPage'));
+const AuditPage = lazy(() => import('./AuditPage'));
 const LegacyPanels = lazy(() => import('../AdminGate'));
 
 /* ------------------------------------------------------------------- routes */
@@ -23,8 +25,8 @@ type NavEntry = { path: string; label: string; icon: typeof LayoutDashboard; gro
 
 const NAV: NavEntry[] = [
   { path: '/admin', label: 'Overview', icon: LayoutDashboard, group: 'Monitor', built: true },
-  { path: '/admin/health', label: 'System health', icon: Gauge, group: 'Monitor' },
-  { path: '/admin/audit', label: 'Audit log', icon: ClipboardList, group: 'Monitor' },
+  { path: '/admin/health', label: 'System health', icon: Gauge, group: 'Monitor', built: true },
+  { path: '/admin/audit', label: 'Audit log', icon: ClipboardList, group: 'Monitor', built: true },
   { path: '/admin/users', label: 'Users', icon: Users, group: 'People', built: true },
   { path: '/admin/reports', label: 'Reports', icon: AlertTriangle, group: 'People' },
   { path: '/admin/groups', label: 'Groups', icon: Globe, group: 'People' },
@@ -290,6 +292,8 @@ function PageForPath({
   if (normalized === '/admin/inbox') return <InboxPage session={session} />;
   if (normalized === '/admin/providers') return <ProvidersPage session={session} />;
   if (normalized === '/admin/security') return <SecurityPage session={session} onSignOut={onSignOut} />;
+  if (normalized === '/admin/health') return <HealthPage />;
+  if (normalized === '/admin/audit') return <AuditPage />;
   if (normalized === '/admin/announcements') return <AnnouncementsPage session={session} />;
   if (normalized === '/admin/legacy') return <LegacyPanels />;
   const entry = NAV.find((item) => item.path === normalized) ?? NAV[0]!;

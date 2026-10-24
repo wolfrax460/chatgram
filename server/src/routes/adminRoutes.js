@@ -19,6 +19,7 @@ const {
   forceLogout,
   resetTwoFactor,
 } = require('../controllers/adminOverviewController');
+const { systemHealth, auditList } = require('../controllers/adminHealthController');
 
 router.post('/auth/login', login);
 router.get('/auth/session', requireAdminSession, sessionInfo);
@@ -30,6 +31,8 @@ router.post('/auth/change-password', requireAdminSession, requireAdminCsrf, chan
 
 // Dashboard (Change 2): Overview + Users. Read-only fields only; no secrets.
 router.get('/overview', requireAdminSession, overview);
+router.get('/health', requireAdminSession, systemHealth);
+router.get('/audit', requireAdminSession, auditList);
 router.get('/users', requireAdminSession, listUsers);
 router.get('/users/:id', requireAdminSession, userDetail);
 router.post('/users/:id/force-logout', requireAdminSession, requireAdminCsrf, forceLogout);
