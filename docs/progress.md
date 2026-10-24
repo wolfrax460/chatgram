@@ -1061,7 +1061,7 @@ Legend: ✅ done + vs deployed · ✗ not started · ◐ partial.
    Verified by `server/test/integration/supportReply.test.js` (9/9), all other integration
    suites, and a production smoke: **Support answered a test user in 2.8 s**, test account
    and chat deleted afterwards.
-9a. ◐ Admin password gate — **server + UI deployed**. One admin password (bcrypt cost 12,
+9a. ◐ Admin password gate — **server + UI deployed and enabled in production** (password set via scripts/set-admin-password.js on 2026-10-24, login/logout verified 200 through the public API and the Vercel /api proxy; credential stored by the owner locally, DPAPI-encrypted, never in the repo). One admin password (bcrypt cost 12,
    `ADMIN_PANEL_PASSWORD_HASH`, `scripts/set-admin-password.js`), server-side sessions with
    HttpOnly/SameSite=Strict/Secure cookie, per-session CSRF, sliding 30 min / absolute 8 h,
    sign-out + sign-out-all, per-IP progressive lockout (5/15 min), constant-time comparison,

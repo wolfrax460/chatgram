@@ -68,17 +68,34 @@ function strengthProblem(password) {
   return null;
 }
 
+/** Non-interactive mode: one line of stdin (used by the owner's automation). */
+async function readLineFromStdin() {
+  return new Promise((resolve) => {
+    let data = '';
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (chunk) => {
+      data += chunk;
+      const index = data.search(/[\r\n]/);
+      if (index >= 0) resolve(data.slice(0, index));
+    });
+    process.stdin.on('end', () => resolve(data.replace(/[\r\n].*$/s, '')));
+  });
+}
+
 async function main() {
-  const password = await hiddenQuestion('New admin password: ');
+  const stdinMode = process.argv.includes('--stdin');
+  const password = stdinMode ? await readLineFromStdin() : await hiddenQuestion('New admin password: ');
   const problem = strengthProblem(password);
   if (problem) {
     console.error(`\n${problem}`);
     process.exit(1);
   }
-  const confirmation = await hiddenQuestion('Repeat the admin password: ');
-  if (confirmation !== password) {
-    console.error('\nPasswords do not match.');
-    process.exit(1);
+  if (!stdinMode) {
+    const confirmation = await hiddenQuestion('Repeat the admin password: ');
+    if (confirmation !== password) {
+      console.error('\nPasswords do not match.');
+      process.exit(1);
+    }
   }
 
   const hash = await bcrypt.hash(password, 12);
