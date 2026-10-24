@@ -76,9 +76,17 @@ function AssistantAvatar({ size = 32 }: { size?: number }) {
   );
 }
 
-export default function SupportWidget() {
+export default function SupportWidget({ hideLauncher = false }: { hideLauncher?: boolean }) {
   const user = useSession((s) => s.user);
   const [open, setOpen] = useState(false);
+
+  // Signed-in users open the widget from the sidebar (the floating launcher is
+  // hidden there so it never covers the composer).
+  useEffect(() => {
+    const openHelp = () => setOpen(true);
+    window.addEventListener('chatgram-open-help', openHelp);
+    return () => window.removeEventListener('chatgram-open-help', openHelp);
+  }, []);
   const [tab, setTab] = useState<Tab>('home');
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<HelpMessageWire[]>([]);
@@ -380,7 +388,8 @@ export default function SupportWidget() {
 
   return (
     <>
-      {/* launcher */}
+      {/* launcher (hidden inside the signed-in app: the sidebar opens the widget) */}
+      {hideLauncher ? null : (
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -396,6 +405,7 @@ export default function SupportWidget() {
           </span>
         ) : null}
       </button>
+      )}
 
       {open ? (
         <div

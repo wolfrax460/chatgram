@@ -44,6 +44,54 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Scrollbars: thin, dark, transparent track everywhere (no bright white track
+   on any section, light or dark theme).
+--------------------------------------------------------------------------- */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+html.dark {
+  color-scheme: dark;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.7);
+}
+html.dark *::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.22);
+}
+html.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Dark theme: any divider that forgot a dark variant must not stay bright white.
+   The attribute selector also covers opacity variants like border-ink-200/70. */
+html.dark [class*='border-ink-200'] {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+html.dark [class*='divide-ink-200'] > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+html.dark hr {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ---------------------------------------------------------------------------
    Auth pages: fit the viewport without scrolling whenever possible.
    - Unlayered rules below intentionally beat Tailwind utilities so the same
      markup can compress on short screens without duplicating every class.

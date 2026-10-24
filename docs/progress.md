@@ -1038,3 +1038,35 @@ DB `chatgram-backups/20261024-105120.tgz`, nginx `.bak-20261024`. Recorded in
   for strict-NAT users.
 - Rollback: previous Vercel deployment, `src.bak-20261024-115853`,
   `chatgram-backups/20261024-115853.tgz`.
+
+
+---
+
+## Session 9 (2026-10-24) — new queue, progress ledger
+
+Legend: ✅ done + vs deployed · ✗ not started · ◐ partial.
+
+1. ✅ White lines / scrollbars / help launcher — thin dark themed scrollbars everywhere
+   (`scrollbar-width: thin`, transparent track, subtle thumb, dark color-scheme),
+   dark-theme divider override (no bright 1px lines), floating help launcher hidden inside
+   the signed-in app and opened from a new sidebar "Help" button (still floating on auth
+   pages). Playwright `theme.spec.js` checks scrollbar tracks are not light and launchers
+   do not overlap. **Deployed** (web `chatgram-4us7nqyix`).
+2. ✗ Support outage root cause + AI answer test — not started.
+9a. ✗ Admin password gate / sessions / TOTP / brute force — not started.
+9c. ✗ Model provider switching tab — not started (existing providers panel remains).
+3.  ✗ Chatgram AI (sidebar entry, general assistant, streaming, silent learning loop,
+    admin inbox) — not started.
+4.  ✗ Empty-screen recommendations + quick actions — not started.
+9e. ✗ Automatic dashboard alerts for unanswered questions — not started.
+9b. ✗ Admin feature tabs (overview, users, moderation, groups, statuses, support, AI,
+    announcements, releases, flags, safety, health, audit, settings, data requests) — not started.
+9d. ✗ Admin read-only oversight + audit trail — not started.
+5.  ✗ Windows app rebuild/installer — not started.
+6.  ✗ Android app build — not started.
+7.  ✗ Landing features/downloads tab — not started (landing has the earlier rewrite).
+8.  ◐ Finish: item 1 deployed and docs updated; the rest of the queue above is unfinished.
+
+Root causes/steps for the next session are the queue text above; the support outage (item 2)
+was NOT diagnosed — it needs the production PM2 logs, SupportSettings document and an
+authenticated AI test, then the Groq key replacement through the admin providers panel.

@@ -179,6 +179,8 @@ rollback is unambiguous.
 
 | 2026-10-24 (14:20) | 618a9eb (web only; includes 8e4e192 + landing rewrite) | Composer send-button accessibility label; rebuilt landing + /web from the current workspace. | Web deployment chatgram-cufahiivk; /, /web/, /docs/, /web/admin 200; API health ok (backend unchanged since 8e4e192). Rollback: previous Vercel deployment. |
 
+| 2026-10-24 (14:35) | 9a0c1e2-ish (web) | Item 1: thin dark themed scrollbars + dark-theme divider fixes + help launcher moved into the sidebar (hidden floating launcher inside the app). New Playwright theme test. | Web deployment `chatgram-4us7nqyix`; /, /web/, /docs/, /web/admin 200. Rollback: previous Vercel deployment. |
+
 ## 6. Deploy record
 
 | Date | Commit | Deployed | Result / rollback |

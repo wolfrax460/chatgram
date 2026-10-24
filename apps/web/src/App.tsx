@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Moon, Sun, Monitor, MessageCircle, LogOut, Users, BookUser, CircleDashed,
-  Settings as SettingsIcon, ChevronDown, X, Search,
+  Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy,
 } from 'lucide-react';
 import {
   chatPartner,
@@ -795,6 +795,17 @@ function Shell() {
             {label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('chatgram-open-help'))}
+          title="Help and support"
+          aria-label="Help and support"
+          data-testid="sidebar-help"
+          className="flex w-14 flex-col items-center gap-1 rounded-xl py-2 text-[11.5px] font-semibold text-ink-600 transition hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-white/5"
+        >
+          <LifeBuoy className="h-5 w-5" />
+          Help
+        </button>
         <span className="flex-1" />
         <button type="button" onClick={cycle} className="btn-ghost !px-2" title={`Theme: ${mode}`} aria-label="Toggle theme">
           {mode === 'dark' ? <Moon className="h-4 w-4" /> : mode === 'light' ? <Sun className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
@@ -940,7 +951,7 @@ export default function App() {
   return (
     <>
       {user ? <Shell /> : <Auth />}
-      <SupportWidget />
+      <SupportWidget hideLauncher={Boolean(user)} />
     </>
   );
 }
