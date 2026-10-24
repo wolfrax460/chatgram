@@ -46,8 +46,11 @@ async function main() {
   process.env.AI_HOURLY_LIMIT = '50';
   process.env.AI_DAILY_LIMIT = '200';
   process.env.SUPPORT_REPLY_TIMEOUT_MS = '300';
-  process.env.SUPPORT_PASSWORD = process.env.SUPPORT_PASSWORD || 'StagingSupport1!';
-  process.env.SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || 'support@chatgram.local';
+  const stamp = Date.now().toString(36);
+  process.env.SUPPORT_PASSWORD = 'StagingSupport1!';
+  // A dedicated support account for this test only: other AI suites create their
+  // own isSupportAccount users and must not collide with a real one.
+  process.env.SUPPORT_EMAIL = `support-inbox-${stamp}@chatgram.test`;
 
   const replies = [
     "I don't know the answer to that.",
@@ -77,7 +80,6 @@ async function main() {
   });
   await providers.setFeatures({ features: { chatgramAI: { primary: 'inbox-test', fallbacks: [] } } });
 
-  const stamp = Date.now().toString(36);
   const user = await User.create({ displayName: `INBOX TEST ${stamp}`, email: `inbox-test-${stamp}@chatgram.test`, password: 'InboxTest1!' });
   let supportChat = null;
   const createdInbox = [];
@@ -163,9 +165,10 @@ async function main() {
       await Chat.deleteOne({ _id: supportChat._id });
     }
     await User.deleteOne({ _id: user._id });
+    // Remove the support account this test created so other AI suites stay isolated.
+    if (supportId) await User.deleteOne({ _id: supportId });
     await providers.deleteProvider('inbox-test').catch(() => {});
     await AiSettings.updateOne({ key: 'global' }, { $unset: { aiPolicy: '' } });
-    void supportId;
     void policy;
     await mongoose.disconnect();
     await new Promise((resolve) => mock.close(resolve));
