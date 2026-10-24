@@ -253,6 +253,10 @@ const updateGroup = async (req, res) => {
           settingsChanged = true;
         }
       }
+      if (body.groupSettings.requireApproval !== undefined) {
+        next.requireApproval = Boolean(body.groupSettings.requireApproval);
+        settingsChanged = true;
+      }
       chat.groupSettings = next;
       if (settingsChanged) changes.push('changed the group permissions');
     }
@@ -801,6 +805,22 @@ const joinViaInvite = async (req, res) => {
       });
     }
 
+    // Groups that require approval do not let the invite link join directly.
+    if (groupSystem.settingsOf(chat).requireApproval) {
+      const pending = await addJoinRequest(chat, req.user._id);
+      if (!pending.created) {
+        return res.status(200).json({
+          message: 'Your request to join is waiting for an admin to approve it.',
+          pending: true,
+          alreadyRequested: true,
+        });
+      }
+      return res.status(202).json({
+        message: 'Join request sent. An admin will approve or decline it.',
+        pending: true,
+      });
+    }
+
     chat.participants.push(req.user._id);
     await chat.save();
 
@@ -815,6 +835,121 @@ const joinViaInvite = async (req, res) => {
   } catch (error) {
     console.error('Join via invite error:', error);
     return res.status(500).json({ message: 'Could not join the group' });
+  }
+};
+
+/* ------------------------------------------------------- join requests */
+
+/** Store a pending request (idempotent) and notify the group's admins live. */
+async function addJoinRequest(chat, userId) {
+  const existing = (chat.joinRequests || []).find((request) => String(request.user) === String(userId));
+  if (existing) return { created: false };
+  chat.joinRequests.push({ user: userId, requestedAt: new Date() });
+  await chat.save();
+  const requester = await User.findById(userId).select('displayName avatarUrl');
+  realtime.emitToChat(chat._id, 'group:join-request', {
+    chatId: String(chat._id),
+    user: requester ? { id: String(requester._id), displayName: requester.displayName, avatarUrl: requester.avatarUrl } : null,
+    requestedAt: new Date().toISOString(),
+  });
+  return { created: true };
+}
+
+// @desc    Ask to join a group (used by the invite page for approval groups)
+// @route   POST /api/chats/:id/join-request
+// @access  Private
+const requestToJoin = async (req, res) => {
+  try {
+    const chat = await Chat.findById(req.params.id);
+    if (!chat || chat.type !== 'group') return res.status(404).json({ message: 'Group not found' });
+    if (chat.participants.some((participant) => String(participant) === String(req.user._id))) {
+      return res.status(400).json({ message: 'You are already a member.', code: 'ALREADY_MEMBER' });
+    }
+    if (chat.participants.length >= MAX_GROUP_MEMBERS) {
+      return res.status(403).json({ message: 'This group is full.', code: 'GROUP_FULL' });
+    }
+    if (!groupSystem.settingsOf(chat).requireApproval) {
+      // No approval needed: join directly (same as the invite link).
+      chat.participants.push(req.user._id);
+      await chat.save();
+      const joiner = await User.findById(req.user._id).select('displayName');
+      await groupSystem.postSystemMessage(chat, `${joiner?.displayName || 'A member'} joined the group`);
+      realtime.joinUsersToChat(chat._id, [String(req.user._id)]);
+      const populated = await groupSystem.broadcastChatUpdate(chat._id);
+      groupSystem.broadcastMemberList(chat._id);
+      return res.json({ message: 'Joined the group', chat: populated, joined: true });
+    }
+    const pending = await addJoinRequest(chat, req.user._id);
+    return res
+      .status(pending.created ? 202 : 200)
+      .json({ message: 'Join request sent. An admin will approve or decline it.', pending: true, alreadyRequested: !pending.created });
+  } catch (error) {
+    console.error('Join request error:', error);
+    return res.status(500).json({ message: 'Could not send the join request' });
+  }
+};
+
+// @desc    List pending join requests (admins only)
+// @route   GET /api/chats/:id/join-requests
+// @access  Private (group admin)
+const getJoinRequests = async (req, res) => {
+  try {
+    const chat = await Chat.findById(req.params.id).populate('joinRequests.user', PARTICIPANT_FIELDS);
+    if (!chat || chat.type !== 'group') return res.status(404).json({ message: 'Group not found' });
+    if (!groupSystem.isAdmin(chat, req.user._id)) {
+      return res.status(403).json({ message: 'Only group admins can see join requests.', code: 'GROUP_ADMIN_ONLY' });
+    }
+    return res.json({
+      requests: (chat.joinRequests || []).map((request) => ({
+        user: request.user,
+        requestedAt: request.requestedAt,
+        note: request.note || '',
+      })),
+    });
+  } catch (error) {
+    console.error('Get join requests error:', error);
+    return res.status(500).json({ message: 'Could not load join requests' });
+  }
+};
+
+// @desc    Approve or decline a pending join request
+// @route   POST /api/chats/:id/join-requests/:userId/approve | /reject
+// @access  Private (group admin)
+const respondJoinRequest = async (req, res) => {
+  try {
+    const { id, userId } = req.params;
+    const approve = req.path.endsWith('/approve');
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid group or user ID' });
+    }
+    const chat = await Chat.findById(id);
+    if (!chat || chat.type !== 'group') return res.status(404).json({ message: 'Group not found' });
+    if (!groupSystem.isAdmin(chat, req.user._id)) {
+      return res.status(403).json({ message: 'Only group admins can respond to join requests.', code: 'GROUP_ADMIN_ONLY' });
+    }
+    const pending = (chat.joinRequests || []).some((request) => String(request.user) === userId);
+    if (!pending) return res.status(404).json({ message: 'That join request no longer exists.' });
+
+    chat.joinRequests = chat.joinRequests.filter((request) => String(request.user) !== userId);
+    if (!approve) {
+      await chat.save();
+      return res.json({ message: 'Join request declined.', approved: false });
+    }
+
+    if (chat.participants.length >= MAX_GROUP_MEMBERS) {
+      return res.status(403).json({ message: 'This group is full.', code: 'GROUP_FULL' });
+    }
+    chat.participants.push(userId);
+    await chat.save();
+    const joiner = await User.findById(userId).select('displayName');
+    await groupSystem.postSystemMessage(chat, `${joiner?.displayName || 'A new member'} was approved to join the group`);
+    realtime.joinUsersToChat(chat._id, [userId]);
+    await groupSystem.broadcastChatUpdate(chat._id);
+    groupSystem.broadcastMemberList(chat._id);
+    return res.json({ message: 'Join request approved.', approved: true });
+  } catch (error) {
+    console.error('Respond join request error:', error);
+    return res.status(500).json({ message: 'Could not respond to the join request' });
   }
 };
 
@@ -985,6 +1120,9 @@ module.exports = {
   revokeInvite,
   previewInvite,
   joinViaInvite,
+  requestToJoin,
+  getJoinRequests,
+  respondJoinRequest,
   pinMessage,
   unpinMessage,
   getChatMedia,

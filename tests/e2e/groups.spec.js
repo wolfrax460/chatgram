@@ -202,6 +202,38 @@ test.describe('groups', () => {
     await expect(page.getByTestId('system-message').filter({ hasText: /group photo/i }).first()).toBeVisible({ timeout: 20_000 });
     expect(fs.existsSync(path.join(__dirname, 'fixtures', 'status-image.png'))).toBe(true);
   });
+
+  test('admins enable approval mode and approve a waiting member', async ({ page }) => {
+    const alice = await registerUser('grp-approve-admin');
+    const bob = await registerUser('grp-approve-member');
+    const eve = await registerUser('grp-approve-eve');
+    const groupName = `Approval group ${Date.now().toString(36)}`;
+    const group = await createGroup(alice, groupName, [bob.user.id]);
+
+    await signIn(page, alice);
+    await openTab(page, 'Groups');
+    const groupsPage = page.getByTestId('groups-page');
+    await groupsPage.getByRole('button', { name: 'Info' }).first().click();
+    const infoPanel = page.locator('aside');
+    await infoPanel.getByRole('button', { name: 'Settings' }).click();
+    const toggle = page.getByRole('switch', { name: 'New members need approval' });
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+    await expect(page.getByText('Group permissions saved.')).toBeVisible({ timeout: 20_000 });
+
+    // Eve asks to join while the panel is open.
+    const request = await apiRequest('POST', `/api/chats/${group._id}/join-request`, { token: eve.accessToken });
+    expect(request.status).toBe(202);
+
+    await infoPanel.getByRole('button', { name: 'Members' }).click();
+    const card = page.getByTestId('join-requests');
+    await expect(card).toBeVisible({ timeout: 20_000 });
+    await expect(card).toContainText(eve.user.displayName);
+    await card.getByRole('button', { name: 'Approve' }).click();
+    await expect(page.getByText('Member approved.')).toBeVisible({ timeout: 20_000 });
+    await expect(card).toHaveCount(0);
+    await expect(page.getByText(eve.user.displayName).first()).toBeVisible();
+  });
 });
 
 

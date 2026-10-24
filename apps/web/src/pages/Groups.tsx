@@ -250,7 +250,12 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
     }));
   const iAmAdmin = members.find((m) => m.isYou)?.isAdmin ?? (chat.admins ?? []).includes(meId);
   const group = membersQuery.data?.group;
-  const settings = group?.settings ?? chat.settings ?? { whoCanEditInfo: 'all', whoCanSendMessages: 'all', whoCanAddMembers: 'admins' };
+  const settings = group?.settings ?? chat.settings ?? {
+    whoCanEditInfo: 'all',
+    whoCanSendMessages: 'all',
+    whoCanAddMembers: 'admins',
+    requireApproval: false,
+  };
   const muted = (mutedQuery.data ?? []).some((entry) => entry.chatId === chat.id);
 
   const remove = useMutation({
@@ -296,6 +301,26 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
       setNotice('Group permissions saved.');
     },
     onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not save permissions'),
+  });
+
+  const joinRequestsQuery = useQuery({
+    queryKey: ['join-requests', chat.id],
+    queryFn: () => api.joinRequests(chat.id),
+    enabled: tab === 'members',
+    retry: false,
+    // Always fetch when the members tab opens: a request may have arrived while
+    // the admin was on another tab.
+    staleTime: 0,
+  });
+  const respondJoin = useMutation({
+    mutationFn: ({ userId, approve }: { userId: string; approve: boolean }) =>
+      api.respondJoinRequest(chat.id, userId, approve),
+    onSuccess: (_result, variables) => {
+      setNotice(variables.approve ? 'Member approved.' : 'Join request declined.');
+      void queryClient.invalidateQueries({ queryKey: ['join-requests', chat.id] });
+      refresh();
+    },
+    onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not respond to the request'),
   });
 
   const createInvite = useMutation({
@@ -450,6 +475,41 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
       <div className="flex-1 overflow-y-auto">
         {tab === 'members' ? (
           <>
+            {joinRequestsQuery.data?.requests?.length ? (
+              <div className="mx-3 mt-3 rounded-xl border border-amber-300/60 bg-amber-50 p-2 dark:border-amber-500/30 dark:bg-amber-500/10" data-testid="join-requests">
+                <p className="px-1 pb-1 text-[12px] font-bold text-amber-800 dark:text-amber-200">
+                  Join requests ({joinRequestsQuery.data.requests.length})
+                </p>
+                {joinRequestsQuery.data.requests.map((request) => (
+                  <div key={request.user.id} className="flex items-center gap-2 px-1 py-1">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-brand-600 text-[10px] font-bold text-white">
+                      {request.user.avatarUrl ? (
+                        <img src={request.user.avatarUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        request.user.displayName.slice(0, 2).toUpperCase()
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{request.user.displayName}</span>
+                    <button
+                      type="button"
+                      className="btn-primary !px-2 !py-1 text-[11.5px]"
+                      disabled={respondJoin.isPending}
+                      onClick={() => respondJoin.mutate({ userId: request.user.id, approve: true })}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost !px-2 !py-1 text-[11.5px]"
+                      disabled={respondJoin.isPending}
+                      onClick={() => respondJoin.mutate({ userId: request.user.id, approve: false })}
+                    >
+                      Decline
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {iAmAdmin || settings.whoCanAddMembers === 'all' ? (
               <div className="px-3 pt-3">
                 <button type="button" className="btn-primary w-full !py-1.5 text-[12px]" onClick={() => setAdding(true)}>
@@ -600,6 +660,30 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
                   </div>
                 ))}
 
+                <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-ink-200 px-3 py-2 dark:border-white/10">
+                  <div>
+                    <p className="text-[12px] font-semibold">New members need approval</p>
+                    <p className="text-[11px] text-ink-500 dark:text-ink-400">Invite links ask an admin before anyone joins.</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={settings.requireApproval === true}
+                    aria-label="New members need approval"
+                    disabled={saveSettings.isPending}
+                    onClick={() => saveSettings.mutate({ requireApproval: !settings.requireApproval })}
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                      settings.requireApproval ? 'bg-brand-600' : 'bg-ink-300 dark:bg-white/20'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                        settings.requireApproval ? 'left-[22px]' : 'left-0.5'
+                      }`}
+                    />
+                  </button>
+                </div>
+
                 <div className="mt-4 border-t border-ink-200 pt-3 dark:border-white/10">
                   <p className="mb-1 flex items-center gap-1 text-[12px] font-semibold">
                     <LinkIcon className="h-3.5 w-3.5" /> Invite link
@@ -692,7 +776,7 @@ export default function Groups({ onOpenChat }: { onOpenChat: (chatId: string) =>
   );
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full" data-testid="groups-page">
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-2 border-b border-ink-200 px-4 py-3 dark:border-white/10">
           <Users className="h-5 w-5 text-brand-600" />

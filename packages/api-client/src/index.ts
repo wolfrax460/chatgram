@@ -629,7 +629,7 @@ export class ApiClient {
         avatarUrl: string;
         createdBy: { id: string; displayName: string } | null;
         createdAt: string | null;
-        settings: { whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins' };
+        settings: { whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins'; requireApproval?: boolean };
         inviteEnabled: boolean;
         inviteToken: string | null;
         pinnedMessageId: string | null;
@@ -678,7 +678,7 @@ export class ApiClient {
       groupName?: string;
       groupDescription?: string;
       groupAvatar?: string;
-      groupSettings?: Partial<{ whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins' }>;
+      groupSettings?: Partial<{ whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins'; requireApproval: boolean }>;
     },
   ) {
     return this.request(`/api/chats/${chatId}`, { method: 'PATCH', body: fields });
@@ -720,11 +720,34 @@ export class ApiClient {
   }
 
   async joinViaInvite(token: string) {
-    const data = await this.request<{ message: string; chat: unknown; alreadyMember: boolean }>(
+    const data = await this.request<{ message: string; chat?: unknown; alreadyMember?: boolean; pending?: boolean }>(
       `/api/chats/invite/${encodeURIComponent(token)}/join`,
       { method: 'POST' },
     );
-    return { ...data, chat: chatFromJson(data.chat) };
+    return { ...data, chat: data.chat ? chatFromJson(data.chat) : undefined };
+  }
+
+  /** Ask to join an approval-mode group by id. */
+  requestToJoinGroup(chatId: string) {
+    return this.request<{ message: string; chat?: unknown; pending?: boolean; joined?: boolean; alreadyRequested?: boolean }>(
+      `/api/chats/${chatId}/join-request`,
+      { method: 'POST' },
+    );
+  }
+
+  /** Pending join requests (group admins only). */
+  joinRequests(chatId: string) {
+    return this.request<{
+      requests: { user: { id: string; displayName: string; avatarUrl?: string }; requestedAt: string; note?: string }[];
+    }>(`/api/chats/${chatId}/join-requests`);
+  }
+
+  /** Approve or decline a join request (group admins only). */
+  respondJoinRequest(chatId: string, userId: string, approve: boolean) {
+    return this.request<{ message: string; approved: boolean }>(
+      `/api/chats/${chatId}/join-requests/${userId}/${approve ? 'approve' : 'reject'}`,
+      { method: 'POST' },
+    );
   }
 
   pinMessage(chatId: string, messageId: string) {

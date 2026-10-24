@@ -14,6 +14,7 @@ import { api } from '../lib/api';
 export default function JoinGroup({ token }: { token: string }) {
   const user = useSession((s) => s.user);
   const [joined, setJoined] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
 
   const invite = useQuery({
@@ -26,6 +27,15 @@ export default function JoinGroup({ token }: { token: string }) {
   const join = useMutation({
     mutationFn: () => api.joinViaInvite(token),
     onSuccess: (result) => {
+      if (result.pending) {
+        // Approval-mode group: the request is stored and admins decide.
+        setPending(true);
+        return;
+      }
+      if (!result.chat) {
+        setError('The group could not be opened. Try the link again.');
+        return;
+      }
       window.localStorage.setItem('chatgram.pendingChat', result.chat.id);
       setJoined(result.chat.id);
     },
@@ -62,6 +72,18 @@ export default function JoinGroup({ token }: { token: string }) {
               {invite.error instanceof Error ? invite.error.message : 'This invite link is not valid or was revoked.'}
             </p>
             <button type="button" className="btn-ghost mt-4 w-full" onClick={() => (window.location.href = import.meta.env.BASE_URL || '/')}>
+              Back to Chatgram
+            </button>
+          </>
+        ) : pending ? (
+          <>
+            <h1 className="mt-3 flex items-center justify-center gap-2 text-lg font-bold">
+              <CheckCircle2 className="h-5 w-5 text-amber-500" /> Request sent
+            </h1>
+            <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">
+              An admin of {invite.data?.name ?? 'this group'} will review your request. You will get access once it is approved.
+            </p>
+            <button type="button" className="btn-primary mt-4 w-full" onClick={openChat}>
               Back to Chatgram
             </button>
           </>

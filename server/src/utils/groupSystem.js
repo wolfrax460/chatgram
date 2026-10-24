@@ -24,6 +24,7 @@ function settingsOf(chat) {
     whoCanEditInfo: settings.whoCanEditInfo === 'admins' ? 'admins' : 'all',
     whoCanSendMessages: settings.whoCanSendMessages === 'admins' ? 'admins' : 'all',
     whoCanAddMembers: settings.whoCanAddMembers === 'admins' ? 'admins' : 'all',
+    requireApproval: settings.requireApproval === true,
   };
 }
 

@@ -44,8 +44,16 @@ const chatSchema = new mongoose.Schema({
   groupSettings: {
     whoCanEditInfo: { type: String, enum: ['all', 'admins'], default: 'all' },
     whoCanSendMessages: { type: String, enum: ['all', 'admins'], default: 'all' },
-    whoCanAddMembers: { type: String, enum: ['all', 'admins'], default: 'admins' }
+    whoCanAddMembers: { type: String, enum: ['all', 'admins'], default: 'admins' },
+    // When true, join requests (and invite links) need an admin's approval.
+    requireApproval: { type: Boolean, default: false }
   },
+  // Pending join requests; approved by an admin, then the user becomes a member.
+  joinRequests: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    requestedAt: { type: Date, default: Date.now },
+    note: { type: String, default: '' }
+  }],
   // Invite link (admin-managed). Disabled by default: an admin must create it.
   inviteToken: { type: String, default: null, index: true },
   inviteEnabled: { type: Boolean, default: false },

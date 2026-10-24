@@ -282,3 +282,15 @@ reply hook (`help/replyBridge`); guests poll while the widget is open.
 | POST | `/api/chats/:id/avatar` | multipart `avatar` (image only) — group photo, respects `whoCanEditInfo`, posts a system message and updates every member live |
 
 Socket: new server→client event `message:edited` `{ messageId, chatId, content, editedAt }`.
+
+## Session 6 additions (2026-10-24) — group join approval
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/chats/:id/join-request` | ask to join; in approval mode → `202 { pending:true }` (idempotent), otherwise joins directly and returns `{ joined:true, chat }` |
+| GET | `/api/chats/:id/join-requests` | admin only; `{ requests: [{ user, requestedAt }] }` |
+| POST | `/api/chats/:id/join-requests/:userId/approve` | admin only; adds the member, posts a system message and updates everyone live |
+| POST | `/api/chats/:id/join-requests/:userId/reject` | admin only; removes the request without adding the member |
+| PATCH | `/api/chats/:id` | `groupSettings.requireApproval` boolean; invite links then return `202 { pending:true }` instead of joining |
+
+Socket: `group:join-request` is emitted to the group room so admins see new requests.

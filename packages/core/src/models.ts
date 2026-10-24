@@ -72,6 +72,7 @@ export interface Chat {
     whoCanEditInfo: 'all' | 'admins';
     whoCanSendMessages: 'all' | 'admins';
     whoCanAddMembers: 'all' | 'admins';
+    requireApproval: boolean;
   };
   inviteEnabled?: boolean;
   pinnedMessageId?: string;
@@ -197,6 +198,7 @@ export function chatFromJson(json: unknown): Chat {
         whoCanEditInfo: raw.whoCanEditInfo === 'admins' ? ('admins' as const) : ('all' as const),
         whoCanSendMessages: raw.whoCanSendMessages === 'admins' ? ('admins' as const) : ('all' as const),
         whoCanAddMembers: raw.whoCanAddMembers === 'admins' ? ('admins' as const) : ('all' as const),
+        requireApproval: raw.requireApproval === true,
       };
     })(),
     inviteEnabled: j.inviteEnabled === true,

@@ -962,3 +962,12 @@ public API.
 **Rollback:** previous Vercel deployment (promote in dashboard), API `src.bak-20261024-105120`,
 DB `chatgram-backups/20261024-105120.tgz`, nginx `.bak-20261024`. Recorded in
 `docs/deploy.md`.
+
+### Session 6 — join-request approval mode (2026-10-24)
+- `Chat.groupSettings.requireApproval` + `Chat.joinRequests`; invite links and the new
+  join-request endpoint return a pending request when approval is on.
+- Admin endpoints to list/approve/decline; approvals add the member, post a system
+  message and update every member live. UI: settings switch, pending-request card in the
+  members tab (admins), invite page "Request sent" state.
+- Verified: `server/test/integration/joinRequests.test.js` **26/26** and a Playwright
+  approval-flow test (enable switch → outside request → approve → member listed).

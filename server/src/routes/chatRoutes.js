@@ -21,6 +21,9 @@ const {
   revokeInvite,
   previewInvite,
   joinViaInvite,
+  requestToJoin,
+  getJoinRequests,
+  respondJoinRequest,
   pinMessage,
   unpinMessage,
   getChatMedia,
@@ -53,6 +56,12 @@ router.delete('/:id/leave', leaveGroup);
 router.get('/:id/invite', getInvite);
 router.post('/:id/invite', createInvite);
 router.delete('/:id/invite', revokeInvite);
+
+// Join requests (approval-mode groups)
+router.post('/:id/join-request', requestToJoin);
+router.get('/:id/join-requests', getJoinRequests);
+router.post('/:id/join-requests/:userId/approve', respondJoinRequest);
+router.post('/:id/join-requests/:userId/reject', respondJoinRequest);
 
 // Pinned message + shared media
 router.post('/:id/pin', pinMessage);
