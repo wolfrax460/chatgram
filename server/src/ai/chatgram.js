@@ -181,12 +181,14 @@ async function ensureConversation(userId, conversationId) {
 }
 
 function stripMarker(text) {
-  const match = /\[\[CHATGRAM_UNKNOWN:\s*([\s\S]*?)\]\]\s*$/i.exec(String(text || ''));
-  if (!match) return { text: String(text || '').trim(), unknownQuestion: null };
-  return {
-    text: String(text || '').replace(match[0], '').trim(),
-    unknownQuestion: match[1].trim().slice(0, 500),
-  };
+  const source = String(text || '');
+  // The model is told to put the marker on the last line, but real providers
+  // (e.g. Groq's gpt-oss) sometimes emit it mid-answer or with trailing text, so
+  // strip every marker anywhere and keep the last question for the inbox.
+  const matches = [...source.matchAll(/\[\[CHATGRAM_UNKNOWN:\s*([\s\S]*?)\]\]/gi)];
+  const cleaned = source.replace(/\[\[CHATGRAM_UNKNOWN:[\s\S]*?\]\]/gi, '').replace(/[ \t]{2,}/g, ' ').trim();
+  const unknownQuestion = matches.length ? matches[matches.length - 1][1].trim().slice(0, 500) : null;
+  return { text: cleaned, unknownQuestion };
 }
 
 async function deliverToAdminInbox(inboxId, question, askerHash) {

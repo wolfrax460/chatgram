@@ -32,6 +32,7 @@ $config = @'
 {
   "version": 3,
   "routes": [
+    { "src": "/api/(.*)", "dest": "https://chatgram.duckdns.org/api/$1" },
     { "handle": "filesystem" },
     { "src": "/web(/.*)?", "dest": "/web/index.html" },
     { "src": "/docs(/.*)?", "dest": "/docs/index.html" },
@@ -95,4 +96,28 @@ foreach ($path in @('/', '/web/', '/web/admin', '/docs/')) {
   }
 }
 if ($failures -gt 0) { throw "$failures production checks failed" }
+
+# The web app calls `/api/...` on its own origin (required for the SameSite=Strict
+# admin cookie and for streaming answers): prove the proxy really forwards to the
+# API instead of the SPA fallback returning the HTML shell.
+Write-Host '==> verifying the /api proxy' -ForegroundColor Cyan
+$health = $null
+try {
+  $health = Invoke-RestMethod -Uri "$base/api/status/health" -TimeoutSec 30
+} catch {
+  throw "API proxy GET failed: $($_.Exception.Message)"
+}
+if (-not $health.ok) { throw "API proxy returned an unhealthy status: $($health | ConvertTo-Json -Compress)" }
+Write-Host '  GET  /api/status/health  ok' -ForegroundColor Green
+
+$postStatus = 0
+try {
+  Invoke-WebRequest -Uri "$base/api/auth/login" -Method POST -UseBasicParsing -TimeoutSec 30 `
+    -ContentType 'application/json' -Body '{"identifier":"deploy-check@chatgram.test","password":"not-a-real-password"}' | Out-Null
+} catch {
+  $postStatus = [int]$_.Exception.Response.StatusCode
+}
+if ($postStatus -ne 401) { throw "API proxy POST returned $postStatus (expected 401) - /api is not being proxied" }
+Write-Host '  POST /api/auth/login     forwards (401 as expected)' -ForegroundColor Green
+
 Write-Host 'deploy OK' -ForegroundColor Green
