@@ -19,7 +19,7 @@ type SessionInfo = {
 };
 type SessionRow = { id: string; current: boolean; createdAt: string; lastSeenAt: string; expiresAt: string; ip: string; userAgent: string };
 type AuditRow = { action: string; detail: string; ip: string; at: string };
-type InboxRow = { id: string; type: string; question: string; count: number; status: string; providerKey: string | null; errorReason: string | null; answer: string; lastSeenAt: string };
+type InboxRow = { id: string; type: string; question: string; count: number; status: string; providerKey: string | null; errorReason: string | null; answer: string; canAnswerUser?: boolean; lastSeenAt: string };
 type ProviderRow = {
   key: string;
   label: string;
@@ -89,6 +89,7 @@ export default function AdminGate() {
   const [inboxTotal, setInboxTotal] = useState(0);
   const [inboxDraft, setInboxDraft] = useState<Record<string, string>>({});
   const [inboxStatus, setInboxStatus] = useState('new');
+  const [aiHealth, setAiHealth] = useState<{ degraded: boolean; failuresLast10Min: number } | null>(null);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
@@ -117,6 +118,11 @@ export default function AdminGate() {
   useEffect(() => {
     refreshSession().finally(() => setLoading(false));
   }, []);
+
+  async function refreshAiHealth() {
+    const result = await adminFetch('/api/admin/ai/health');
+    if (result.status === 200) setAiHealth(result.body.ai);
+  }
 
   async function refreshInbox() {
     const result = await adminFetch('/api/admin/ai/inbox?status=' + encodeURIComponent(inboxStatus));
@@ -176,6 +182,7 @@ export default function AdminGate() {
     void refreshLists(session.csrfToken);
     void refreshProviders(session.csrfToken);
     void refreshInbox();
+    void refreshAiHealth();
   }, [session?.csrfToken, inboxStatus]);
 
   async function signIn(event: React.FormEvent) {
@@ -409,6 +416,12 @@ export default function AdminGate() {
         </div>
       </header>
 
+      {aiHealth?.degraded ? (
+        <p role="alert" data-testid="ai-degraded-banner" className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-[13px] font-medium text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300">
+          AI degraded: {aiHealth.failuresLast10Min} “all providers failed” events in the last 10 minutes. Check Model providers and the API keys.
+        </p>
+      ) : null}
+
       {notice ? <p role="status" className="rounded-xl bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">{notice}</p> : null}
       {error ? <p role="alert" className="rounded-xl bg-rose-50 px-3 py-2 text-[13px] text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">{error}</p> : null}
 
@@ -590,6 +603,7 @@ export default function AdminGate() {
               <p className="text-[13px] font-medium">{item.question}</p>
               <p className="text-[11px] text-ink-500">
                 {item.count}× · {item.providerKey || 'no provider'} · {new Date(item.lastSeenAt).toLocaleString()} · {item.status}
+                {item.canAnswerUser ? ' · the answer is also sent to the user in-app' : ' · no signed-in asker to notify'}
               </p>
               {item.status === 'answered' ? (
                 <p className="mt-1 rounded bg-emerald-50 px-2 py-1 text-[12px] text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">{item.answer}</p>

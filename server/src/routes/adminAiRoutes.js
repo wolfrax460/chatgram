@@ -7,6 +7,10 @@ const ai = require('../ai/chatgram');
 
 router.use(requireAdminSession);
 
+router.get('/health', async (req, res) => {
+  return res.json({ ai: ai.aiHealth(), blockedTopicsConfigured: Boolean(process.env.AI_BLOCKED_TOPICS) });
+});
+
 router.get('/inbox', async (req, res) => {
   try {
     const result = await ai.listInbox({

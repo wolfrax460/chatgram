@@ -15,7 +15,7 @@ Work from earlier sessions is committed locally in small commits.
 Deploy policy: **deploy-after-green** (owner authorised production deploys on 2026-10-24).
 Deploy record + rollback commands: `docs/deploy.md`.
 
-### 2026-10-24 — Presence bug (Janvier / Samuel always "online") — DONE
+### 2026-10-24 ï¿½ Presence bug (Janvier / Samuel always "online") ï¿½ DONE
 
 **Symptom:** Janvier Yedid and Samuel FX showed a permanent green dot / "online" even when not using the app.
 
@@ -36,7 +36,7 @@ REST payloads (chat list, group roster, profile, contacts) trusted the column.
 - every boot runs `resetStuckPresence()` (flags cleared, lastSeen preserved); `server/scripts/reset-presence.js`
   is the one-off cleanup (dry run by default, `--apply`)
 - `/api/status/health` now exposes `presence: { usersOnline, sockets, staleMs }`
-- client: `apps/web/src/lib/presence.ts` — live value wins, and while the socket is down presence is unknown so
+- client: `apps/web/src/lib/presence.ts` ï¿½ live value wins, and while the socket is down presence is unknown so
   everyone renders offline instead of falling back to a stale REST snapshot. Chat list dot, chat header,
   contacts, group members and the profile panel all share that one source; the map is cleared on disconnect
 - incidental: the presence hook was first called inside the chat-list map, which crashed the app as soon as a
@@ -44,10 +44,10 @@ REST payloads (chat list, group roster, profile, contacts) trusted the column.
   the new Playwright test.
 
 **Verified on production (2026-10-24)**
-- pre-fix dry run: 2 flagged (Janvier Yedid, SAMUEL FX) — 0 smoke accounts involved
+- pre-fix dry run: 2 flagged (Janvier Yedid, SAMUEL FX) ï¿½ 0 smoke accounts involved
 - restart boot log: `Presence: reset 2/2 stuck online flag(s) on startup e.g. Janvier Yedid, SAMUEL FX`
 - after the fix: `users isOnline=true: 0`; Janvier false lastSeen 2026-10-19T17:48Z, Samuel false lastSeen 2026-10-20T21:03Z
-- production smoke test with 2 throwaway accounts (created and deleted by exact id, 0 left): 7/7 — stuck flag
+- production smoke test with 2 throwaway accounts (created and deleted by exact id, 0 left): 7/7 ï¿½ stuck flag
   does not read as online; connected reads online; disconnect emits offline + lastSeen; disconnected reads offline
 - health: `presence: {usersOnline: 0, sockets: 0, staleMs: 60000}`
 
@@ -1178,3 +1178,9 @@ authenticated AI test, then the Groq key replacement through the admin providers
 - Tests before deploy: ai 29, layer 7, providers 14, chatgramAi 19 â€” all pass.
 - Production verified: admin login + `/api/admin/ai/inbox?status=all` 200, `/web/` and
   `/web/admin` 200, stream endpoint 401 unauthenticated.
+
+
+### Session 16 (2026-10-24) â€” AI moderation + degraded alert + answer-to-user
+- Backend first (DB backup `20261024-145107`, src backup `src.bak-20261024-145107`, health ok),
+  then web `chatgram-ajmsmgr3a`. Production verified: `/api/admin/ai/health` 401
+  unauthenticated, 200 with the admin session; pages 200.

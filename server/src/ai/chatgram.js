@@ -15,6 +15,29 @@ const HISTORY_LIMIT = 12;
 const HOURLY_LIMIT = Number(process.env.AI_HOURLY_LIMIT || 30);
 const DAILY_LIMIT = Number(process.env.AI_DAILY_LIMIT || 200);
 
+// Every "all providers failed" event is timestamped; 5 in 10 minutes = degraded.
+const providerFailures = [];
+function recordProviderFailure() {
+  const now = Date.now();
+  providerFailures.push(now);
+  while (providerFailures.length > 100) providerFailures.shift();
+}
+function aiHealth() {
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  const recent = providerFailures.filter((at) => at >= cutoff).length;
+  return { degraded: recent >= 5, failuresLast10Min: recent };
+}
+
+/** Comma-separated blocked topics from AI_BLOCKED_TOPICS (moderation guard). */
+function blockedTopic(text) {
+  const topics = String(process.env.AI_BLOCKED_TOPICS || '')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  const value = String(text || '').toLowerCase();
+  return topics.find((topic) => value.includes(topic)) || null;
+}
+
 const aiConversationSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
@@ -43,6 +66,7 @@ const adminInboxSchema = new mongoose.Schema(
     normalized: { type: String, index: true },
     redactedContext: { type: String, default: '' },
     askerHash: { type: String, default: '' },
+    askerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     count: { type: Number, default: 1 },
     status: { type: String, enum: ['new', 'answered', 'ignored'], default: 'new' },
     providerKey: { type: String, default: null },
@@ -205,6 +229,7 @@ async function recordUnknown(userId, question, replyText, providerKey) {
     question: redact(question, { allowContact: false }).slice(0, 500),
     normalized,
     askerHash: askerHash(userId),
+    askerId: userId,
     providerKey,
     redactedContext: redact(replyText, { allowContact: false }).slice(0, 800),
   });
@@ -237,6 +262,12 @@ async function sendMessage({ userId, conversationId, text }) {
 
   const conversation = await ensureConversation(userId, conversationId);
   await AiMessage.create({ conversationId: conversation._id, userId, role: 'user', content: body });
+  const blocked = blockedTopic(body);
+  if (blocked) {
+    const refusal = "I can't help with that request. If you think this is a mistake, please contact Chatgram Support.";
+    await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: refusal });
+    return { conversationId: String(conversation._id), reply: refusal, providerKey: 'moderation', unknown: false, blocked: true, conversation };
+  }
   if (conversation.title === 'New chat') {
     conversation.title = body.slice(0, 60);
     conversation.updatedAt = new Date();
@@ -271,6 +302,7 @@ async function sendMessage({ userId, conversationId, text }) {
   } catch (error) {
     // Every provider failed: polite message, never a raw error, and record it.
     const polite = 'Chatgram AI is unavailable right now. Please try again in a moment.';
+    recordProviderFailure();
     await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: polite, providerKey: null });
     await recordUnknown(userId, body, `provider failures: ${error.message}`, null);
     return { conversationId: String(conversation._id), reply: polite, providerKey: null, unknown: false, unavailable: true, conversation };
@@ -356,6 +388,7 @@ async function streamMessage({ userId, conversationId, text, onDelta }) {
     }
   } catch (error) {
     const polite = 'Chatgram AI is unavailable right now. Please try again in a moment.';
+    recordProviderFailure();
     await onDelta(polite);
     await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: polite });
     await recordUnknown(userId, body, `provider failures: ${error.message}`, null);
@@ -420,6 +453,7 @@ async function listInbox({ status = 'new', page = 1, limit = 25 } = {}) {
       providerKey: item.providerKey,
       errorReason: item.errorReason,
       answer: item.answer,
+      canAnswerUser: Boolean(item.askerId),
       createdAt: item.createdAt,
       lastSeenAt: item.lastSeenAt,
     })),
@@ -427,6 +461,34 @@ async function listInbox({ status = 'new', page = 1, limit = 25 } = {}) {
     page: Number(page) || 1,
     pageCount: Math.max(1, Math.ceil(total / size)),
   };
+}
+
+async function deliverAnswerToUser(item, answerText) {
+  if (!item?.askerId) return false;
+  try {
+    const User = mongoose.models.User || require('../models/User');
+    const Chat = mongoose.models.Chat || require('../models/Chat');
+    const Message = mongoose.models.Message || require('../models/Message');
+    const asker = await User.findById(item.askerId).select('_id');
+    const support = await User.findOne({ isSupportAccount: true }).select('_id');
+    if (!asker || !support) return false;
+    let chat = await Chat.findOne({ type: 'direct', participants: { $all: [asker._id, support._id] } });
+    if (!chat) chat = await Chat.create({ type: 'direct', participants: [support._id, asker._id] });
+    await Message.create({
+      chatId: chat._id,
+      senderId: support._id,
+      type: 'text',
+      content: String(answerText).slice(0, 4000),
+      sentAt: new Date(),
+      deliveredTo: [],
+      readBy: [],
+    });
+    await Chat.updateOne({ _id: chat._id }, { updatedAt: new Date() });
+    return true;
+  } catch (error) {
+    console.warn('Answer delivery skipped:', error.message);
+    return false;
+  }
 }
 
 async function answerInboxItem(id, answer) {
@@ -445,7 +507,8 @@ async function answerInboxItem(id, answer) {
     keywords,
     inboxId: item._id,
   });
-  return { item, entry };
+  const delivered = await deliverAnswerToUser(item, item.answer);
+  return { item, entry, delivered };
 }
 
 async function ignoreInboxItem(id) {
@@ -464,6 +527,9 @@ module.exports = {
   deleteConversation,
   listInbox,
   answerInboxItem,
+  aiHealth,
+  blockedTopic,
+  recordProviderFailure,
   ignoreInboxItem,
   normalizeQuestion,
   lookupKnowledge,

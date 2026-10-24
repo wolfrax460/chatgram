@@ -443,3 +443,19 @@ tab, `AI_UNKNOWN_NOTIFY` digests/9e alerts, moderation topics list, and the
   Chatgram AI inbox message is also posted into their conversation with the Support
   account (sender: Chatgram Support), so the admin sees unknown questions in-app.
   Notifications remain off by default.
+
+
+---
+
+## D23 - Chatgram AI moderation, degraded alert and answer-to-user (2026-10-24)
+
+- **Blocked topics:** comma-separated `AI_BLOCKED_TOPICS` is checked before any provider
+  call; matches get a polite refusal, are tagged `moderation`, and never create an inbox
+  record. No provider tokens are spent.
+- **AI degraded alert:** every "all providers failed" event is timestamped; **5 within
+  10 minutes** flips `GET /api/admin/ai/health` to `degraded: true` and /web/admin shows a
+  red banner on the Chatgram AI tab.
+- **Answer this user:** inbox records now store the asking user's id (plus the HMAC hash
+  for anonymous display). Saving an approved answer also delivers it as a message from the
+  Chatgram Support account in the asker's support conversation; the inbox row says whether
+  the answer will reach the user in-app.
