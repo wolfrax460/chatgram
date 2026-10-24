@@ -430,4 +430,7 @@ async function* streamForFeature(options = {}) {
   throw new AiError(ERROR_CODES.UNAVAILABLE, 'No AI provider answered.');
 }
 
-module.exports = { ...module.exports, streamForFeature };
+// Callers do `const { service } = require('./service')` once, at load time, so the
+// streamer must live on that object too (not only on module.exports).
+service.streamForFeature = streamForFeature;
+module.exports = { ...module.exports, service, streamForFeature };

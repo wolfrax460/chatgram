@@ -403,6 +403,12 @@ async function streamMessage({ userId, conversationId, text, onDelta }) {
     }
   } catch (error) {
     const polite = 'Chatgram AI is unavailable right now. Please try again in a moment.';
+    // Redacted diagnostic: code + short message only, never the key or the URL.
+    console.error(
+      'Chatgram AI stream failed:',
+      error?.code || error?.name || 'error',
+      String(error?.message || '').slice(0, 200),
+    );
     recordProviderFailure();
     await alerts.onProviderFailure({ degraded: aiHealth().degraded, reason: error.message });
     await onDelta(polite);
