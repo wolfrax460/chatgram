@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Copy, Loader2, Plus, Send, Sparkles, Trash2 } from 'lucide-react';
+import { BadgeCheck, Bot, Copy, Loader2, Plus, RefreshCw, Send, Sparkles, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 
 /**
@@ -7,7 +7,7 @@ import { api } from '../lib/api';
  * conversation history, suggestion chips, copy, new chat and delete.
  * Markdown is rendered safely (React text nodes, never dangerouslySetInnerHTML).
  */
-type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; streaming?: boolean };
+type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; streaming?: boolean; serverId?: string };
 type Conversation = { id: string; title: string; updatedAt: string; lastMessage: string };
 
 const SUGGESTIONS = [
@@ -59,6 +59,38 @@ export default function AiChat() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [votes, setVotes] = useState<Record<string, 'up' | 'down'>>({});
+
+  async function vote(message: ChatMessage, value: 'up' | 'down') {
+    if (!message.serverId) {
+      setNotice('Feedback is available after the answer finishes.');
+      return;
+    }
+    setVotes((prev) => ({ ...prev, [message.id]: value }));
+    try {
+      const token = api.accessToken;
+      const response = await fetch(`/api/ai/messages/${encodeURIComponent(message.serverId)}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ value }),
+      });
+      setNotice(response.ok ? (value === 'down' ? 'Thanks — this was sent to the Chatgram team.' : 'Thanks for the feedback.') : 'Could not save the feedback.');
+    } catch {
+      setNotice('Could not save the feedback.');
+    }
+  }
+
+  function regenerate() {
+    if (busy) return;
+    const lastUser = [...messages].reverse().find((message) => message.role === 'user');
+    if (!lastUser) return;
+    setMessages((prev) => {
+      const copy = [...prev];
+      while (copy.length > 0 && copy[copy.length - 1]?.role === 'assistant') copy.pop();
+      return copy;
+    });
+    void send(lastUser.content);
+  }
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -112,7 +144,13 @@ export default function AiChat() {
           }
           if (payload.done) {
             setConversationId(payload.conversationId ?? null);
-            setMessages((prev) => prev.map((message) => (message.id === assistantId ? { ...message, streaming: false } : message)));
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantId
+                  ? { ...message, streaming: false, serverId: payload.messageId ?? undefined, content: payload.reply ?? message.content }
+                  : message,
+              ),
+            );
             const list = await api.request<{ conversations: Conversation[] }>('/api/ai/conversations');
             setConversations(list.conversations ?? []);
           }
@@ -167,8 +205,11 @@ export default function AiChat() {
       <header className="flex flex-wrap items-center gap-2 border-b border-ink-200 px-3 py-2 dark:border-white/10">
         <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand-600 text-white"><Sparkles className="h-5 w-5" /></span>
         <div className="mr-auto">
-          <h2 className="font-bold leading-tight">Chatgram AI</h2>
-          <p className="text-[11px] text-ink-500 dark:text-ink-300">Powered by WOLFSEC · Chatgram AI can make mistakes</p>
+          <h2 className="flex items-center gap-1 font-bold leading-tight">
+            Chatgram AI
+            <BadgeCheck className="h-4 w-4 text-brand-600 dark:text-brand-300" aria-label="Official Chatgram AI" />
+          </h2>
+          <p className="text-[11px] text-ink-500 dark:text-ink-300">Official · powered by WOLFSEC</p>
         </div>
         {conversations.length > 0 ? (
           <select
@@ -189,25 +230,15 @@ export default function AiChat() {
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
+          <div className="mx-auto w-full max-w-2xl rounded-xl border border-ink-200 bg-ink-50 px-3 py-2 text-center text-[11.5px] text-ink-600 dark:border-white/10 dark:bg-white/[.04] dark:text-ink-300" data-testid="ai-disclaimer">
+            Chatgram AI can make mistakes. Messages are processed by a third-party AI provider.
+          </div>
+
           {messages.length === 0 ? (
-            <div className="rounded-2xl border border-ink-200 bg-white p-5 text-center dark:border-white/10 dark:bg-white/[.03]">
-              <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-brand-600 text-white"><Bot className="h-7 w-7" /></div>
-              <h3 className="mt-3 text-lg font-bold">Ask Chatgram AI anything</h3>
-              <p className="mx-auto mt-1 max-w-md text-[13px] text-ink-500 dark:text-ink-300">
-                General questions, writing, translations (English, Kinyarwanda, French, Swahili), summaries, code help and Chatgram questions.
-              </p>
-              <div className="mt-4 flex flex-wrap justify-center gap-2">
-                {SUGGESTIONS.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    className="rounded-full border border-ink-200 px-3 py-1.5 text-left text-[12px] hover:border-brand-500 dark:border-white/15"
-                    onClick={() => void send(suggestion)}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
+            <div className="mx-auto max-w-xl rounded-2xl border border-ink-200 bg-white px-4 py-3 text-center text-[13px] text-ink-600 dark:border-white/10 dark:bg-white/[.03] dark:text-ink-300" data-testid="ai-intro">
+              <div className="mx-auto mb-1.5 grid h-10 w-10 place-items-center rounded-full bg-brand-600 text-white"><Bot className="h-5 w-5" /></div>
+              <p className="font-semibold text-ink-800 dark:text-ink-100">Chatgram AI</p>
+              <p className="mt-0.5">Ask anything — questions, writing, translations (EN/RW/FR/SW), summaries, code or Chatgram help.</p>
             </div>
           ) : null}
 
@@ -225,14 +256,22 @@ export default function AiChat() {
                   <>
                     <Markdown text={message.content || (message.streaming ? '…' : '')} />
                     {message.role === 'assistant' && message.content ? (
-                      <button
-                        type="button"
-                        className="mt-1 inline-flex items-center gap-1 text-[11px] text-ink-500 hover:text-ink-700 dark:text-ink-400"
-                        onClick={() => void navigator.clipboard?.writeText(message.content)}
-                        aria-label="Copy answer"
-                      >
-                        <Copy className="h-3 w-3" /> Copy
-                      </button>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-ink-500 dark:text-ink-400">
+                        <button type="button" className="inline-flex items-center gap-1 hover:text-ink-700 dark:hover:text-ink-200" onClick={() => void navigator.clipboard?.writeText(message.content)} aria-label="Copy answer">
+                          <Copy className="h-3 w-3" /> Copy
+                        </button>
+                        <button type="button" className={`inline-flex items-center gap-1 ${votes[message.id] === 'up' ? 'text-emerald-600' : 'hover:text-ink-700 dark:hover:text-ink-200'}`} onClick={() => void vote(message, 'up')} aria-label="Good answer">
+                          <ThumbsUp className="h-3 w-3" /> Good
+                        </button>
+                        <button type="button" className={`inline-flex items-center gap-1 ${votes[message.id] === 'down' ? 'text-rose-600' : 'hover:text-ink-700 dark:hover:text-ink-200'}`} onClick={() => void vote(message, 'down')} aria-label="Bad answer">
+                          <ThumbsDown className="h-3 w-3" /> Bad
+                        </button>
+                        {message.id === [...messages].reverse().find((row) => row.role === 'assistant')?.id && !busy ? (
+                          <button type="button" className="inline-flex items-center gap-1 hover:text-ink-700 dark:hover:text-ink-200" onClick={regenerate} aria-label="Regenerate answer">
+                            <RefreshCw className="h-3 w-3" /> Regenerate
+                          </button>
+                        ) : null}
+                      </div>
                     ) : null}
                   </>
                 ) : (
@@ -242,7 +281,14 @@ export default function AiChat() {
             </div>
           ))}
           {busy && messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && !messages[messages.length - 1]?.content ? (
-            <p className="flex items-center gap-2 text-[12px] text-ink-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Chatgram AI is typing…</p>
+            <p className="flex items-center gap-2 text-[12px] text-ink-500" data-testid="ai-typing">
+              Chatgram AI is typing
+              <span className="flex gap-0.5">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-400" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-400 [animation-delay:120ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-400 [animation-delay:240ms]" />
+              </span>
+            </p>
           ) : null}
           {error ? <p role="alert" className="rounded-xl bg-rose-50 px-3 py-2 text-[13px] text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">{error}</p> : null}
           {notice ? <p role="status" className="text-center text-[11px] text-ink-500">{notice}</p> : null}
@@ -251,6 +297,20 @@ export default function AiChat() {
       </div>
 
       <div className="mx-auto w-full max-w-3xl px-3 pb-3">
+        {messages.length === 0 ? (
+          <div className="mb-2 flex flex-wrap justify-center gap-2" data-testid="ai-suggestions">
+            {SUGGESTIONS.slice(0, 4).map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                className="rounded-full border border-ink-200 px-3 py-1.5 text-[12px] hover:border-brand-500 dark:border-white/15"
+                onClick={() => void send(suggestion)}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <form
           className="flex items-end gap-2"
           onSubmit={(event) => {

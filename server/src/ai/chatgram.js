@@ -407,9 +407,9 @@ async function streamMessage({ userId, conversationId, text, onDelta }) {
     unknown = true;
     await recordUnknown(userId, unknownQuestion || body, finalText, providerKey);
   }
-  await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: finalText, providerKey, unknown });
+  const stored = await AiMessage.create({ conversationId: conversation._id, userId, role: 'assistant', content: finalText, providerKey, unknown });
   await AiConversation.updateOne({ _id: conversation._id }, { updatedAt: new Date() });
-  return { conversationId: String(conversation._id), reply: finalText, providerKey, unknown };
+  return { conversationId: String(conversation._id), reply: finalText, providerKey, unknown, messageId: String(stored._id) };
 }
 
 async function listConversations(userId) {
@@ -531,6 +531,38 @@ async function deliverQueuedInboxToAdmin() {
   return { delivered, remaining };
 }
 
+/** Record a thumbs up/down on an AI answer; thumbs-down feeds the admin inbox. */
+async function recordMessageFeedback(userId, messageId, value) {
+  const message = await AiMessage.findOne({ _id: messageId, userId });
+  if (!message) return null;
+  const vote = value === 'down' ? 'down' : value === 'up' ? 'up' : '';
+  if (!vote) return { ok: false, error: 'invalid' };
+  if (vote === 'up') return { ok: true, recorded: false };
+  const conversation = await AiConversation.findById(message.conversationId);
+  const lastUserMessage = await AiMessage.findOne({ conversationId: message.conversationId, role: 'user' }).sort({ createdAt: -1 });
+  const question = String(lastUserMessage?.content || message.content || '').slice(0, 500);
+  const normalized = normalizeQuestion(question);
+  const existing = await AdminInbox.findOne({ type: 'negative_feedback', normalized, status: 'new' });
+  let item = existing;
+  if (existing) {
+    existing.count += 1;
+    existing.lastSeenAt = new Date();
+    await existing.save();
+  } else {
+    item = await AdminInbox.create({
+      type: 'negative_feedback',
+      question: redact(question, { allowContact: false }),
+      normalized,
+      askerHash: askerHash(userId),
+      askerId: userId,
+      providerKey: message.providerKey || null,
+      redactedContext: redact(conversation?.title || '', { allowContact: false }).slice(0, 300),
+    });
+    await deliverToAdminInbox(item._id, item.question, item.askerHash);
+  }
+  return { ok: true, recorded: true, itemId: String(item._id) };
+}
+
 async function ignoreInboxItem(id) {
   const item = await AdminInbox.findById(id);
   if (!item) return null;
@@ -550,6 +582,7 @@ module.exports = {
   aiHealth,
   blockedTopic,
   deliverQueuedInboxToAdmin,
+  recordMessageFeedback,
   recordProviderFailure,
   ignoreInboxItem,
   normalizeQuestion,

@@ -40,6 +40,16 @@ router.delete('/conversations/:id', async (req, res) => {
   }
 });
 
+router.post('/messages/:id/feedback', async (req, res) => {
+  try {
+    const result = await ai.recordMessageFeedback(req.user._id, req.params.id, String(req.body?.value || ''));
+    if (!result) return res.status(404).json({ message: 'Message not found.' });
+    return res.json({ message: result.recorded ? 'Thanks — this has been noted for the team.' : 'Thanks for the feedback.' });
+  } catch (error) {
+    return fail(res, error);
+  }
+});
+
 router.post('/messages', async (req, res) => {
   try {
     const result = await ai.sendMessage({
@@ -74,7 +84,7 @@ router.post('/messages/stream', async (req, res) => {
       text: req.body?.text ?? req.body?.message,
       onDelta: async (delta) => send({ delta }),
     });
-    send({ done: true, conversationId: result.conversationId, reply: result.reply, providerKey: result.providerKey, unknown: result.unknown === true });
+    send({ done: true, conversationId: result.conversationId, reply: result.reply, providerKey: result.providerKey, unknown: result.unknown === true, messageId: result.messageId });
   } catch (error) {
     send({ error: error.message || 'Chatgram AI failed.', code: error.code || 'AI_ERROR' });
   } finally {
