@@ -11,6 +11,10 @@ const {
   forgotPassword,
   resetPassword,
   changePassword,
+  requestIdentifierChange,
+  confirmIdentifierChange,
+  logoutOtherSessions,
+  deleteAccount,
 } = require('../controllers/authController');
 const { sendCode, checkCode } = require('../controllers/verificationController');
 const {
@@ -64,6 +68,13 @@ router.post('/logout', protect, logoutUser);
 // Change password while signed in. Keep the current device signed in, sign out
 // every other session (token version bump) and email a notice.
 router.post('/change-password', protect, changePasswordLimiter, changePassword);
+
+// Account settings: change the sign-in email/phone (verified), sign out other
+// devices, delete the account.
+router.post('/account/identifier/request', protect, verifyLimiter, requestIdentifierChange);
+router.post('/account/identifier/confirm', protect, verifyLimiter, confirmIdentifierChange);
+router.post('/account/logout-others', protect, changePasswordLimiter, logoutOtherSessions);
+router.delete('/account', protect, changePasswordLimiter, deleteAccount);
 
 // Two-factor authentication
 router.get('/2fa/status', protect, twoFactorStatus);

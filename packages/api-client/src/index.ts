@@ -372,6 +372,51 @@ export class ApiClient {
     );
   }
 
+  /* --------------------------------------------------------- account settings */
+
+  /** Step 1 of changing the sign-in email/phone: request a verification code. */
+  requestIdentifierChange(identifier: string) {
+    return this.request<{
+      message: string;
+      channel: 'email' | 'phone';
+      target: string;
+      expiresInSeconds?: number;
+      delivered?: boolean;
+      devCode?: string;
+    }>('/api/auth/account/identifier/request', { method: 'POST', body: { identifier } });
+  }
+
+  /** Step 2: verify the code and save the new email/phone (other devices out). */
+  async confirmIdentifierChange(input: { identifier: string; code: string; currentPassword?: string }) {
+    const data = await this.request<{
+      message: string;
+      accessToken: string;
+      refreshToken?: string;
+      user: unknown;
+      notified?: { email: boolean; channel: string | null };
+    }>('/api/auth/account/identifier/confirm', { method: 'POST', body: input });
+    if (data.accessToken) this.setTokens(data);
+    return { ...data, user: userFromJson(data.user) as User };
+  }
+
+  /** Sign out every other device, keeping this one signed in. */
+  async logoutOtherSessions(currentPassword?: string) {
+    const data = await this.request<{ message: string; accessToken: string; refreshToken?: string }>(
+      '/api/auth/account/logout-others',
+      { method: 'POST', body: { currentPassword } },
+    );
+    if (data.accessToken) this.setTokens(data);
+    return data;
+  }
+
+  /** Permanently delete the signed-in account. */
+  deleteAccount(confirmation: string, password?: string) {
+    return this.request<{ message: string }>('/api/auth/account', {
+      method: 'DELETE',
+      body: { confirmation, password },
+    });
+  }
+
   /* -------------------------------------------------------------- users */
 
   async updateProfile(
@@ -396,12 +441,25 @@ export class ApiClient {
   }
 
   async privacy(): Promise<Privacy> {
-    const data = await this.request<{ showOnlineStatus?: boolean; hiddenFrom?: unknown[] }>(
-      '/api/users/me/privacy',
-    );
+    const data = await this.request<{
+      showOnlineStatus?: boolean;
+      hiddenFrom?: unknown[];
+      showPhone?: boolean;
+      showEmail?: boolean;
+      showAbout?: boolean;
+      showProfilePhoto?: boolean;
+      readReceipts?: boolean;
+      whoCanAddToGroups?: 'everyone' | 'contacts';
+    }>('/api/users/me/privacy');
     return {
       showOnlineStatus: data.showOnlineStatus !== false,
       hiddenFrom: (data.hiddenFrom ?? []).map(userFromJson),
+      showPhone: data.showPhone !== false,
+      showEmail: data.showEmail !== false,
+      showAbout: data.showAbout !== false,
+      showProfilePhoto: data.showProfilePhoto !== false,
+      readReceipts: data.readReceipts !== false,
+      whoCanAddToGroups: data.whoCanAddToGroups === 'contacts' ? 'contacts' : 'everyone',
     };
   }
 

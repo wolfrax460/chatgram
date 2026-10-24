@@ -131,18 +131,27 @@ export const useRealtime = create<RealtimeState>((set) => ({
 /* ------------------------------------------------------------------- prefs */
 
 export type TimeFormat = '12h' | '24h';
+export type TextSize = 'small' | 'normal' | 'large';
 
 interface PrefsState {
   notifications: boolean;
   sounds: boolean;
   timeFormat: TimeFormat;
+  textSize: TextSize;
   setPref: (key: 'notifications' | 'sounds', value: boolean) => void;
   setTimeFormat: (format: TimeFormat) => void;
+  setTextSize: (size: TextSize) => void;
 }
 
 const PREFS_KEY = 'chatgram.prefs';
 
-function readPrefs(): Pick<PrefsState, 'notifications' | 'sounds' | 'timeFormat'> {
+/** Apply the chosen text size to the document root. */
+export function applyTextSize(size: TextSize): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.style.fontSize = size === 'small' ? '15px' : size === 'large' ? '18px' : '16px';
+}
+
+function readPrefs(): Pick<PrefsState, 'notifications' | 'sounds' | 'timeFormat' | 'textSize'> {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
@@ -150,43 +159,48 @@ function readPrefs(): Pick<PrefsState, 'notifications' | 'sounds' | 'timeFormat'
       notifications: parsed.notifications === true,
       sounds: parsed.sounds !== false,
       timeFormat: parsed.timeFormat === '24h' ? '24h' : '12h',
+      textSize: parsed.textSize === 'small' ? 'small' : parsed.textSize === 'large' ? 'large' : 'normal',
     };
   } catch {
-    return { notifications: false, sounds: true, timeFormat: '12h' };
+    return { notifications: false, sounds: true, timeFormat: '12h', textSize: 'normal' };
+  }
+}
+
+function persistPrefs(state: PrefsState, patch: Partial<PrefsState>): void {
+  try {
+    localStorage.setItem(
+      PREFS_KEY,
+      JSON.stringify({
+        notifications: state.notifications,
+        sounds: state.sounds,
+        timeFormat: state.timeFormat,
+        textSize: state.textSize,
+        ...patch,
+      }),
+    );
+  } catch {
+    /* ignore */
   }
 }
 
 export const usePrefs = create<PrefsState>((set) => ({
   ...(typeof localStorage === 'undefined'
-    ? { notifications: false, sounds: true, timeFormat: '12h' as TimeFormat }
+    ? { notifications: false, sounds: true, timeFormat: '12h' as TimeFormat, textSize: 'normal' as TextSize }
     : readPrefs()),
   setTimeFormat: (format) =>
     set((state) => {
-      try {
-        localStorage.setItem(
-          PREFS_KEY,
-          JSON.stringify({
-            notifications: state.notifications,
-            sounds: state.sounds,
-            timeFormat: format,
-          }),
-        );
-      } catch {
-        /* ignore */
-      }
+      persistPrefs(state, { timeFormat: format });
       return { timeFormat: format };
+    }),
+  setTextSize: (size) =>
+    set((state) => {
+      persistPrefs(state, { textSize: size });
+      applyTextSize(size);
+      return { textSize: size };
     }),
   setPref: (key, value) =>
     set((state) => {
-      const next = { ...state, [key]: value };
-      try {
-        localStorage.setItem(
-          PREFS_KEY,
-          JSON.stringify({ notifications: next.notifications, sounds: next.sounds, timeFormat: next.timeFormat }),
-        );
-      } catch {
-        /* ignore */
-      }
+      persistPrefs(state, { [key]: value });
       return { [key]: value } as Partial<PrefsState>;
     }),
 }));

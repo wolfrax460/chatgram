@@ -624,6 +624,284 @@ const changePassword = async (req, res) => {
   }
 };
 
+/* ---------------------------------------------- account settings (signed in) */
+
+/**
+ * POST /api/auth/account/identifier/request
+ * Ask for a verification code for a NEW email/phone. Signed in only.
+ */
+const requestIdentifierChange = async (req, res) => {
+  try {
+    const parsed = resolveIdentifier(req.body);
+    if (!parsed) {
+      return res.status(400).json({
+        message: 'Enter a valid email address, or a phone number with country code (e.g. +250780000001).',
+        code: 'INVALID_IDENTIFIER',
+      });
+    }
+
+    const filter = parsed.channel === 'email' ? { email: parsed.target } : { phone: parsed.target };
+    const existing = await User.findOne(filter).select('_id');
+    if (existing && String(existing._id) !== String(req.user._id)) {
+      return res.status(409).json({
+        message: `That ${parsed.channel === 'email' ? 'email address' : 'phone number'} is already used by another account.`,
+        code: 'IDENTIFIER_TAKEN',
+      });
+    }
+
+    const issued = store.issue(parsed.channel, parsed.target);
+    if (!issued.ok) {
+      return res.status(429).json({
+        message: `Please wait ${issued.retryAfterSeconds}s before requesting another code.`,
+        retryAfterSeconds: issued.retryAfterSeconds,
+        code: 'RATE_LIMITED',
+      });
+    }
+
+    let delivery;
+    try {
+      delivery =
+        parsed.channel === 'email'
+          ? await notifier.sendEmailCode(parsed.target, issued.code)
+          : await notifier.sendSmsCode(parsed.target, issued.code);
+    } catch (sendError) {
+      console.error('Identifier code send failed:', sendError.message);
+      return res.status(502).json({ message: `Could not send the code: ${sendError.message}` });
+    }
+
+    const payload = {
+      message: `We sent a code to ${parsed.target}.`,
+      channel: parsed.channel,
+      target: parsed.target,
+      expiresInSeconds: issued.expiresInSeconds,
+      delivered: delivery.delivered,
+      provider: delivery.provider,
+    };
+    if (notifier.showCodes) payload.devCode = issued.code;
+    return res.json(payload);
+  } catch (error) {
+    console.error('Request identifier change error:', error);
+    return res.status(500).json({ message: 'Server error requesting the change' });
+  }
+};
+
+/**
+ * POST /api/auth/account/identifier/confirm
+ * Verify the code and save the new email/phone. Requires the current password
+ * for accounts that have one (a stolen session must not be able to swap the
+ * recovery address silently).
+ */
+const confirmIdentifierChange = async (req, res) => {
+  try {
+    const parsed = resolveIdentifier(req.body);
+    if (!parsed) {
+      return res.status(400).json({ message: 'Enter a valid email address or phone number.', code: 'INVALID_IDENTIFIER' });
+    }
+    const code = String(req.body.code || '').trim();
+    if (!/^[0-9]{6}$/.test(code)) {
+      return res.status(400).json({ message: 'Enter the 6-digit code.', code: 'INVALID_CODE' });
+    }
+
+    const user = await User.findById(req.user._id).select('+password email phone displayName');
+    if (!user) return res.status(401).json({ message: 'This account no longer exists.' });
+
+    if (user.password) {
+      const currentPassword = String(req.body.currentPassword ?? '');
+      if (!currentPassword) {
+        return res.status(400).json({ message: 'Enter your current password.', code: 'CURRENT_PASSWORD_REQUIRED' });
+      }
+      if (!(await user.comparePassword(currentPassword))) {
+        return res.status(400).json({ message: 'Your current password is not correct.', code: 'CURRENT_PASSWORD_INVALID' });
+      }
+    }
+
+    const checked = store.check(parsed.channel, parsed.target, code);
+    if (!checked.ok) {
+      const status = checked.reason === 'too_many_attempts' ? 429 : 400;
+      return res.status(status).json({
+        message: notifier.reasonMessages[checked.reason] || 'That code is not valid.',
+        reason: checked.reason,
+        code: 'INVALID_CODE',
+      });
+    }
+
+    const filter = parsed.channel === 'email' ? { email: parsed.target } : { phone: parsed.target };
+    const taken = await User.findOne(filter).select('_id');
+    if (taken && String(taken._id) !== String(user._id)) {
+      return res.status(409).json({ message: 'That address is already used by another account.', code: 'IDENTIFIER_TAKEN' });
+    }
+
+    const previousEmail = user.email;
+    if (parsed.channel === 'email') user.email = parsed.target;
+    else user.phone = parsed.target;
+
+    // Changing the recovery identity signs out every other device.
+    user.tokenVersion = tokenVersionOf(user) + 1;
+    await user.save();
+
+    let notified = { email: false, channel: null };
+    try {
+      if (parsed.channel === 'email') {
+        const result = await notifier.sendMail({
+          to: parsed.target,
+          subject: 'Your Chatgram sign-in email was changed',
+          text: `The sign-in email for your Chatgram account "${user.displayName}" is now ${parsed.target}. If this was not you, reset your password immediately.`,
+        });
+        notified = { email: result.delivered, channel: result.provider };
+        if (previousEmail && previousEmail !== parsed.target) {
+          await notifier.sendMail({
+            to: previousEmail,
+            subject: 'Your Chatgram sign-in email was changed',
+            text: `The sign-in email for your Chatgram account is no longer ${previousEmail}. If this was not you, contact Chatgram support immediately.`,
+          });
+        }
+      }
+    } catch (notifyError) {
+      console.warn('Identifier change notice failed:', notifyError.message);
+    }
+
+    return res.json({
+      message:
+        parsed.channel === 'email'
+          ? 'Your email address was updated. Other devices have been signed out.'
+          : 'Your phone number was updated. Other devices have been signed out.',
+      accessToken: generateToken(user._id, tokenVersionOf(user)),
+      refreshToken: generateRefreshToken(user._id, tokenVersionOf(user)),
+      user: userPayload(user, null, null).user,
+      notified,
+    });
+  } catch (error) {
+    console.error('Confirm identifier change error:', error);
+    return res.status(500).json({ message: 'Server error saving the change' });
+  }
+};
+
+/**
+ * POST /api/auth/logout-others
+ * Sign out every other device (bumps the session generation, returns tokens for
+ * this one). Works for every client, including native.
+ */
+const logoutOtherSessions = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('+password');
+    if (!user) return res.status(401).json({ message: 'This account no longer exists.' });
+
+    if (user.password) {
+      const currentPassword = String((req.body || {}).currentPassword ?? '');
+      if (!currentPassword) {
+        return res.status(400).json({ message: 'Enter your current password.', code: 'CURRENT_PASSWORD_REQUIRED' });
+      }
+      if (!(await user.comparePassword(currentPassword))) {
+        return res.status(400).json({ message: 'Your current password is not correct.', code: 'CURRENT_PASSWORD_INVALID' });
+      }
+    }
+
+    user.tokenVersion = tokenVersionOf(user) + 1;
+    await user.save();
+
+    return res.json({
+      message: 'Every other device has been signed out.',
+      accessToken: generateToken(user._id, tokenVersionOf(user)),
+      refreshToken: generateRefreshToken(user._id, tokenVersionOf(user)),
+    });
+  } catch (error) {
+    console.error('Logout other sessions error:', error);
+    return res.status(500).json({ message: 'Server error signing out the other devices' });
+  }
+};
+
+/**
+ * DELETE /api/auth/account
+ * Permanently delete the account and its data. Requires the password (when the
+ * account has one) AND the literal word DELETE.
+ */
+const deleteAccount = async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (String(body.confirmation || '').trim().toUpperCase() !== 'DELETE') {
+      return res.status(400).json({
+        message: 'Type DELETE to confirm that you want to delete your account.',
+        code: 'CONFIRM_REQUIRED',
+      });
+    }
+
+    const user = await User.findById(req.user._id).select('+password displayName email');
+    if (!user) return res.status(401).json({ message: 'This account no longer exists.' });
+
+    if (user.password) {
+      const password = String(body.password ?? '');
+      if (!password) {
+        return res.status(400).json({ message: 'Enter your password to delete the account.', code: 'PASSWORD_REQUIRED' });
+      }
+      if (!(await user.comparePassword(password))) {
+        return res.status(400).json({ message: 'Your password is not correct.', code: 'CURRENT_PASSWORD_INVALID' });
+      }
+    }
+
+    const userId = user._id;
+
+    // Remove the user's statuses + stored files first.
+    try {
+      const Status = require('../models/Status');
+      const statusCleanup = require('../utils/statusCleanup');
+      const statuses = await Status.find({ userId });
+      for (const status of statuses) await statusCleanup.removeStatusWithMedia(status);
+    } catch (statusError) {
+      console.warn('Account deletion: status cleanup failed:', statusError.message);
+    }
+
+    // Chats: direct chats are removed with their messages; in groups the person
+    // is removed and a system message is posted.
+    try {
+      const Chat = require('../models/Chat');
+      const Message = require('../models/Message');
+      const groupSystem = require('../utils/groupSystem');
+
+      const directChats = await Chat.find({ type: 'direct', participants: userId });
+      for (const chat of directChats) {
+        await Message.deleteMany({ chatId: chat._id });
+        await Chat.deleteOne({ _id: chat._id });
+      }
+
+      const groups = await Chat.find({ type: 'group', participants: userId });
+      for (const group of groups) {
+        group.participants = group.participants.filter((id) => String(id) !== String(userId));
+        group.groupAdmins = (group.groupAdmins || []).filter((id) => String(id) !== String(userId));
+        if (group.participants.length === 0) {
+          await Message.deleteMany({ chatId: group._id });
+          await Chat.deleteOne({ _id: group._id });
+          continue;
+        }
+        if (group.groupAdmins.length === 0) group.groupAdmins = [group.participants[0]];
+        await group.save();
+        await groupSystem.postSystemMessage(group, `${user.displayName} deleted their account`);
+        await groupSystem.broadcastChatUpdate(group._id);
+        groupSystem.broadcastMemberList(group._id);
+      }
+    } catch (chatError) {
+      console.warn('Account deletion: chat cleanup failed:', chatError.message);
+    }
+
+    // Remove the user from other people's contacts / blocked lists.
+    try {
+      const User = require('../models/User');
+      await User.updateMany(
+        {},
+        { $pull: { contacts: userId, blocked: userId, onlineStatusExceptions: userId } },
+      );
+    } catch (contactError) {
+      console.warn('Account deletion: contact cleanup failed:', contactError.message);
+    }
+
+    await User.deleteOne({ _id: userId });
+
+    return res.json({ message: 'Your Chatgram account has been deleted.' });
+  } catch (error) {
+    console.error('Delete account error:', error);
+    return res.status(500).json({ message: 'Server error deleting the account' });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -634,6 +912,10 @@ module.exports = {
   forgotPassword,
   resetPassword,
   changePassword,
+  requestIdentifierChange,
+  confirmIdentifierChange,
+  logoutOtherSessions,
+  deleteAccount,
   // Shared with the Google sign-in flow.
   generateToken,
   generateRefreshToken,

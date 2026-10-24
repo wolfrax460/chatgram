@@ -89,6 +89,12 @@ export interface StatusItem {
 export interface Privacy {
   showOnlineStatus: boolean;
   hiddenFrom: User[];
+  showPhone?: boolean;
+  showEmail?: boolean;
+  showAbout?: boolean;
+  showProfilePhoto?: boolean;
+  readReceipts?: boolean;
+  whoCanAddToGroups?: 'everyone' | 'contacts';
 }
 
 /** The API uses `_id` for some resources; normalise it away. */
