@@ -394,3 +394,28 @@ only the last 4 characters are returned.
 **Not done yet:** cost estimates, per-provider budget enforcement, a "switch all"
 one-click action, circuit-breaker state in the UI, and UI support for more than
 one fallback (the server accepts up to 5).
+
+
+---
+
+## D21 - Chatgram AI backend MVP (2026-10-24, item 3)
+
+**Design:** `/api/ai/*` (signed-in users) with per-user conversations and history
+(last 12 turns sent as context), a general-purpose system prompt (any topic,
+multi-language, polite refusals, no secrets), per-user hourly/daily limits, and
+provider routing through the new multi-provider layer (feature `chatgramAI`,
+fallback chain, polite "unavailable" reply when every provider fails).
+
+**Silent learning loop:** the model may end its answer with
+`[[CHATGRAM_UNKNOWN: question]]`. The server strips that marker, replies honestly
+("I don't have a confirmed answer on that yet, I've noted it for the team.") and
+writes an `AdminInbox` record (redacted question/context, HMAC asker hash, duplicate
+counter) with no visible trace to the user. Repeated identical questions are also
+recorded. Admin answers (via `/api/admin/ai/inbox/:id/answer`) create an approved
+`AiKnowledge` entry; later similar Chatgram questions are answered from the KB
+without calling the provider (token-overlap match).
+
+**Not done yet:** streaming, the web sidebar/dedicated AI chat UI, pinning an AI
+conversation in the chat list, Chatgram Admin account inbox delivery, admin inbox UI
+tab, `AI_UNKNOWN_NOTIFY` digests/9e alerts, moderation topics list, and the
+"Answer this user" action.

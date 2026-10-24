@@ -187,6 +187,8 @@ rollback is unambiguous.
 
 | 2026-10-24 (15:35) | item 9c | Model providers tab + per-feature AI routing: /api/admin/providers (admin session+CSRF), encrypted write-only keys, Test connection, feature primary/fallback routing with undo, health counters, audit; UI tab in /web/admin. Backend first (DB backup `20261024-133230`, src backup `src.bak-20261024-133230`, health ok), web `chatgram-9j152ftlv`. | **Green.** Admin login + providers endpoint verified in production; no provider configured yet (owner adds the Groq key in the tab). Rollback: previous Vercel deployment, `src.bak-20261024-133230`, DB dump `20261024-133230`. |
 
+| 2026-10-24 (15:57) | Chatgram AI MVP | `/api/ai` (conversations, messages, delete, send with history/limits/redaction), silent `AdminInbox` records + admin answer → KB learning, provider feature routing for `chatgramAI`, polite provider-failure reply. Backend first (DB backup `20261024-135355`, src backup `src.bak-20261024-135355`, health ok). | **Green (backend).** `/api/ai/*` and `/api/admin/ai/inbox` 401 unauthenticated; tests 19/19. UI/streaming not deployed yet. Rollback: `src.bak-20261024-135355`, DB dump `20261024-135355`. |
+
 ## 6. Deploy record
 
 | Date | Commit | Deployed | Result / rollback |

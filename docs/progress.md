@@ -1113,3 +1113,12 @@ authenticated AI test, then the Groq key replacement through the admin providers
   `/api/admin/providers` 200 with `providers=0, features=3` (owner adds the first provider in
   the tab), logout 200; page routes 200 and the /api proxy works.
 - Item 3 (Chatgram AI) **not started** — next in the queue.
+
+
+### Session 14 (2026-10-24) — Chatgram AI backend MVP
+- Backend deployed (DB backup `20261024-135355`, src backup `src.bak-20261024-135355`,
+  health ok). `/api/ai/conversations` and `/api/admin/ai/inbox` return 401 unauthenticated
+  (routes live behind their gates).
+- Chatgram AI answers through the existing env-configured Groq provider when no
+  "Chatgram AI" feature routing is set (owners can override in Model providers).
+- UI, streaming and the Chatgram Admin account inbox delivery are still ✗.
