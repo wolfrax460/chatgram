@@ -51,6 +51,8 @@ $env:AUTH_REVEAL_ACCOUNT_EXISTS = 'true'
 # The Playwright suite creates a fresh account per test. This escape hatch is
 # ignored in production (see middleware/authLimiter.js).
 $env:AUTH_RATE_LIMIT_DISABLED = 'true'
+# Same for the help-widget limits (also ignored in production).
+$env:HELP_RATE_LIMIT_DISABLED = 'true'
 $env:UPLOAD_DIR = (Join-Path (Get-Location) 'uploads')
 $env:BASE_URL = "http://127.0.0.1:$Port"
 

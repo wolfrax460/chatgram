@@ -7,7 +7,7 @@
  *  - normalise the backend's `{ message, code }` error shape into ApiError,
  *  - expose one typed method per endpoint in docs/api-contract.md.
  *
- * No React, no browser-only globals beyond fetch/FormData — so the same client
+ * No React, no browser-only globals beyond fetch/FormData â€” so the same client
  * works in the browser, Electron and Capacitor.
  */
 import {
@@ -38,6 +38,18 @@ export interface TokenStorage {
 export interface AuthTokens {
   accessToken: string;
   refreshToken?: string;
+}
+
+/** One message in a help-widget conversation. */
+export interface HelpMessageWire {
+  id: string;
+  role: 'user' | 'assistant' | 'agent' | 'system';
+  text: string;
+  authorName?: string | null;
+  articleSlug?: string | null;
+  attachments?: { url: string; type: string; name: string; size: number }[];
+  feedback?: 'up' | 'down' | null;
+  createdAt: string;
 }
 
 export class ApiError extends Error {
@@ -946,6 +958,170 @@ export class ApiClient {
     return this.request(`/api/status/${id}/view`, { method: 'POST' });
   }
 
+  /* ------------------------------------------------------------ help centre */
+
+  statusHealth() {
+    return this.request<{
+      ok: boolean;
+      database: string;
+      socket: string;
+      storage: string;
+      time: string;
+    }>('/api/status/health', { anonymous: true });
+  }
+
+  helpCollections() {
+    return this.request<
+      { slug: string; title: string; description: string; icon: string; articleCount: number }[]
+    >('/api/help/collections', { anonymous: true });
+  }
+
+  helpCollection(slug: string) {
+    return this.request<{
+      slug: string;
+      title: string;
+      description: string;
+      articles: { slug: string; title: string; summary: string; order: number }[];
+    }>(`/api/help/collections/${encodeURIComponent(slug)}`, { anonymous: true });
+  }
+
+  helpArticle(slug: string) {
+    return this.request<{
+      slug: string;
+      title: string;
+      summary: string;
+      body: string;
+      collectionSlug: string;
+      collectionTitle: string;
+      keywords: string[];
+      related: { slug: string; title: string; summary: string }[];
+    }>(`/api/help/articles/${encodeURIComponent(slug)}`, { anonymous: true });
+  }
+
+  helpSearch(q: string) {
+    return this.request<{
+      query: string;
+      total: number;
+      results: { slug: string; title: string; summary: string; collectionSlug: string; snippet: string }[];
+    }>('/api/help/search', { query: { q }, anonymous: true });
+  }
+
+  /* ---------------------------------------------- help widget conversations */
+
+  createHelpConversation(guestId?: string, displayName?: string) {
+    return this.request<{
+      conversation: {
+        id: string;
+        status: string;
+        ticketId: string | null;
+        displayName: string;
+        unread: number;
+        lastMessageAt: string;
+        messages: HelpMessageWire[];
+      };
+      created: boolean;
+    }>('/api/help/conversations', {
+      method: 'POST',
+      body: { guestId, displayName },
+    });
+  }
+
+  listHelpConversations(guestId?: string) {
+    return this.request<
+      {
+        id: string;
+        status: string;
+        ticketId: string | null;
+        unread: number;
+        lastMessageAt: string;
+        preview: string;
+        lastRole: string;
+      }[]
+    >('/api/help/conversations', { query: guestId ? { guestId } : undefined, });
+  }
+
+  getHelpConversation(id: string, guestId?: string) {
+    return this.request<{
+      id: string;
+      status: string;
+      ticketId: string | null;
+      displayName: string;
+      unread: number;
+      lastMessageAt: string;
+      messages: HelpMessageWire[];
+    }>(`/api/help/conversations/${id}`, {
+      query: guestId ? { guestId } : undefined,
+    });
+  }
+
+  postHelpMessage(
+    conversationId: string,
+    input: {
+      text?: string;
+      guestId?: string;
+      attachments?: { url: string; type: string; name: string; size: number }[];
+    },
+  ) {
+    return this.request<{
+      message: HelpMessageWire;
+      reply: HelpMessageWire;
+      source: string;
+      matched: { slug: string; title: string }[];
+      ticketId: string | null;
+    }>(`/api/help/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: input,
+    });
+  }
+
+  markHelpRead(conversationId: string, guestId?: string) {
+    return this.request(`/api/help/conversations/${conversationId}/read`, {
+      method: 'POST',
+      body: guestId ? { guestId } : {},
+    });
+  }
+
+  resolveHelpConversation(conversationId: string, guestId?: string) {
+    return this.request(`/api/help/conversations/${conversationId}/resolve`, {
+      method: 'POST',
+      body: guestId ? { guestId } : {},
+    });
+  }
+
+  deleteHelpConversation(conversationId: string, guestId?: string) {
+    return this.request(`/api/help/conversations/${conversationId}`, {
+      method: 'DELETE',
+      query: guestId ? { guestId } : undefined,
+    });
+  }
+
+  handoffHelpConversation(conversationId: string, guestId?: string, contact?: string) {
+    return this.request<{ ok: boolean; ticketId: string; message?: HelpMessageWire }>(
+      `/api/help/conversations/${conversationId}/handoff`,
+      { method: 'POST', body: { guestId, contact }, },
+    );
+  }
+
+  emailHelpTranscript(conversationId: string, guestId?: string, email?: string) {
+    return this.request<{ ok: boolean; delivered: boolean; provider: string; to: string }>(
+      `/api/help/conversations/${conversationId}/transcript`,
+      { method: 'POST', body: { guestId, email }, },
+    );
+  }
+
+  helpFeedback(messageId: string, value: 'up' | 'down', guestId?: string) {
+    return this.request(`/api/help/messages/${messageId}/feedback`, {
+      method: 'POST',
+      body: { guestId, value },
+    });
+  }
+
+  uploadHelpAttachment(file: File, onProgress?: (percent: number) => void) {
+    return this.uploadFileWithProgress<{
+      file: { url: string; type: string; name: string; size: number };
+    }>('/api/help/uploads', file, { onProgress });
+  }
+
   /* ------------------------------------------------------------ support */
 
   /** Public: ask the help assistant (server-side AI, KB fallback). */
@@ -1025,3 +1201,4 @@ export class ApiClient {
     }>('/api/config', { anonymous: true });
   }
 }
+

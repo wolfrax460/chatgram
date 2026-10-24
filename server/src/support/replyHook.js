@@ -64,6 +64,12 @@ async function propagateSupportReply(message, io) {
       .notifySupportReply(ticket, text)
       .catch(() => {});
 
+    // Mirror the human reply into the help-widget conversation that escalated
+    // this ticket (if any), so the widget sees a live agent reply.
+    require('../help/replyBridge')
+      .deliverAgentReply(ticket.ticketId, text, message.senderId)
+      .catch(() => {});
+
     console.log(`Support reply propagated to ticket ${ticket.ticketId}`);
   } catch (error) {
     console.warn('propagateSupportReply failed:', error.message);

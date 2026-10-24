@@ -1,0 +1,340 @@
+{
+  "collections": [
+    { "slug": "getting-started", "title": "Getting started", "description": "Create your account and find your way around Chatgram.", "icon": "rocket", "order": 1 },
+    { "slug": "account", "title": "Account and password", "description": "Sign-in details, passwords, two-factor and deleting your account.", "icon": "user", "order": 2 },
+    { "slug": "groups", "title": "Groups", "description": "Create groups, manage members and invite people.", "icon": "users", "order": 3 },
+    { "slug": "chats", "title": "Chats and messages", "description": "Sending messages, ticks, media, reactions and search.", "icon": "message", "order": 4 },
+    { "slug": "status", "title": "Status", "description": "Photos, videos, voice notes and 24-hour expiry.", "icon": "circle", "order": 5 },
+    { "slug": "calls", "title": "Calls", "description": "Voice and video calls.", "icon": "phone", "order": 6 },
+    { "slug": "privacy", "title": "Privacy and security", "description": "Control what others see and who can contact you.", "icon": "shield", "order": 7 },
+    { "slug": "notifications", "title": "Notifications", "description": "Desktop alerts, sounds and unread badges.", "icon": "bell", "order": 8 },
+    { "slug": "install", "title": "Windows and Android", "description": "Install Chatgram on your computer or phone.", "icon": "download", "order": 9 },
+    { "slug": "troubleshooting", "title": "Troubleshooting", "description": "Fixes for the most common problems.", "icon": "wrench", "order": 10 }
+  ],
+  "articles": [
+    {
+      "slug": "create-account",
+      "collectionSlug": "getting-started",
+      "title": "Create a Chatgram account",
+      "summary": "Sign up with an email address and a verification code.",
+      "keywords": ["register", "sign up", "create account", "new account", "email", "verification code"],
+      "order": 1,
+      "body": "Open Chatgram and choose Create account.\n\nEnter your full name, an email address, a password and confirm the password. Tick the Terms and Privacy box, then choose Send code.\n\nWe email you a 6-digit code. Enter it on the next screen to finish creating your account.\n\nPhone sign-up is still in development. Use an email address — you can add a phone number later in Settings.\n\nIf the code does not arrive, check your spam folder, then use Resend code. Codes expire after 10 minutes."
+    },
+    {
+      "slug": "sign-in-and-basics",
+      "collectionSlug": "getting-started",
+      "title": "Sign in and find your way around",
+      "summary": "What the left rail, chat list and composer do.",
+      "keywords": ["sign in", "login", "navigation", "left rail", "chat list", "composer"],
+      "order": 2,
+      "body": "Sign in with the email address or phone number you registered with, plus your password.\n\nOn the left you have five places: Chats, Status, Groups, Contacts and Settings.\n\nChats lists your conversations, newest first, with the unread count. Type in the composer at the bottom of a conversation and press Enter to send; Shift+Enter adds a new line.\n\nOn a phone-sized screen the chat list and the conversation swap places; use the back arrow to return to the list."
+    },
+    {
+      "slug": "add-contacts",
+      "collectionSlug": "getting-started",
+      "title": "Add people to your contacts",
+      "summary": "Find people by name, email or phone number.",
+      "keywords": ["contacts", "add contact", "find people", "search people"],
+      "order": 3,
+      "body": "Open Contacts and type a name, email address or phone number in the search box.\n\nWhen you find the person, choose Add. They appear in your contacts and you can start a chat from their row with the Chat button.\n\nYou only see people you have added in Contacts; Chatgram does not publish a public directory."
+    },
+    {
+      "slug": "change-password",
+      "collectionSlug": "account",
+      "title": "Change your password",
+      "summary": "Use Settings to change your password and sign out other devices.",
+      "keywords": ["change password", "password", "new password", "sign out devices", "security"],
+      "order": 1,
+      "body": "Open Settings, then the Account section, then Change password.\n\nEnter your current password, then your new password twice. The strength meter shows how strong it is. Passwords need at least 8 characters, including a letter and a number.\n\nWhen the change succeeds, every other device is signed out. This device stays signed in, and we email you a confirmation.\n\nIf you see 'Your current password is not correct', check Caps Lock and try again. After several wrong attempts the form pauses for a few minutes."
+    },
+    {
+      "slug": "reset-password",
+      "collectionSlug": "account",
+      "title": "Forgot your password",
+      "summary": "Reset it with a code sent to your email or phone.",
+      "keywords": ["forgot password", "reset password", "reset code", "can't sign in", "locked out"],
+      "order": 2,
+      "body": "On the sign-in screen choose Forgot password.\n\nEnter the email address or phone number on your account and choose Send code. We send a 6-digit code that stays valid for 15 minutes.\n\nEnter the code and your new password on the reset screen. For security, all existing sessions are signed out when the password is reset.\n\nIf you do not get the code, wait a minute and use Resend. Repeated requests are rate limited."
+    },
+    {
+      "slug": "two-factor",
+      "collectionSlug": "account",
+      "title": "Turn on two-factor authentication",
+      "summary": "Protect your account with an authenticator app.",
+      "keywords": ["two-factor", "2fa", "authenticator", "recovery codes", "security code"],
+      "order": 3,
+      "body": "Open Settings, then Security, then Set up two-factor.\n\nScan the QR code with an authenticator app (Google Authenticator, Authy, Microsoft Authenticator or similar), then enter the 6-digit code from the app to switch two-factor on.\n\nWe show 10 single-use recovery codes. Save them somewhere safe: each code works once if you lose your phone.\n\nAfter two-factor is on, signing in asks for the code from the app after your password. To turn it off, open the same section and enter a current code."
+    },
+    {
+      "slug": "change-email-phone",
+      "collectionSlug": "account",
+      "title": "Change your email address or phone number",
+      "summary": "Verify the new address before it replaces the old one.",
+      "keywords": ["change email", "change phone", "new email", "new phone number", "sign-in address"],
+      "order": 4,
+      "body": "Open Settings, Account and choose Change email or phone.\n\nEnter the new email address or phone number and choose Send verification code. Enter the code we send to the new address, plus your current password, then choose Verify and save.\n\nWhen it succeeds, other devices are signed out and we email a notice to the old and new addresses.\n\nAn address can only belong to one account. If you see that the address is already used, sign in to that other account or use a different address."
+    },
+    {
+      "slug": "delete-account",
+      "collectionSlug": "account",
+      "title": "Delete my account",
+      "summary": "Remove your profile, messages, statuses and media permanently.",
+      "keywords": ["delete account", "remove account", "close account", "erase my data"],
+      "order": 5,
+      "body": "Open Settings and scroll to the bottom, then choose Delete account.\n\nType DELETE in the confirmation box and enter your password. The account is deleted immediately.\n\nWhat is removed: your profile, your direct chats and their messages, your statuses and their stored files, and your membership of groups. Group members see a system message that you deleted your account.\n\nThis cannot be undone. If you only want to stop notifications, use Log out instead."
+    },
+    {
+      "slug": "create-group",
+      "collectionSlug": "groups",
+      "title": "Create a group",
+      "summary": "Pick a name, a description and the first members.",
+      "keywords": ["create group", "new group", "group name", "group description"],
+      "order": 1,
+      "body": "Open Groups and choose New group.\n\nGive the group a name (up to 100 characters), optionally a description, and tick the contacts you want to add. Choose Create group.\n\nYou become the first admin. Open the group to start chatting; the info panel lists the members.\n\nGroups can hold up to 256 members."
+    },
+    {
+      "slug": "group-members",
+      "collectionSlug": "groups",
+      "title": "Add or remove group members",
+      "summary": "Admins manage the roster; some groups let everyone add people.",
+      "keywords": ["add member", "remove member", "group members", "roster", "invite to group"],
+      "order": 2,
+      "body": "Open Groups, choose Info next to the group, then the Members tab.\n\nIf you are an admin (or the group allows everyone to add members), choose Add members and tick the contacts to add.\n\nTo remove somebody, an admin taps the bin icon next to their name. To promote or demote an admin, use the shield icon.\n\nEvery change posts a short system message in the conversation and updates the member list for everyone who has the group open."
+    },
+    {
+      "slug": "group-admins",
+      "collectionSlug": "groups",
+      "title": "Group admins and the last admin",
+      "summary": "What admins can do and what happens when the last one leaves.",
+      "keywords": ["group admin", "promote admin", "demote admin", "last admin", "group owner"],
+      "order": 3,
+      "body": "The person who created a group is its first admin. Admins can edit the group info, change settings, add or remove members and promote others.\n\nA group always keeps at least one admin: the server refuses to demote the only admin, with the message 'A group needs at least one admin'.\n\nIf the last admin leaves, the longest-standing member is promoted automatically and a system message tells everyone."
+    },
+    {
+      "slug": "group-invite-link",
+      "collectionSlug": "groups",
+      "title": "Invite people with a link",
+      "summary": "Create, copy, reset or revoke a group invite link.",
+      "keywords": ["invite link", "group link", "join group", "share group", "revoke invite"],
+      "order": 4,
+      "body": "Open the group info panel, then Settings, then Create invite link (admins only).\n\nChoose Copy link and share it. Anyone who opens it sees the group name and member count and can join with one tap after signing in.\n\nUse Reset to create a new link (the old one stops working) and Revoke to switch the link off completely.\n\nOnly share invite links with people you trust."
+    },
+    {
+      "slug": "leave-group",
+      "collectionSlug": "groups",
+      "title": "Leave a group",
+      "summary": "Leave with confirmation; the group is deleted when it becomes empty.",
+      "keywords": ["leave group", "exit group", "quit group", "delete group"],
+      "order": 5,
+      "body": "Open Groups, choose Info, then Leave group at the bottom and confirm.\n\nThe group disappears from your list and the remaining members see a system message that you left. If you were the last admin, the next member is promoted.\n\nIf the last member leaves, the group and its messages are deleted."
+    },
+    {
+      "slug": "group-settings",
+      "collectionSlug": "groups",
+      "title": "Group settings: who can edit, send and add",
+      "summary": "Three admin switches that control permissions.",
+      "keywords": ["group settings", "who can send", "who can edit", "admins only", "permissions"],
+      "order": 6,
+      "body": "Open the group info panel and choose the Settings tab. Admins can set:\n\nWho can edit group info: everyone or admins only.\nWho can send messages: everyone or admins only.\nWho can add members: everyone or admins only.\n\nMembers who cannot perform an action do not see the control, and the server rejects the request anyway. Changes post a system message."
+    },
+    {
+      "slug": "send-messages",
+      "collectionSlug": "chats",
+      "title": "Send a message",
+      "summary": "Text, photos, documents and voice notes.",
+      "keywords": ["send message", "attach", "photo", "document", "voice note", "composer"],
+      "order": 1,
+      "body": "Open a conversation and type in the composer. Enter sends; Shift+Enter adds a new line.\n\nUse the attach button for a photo, document or camera capture. Hold the microphone button to record a voice note, then release to send.\n\nMessages appear immediately and sync to every device signed in to your account."
+    },
+    {
+      "slug": "delivery-ticks",
+      "collectionSlug": "chats",
+      "title": "What the ticks mean",
+      "summary": "Sent, delivered and read receipts.",
+      "keywords": ["ticks", "check marks", "delivered", "read receipt", "blue ticks", "message status"],
+      "order": 2,
+      "body": "One grey tick means the message reached the Chatgram server.\n\nTwo grey ticks mean it was delivered to the other person's device.\n\nTwo teal ticks mean they have read it. Read receipts can be switched off in Settings, Privacy — in that case you only ever see delivery.\n\nIf a message fails, a red exclamation triangle appears next to it."
+    },
+    {
+      "slug": "reply-delete-reactions",
+      "collectionSlug": "chats",
+      "title": "Reply, react, delete and pin",
+      "summary": "The actions on a message bubble.",
+      "keywords": ["reply", "react", "emoji reaction", "delete message", "pin message", "clear chat"],
+      "order": 3,
+      "body": "Hover a message to see its actions.\n\nReply quotes the message above the composer. React opens a row of quick emoji. Copy puts the text on your clipboard. Delete removes the message for you, or for everyone when you were the sender.\n\nMore opens the full menu, where you can also see who has read your message and, in groups, pin it to the conversation. A pinned message shows in a banner under the group header until it is unpinned."
+    },
+    {
+      "slug": "search-chats",
+      "collectionSlug": "chats",
+      "title": "Search chats and messages",
+      "summary": "Search the chat list, or inside one conversation.",
+      "keywords": ["search chat", "search messages", "find message", "in-chat search"],
+      "order": 4,
+      "body": "Use Search chats at the top of the chat list to filter conversations by name.\n\nInside a conversation, press the search icon in the header to search the messages in that chat. Matches are filtered as you type; clear the box to see everything again."
+    },
+    {
+      "slug": "media-limits",
+      "collectionSlug": "chats",
+      "title": "Photo, video and audio limits",
+      "summary": "The size and type limits for uploads.",
+      "keywords": ["file size", "upload limit", "video limit", "audio limit", "media type", "too large"],
+      "order": 5,
+      "body": "Statuses accept images up to 10 MB, videos up to 50 MB and 60 seconds, and audio up to 20 MB.\n\nChat attachments are limited to 10 MB per file.\n\nSupported status types: jpg, png, webp, gif; mp4, webm, mov; mp3, m4a, ogg, wav. A file that is too large or of an unsupported type is rejected with a message that names the limit."
+    },
+    {
+      "slug": "mute-chat",
+      "collectionSlug": "chats",
+      "title": "Mute a conversation",
+      "summary": "Stop notifications without leaving the chat.",
+      "keywords": ["mute", "unmute", "notifications off", "silent chat"],
+      "order": 6,
+      "body": "Open the person's profile (tap their name or photo) and choose Mute, or use the conversation menu.\n\nMuting stops notification sounds and popups but keeps the messages and unread counts. To undo it, open Settings, Notifications and use Unmute under Muted chats, or use the same menu again."
+    },
+    {
+      "slug": "post-status",
+      "collectionSlug": "status",
+      "title": "Post a status",
+      "summary": "Share a text, photo, video or voice note for 24 hours.",
+      "keywords": ["post status", "status update", "story", "add status", "media status"],
+      "order": 1,
+      "body": "Open Status and choose Add.\n\nPick a photo, a video or a voice note (or just type text) and add an optional caption. Photos and videos are shown uncropped. Choose Post status.\n\nThe upload shows a progress bar; you can cancel it and try again, and your file stays selected for a retry.\n\nYour contacts see the update under Recent updates until it expires."
+    },
+    {
+      "slug": "status-viewer",
+      "collectionSlug": "status",
+      "title": "Viewing statuses",
+      "summary": "Auto-advance, hold to pause and moving between updates.",
+      "keywords": ["view status", "auto advance", "hold to pause", "next status", "status progress"],
+      "order": 2,
+      "body": "Tap a contact's status to open the viewer.\n\nPhotos and text advance automatically after about 5 seconds; videos and voice notes play to the end. The bars at the top show progress.\n\nPress and hold anywhere to pause, release to continue. Tap the right or left side, swipe, or use the arrow keys to move between updates. Esc closes the viewer."
+    },
+    {
+      "slug": "status-expiry",
+      "collectionSlug": "status",
+      "title": "Why statuses disappear",
+      "summary": "Statuses and their media are deleted after 24 hours.",
+      "keywords": ["status expired", "status deleted", "24 hours", "status gone", "delete status"],
+      "order": 3,
+      "body": "Every status expires 24 hours after it is posted. The stored photo, video or audio file is deleted with it, and a cleanup job also removes anything left behind.\n\nYou can delete one of your own statuses earlier: open it in the viewer and use the bin icon.\n\nOnly your contacts can see your statuses, and only while they are valid."
+    },
+    {
+      "slug": "status-limits",
+      "collectionSlug": "status",
+      "title": "Status media limits and thumbnails",
+      "summary": "Video duration, thumbnails and audio players.",
+      "keywords": ["status video", "status duration", "video too long", "status thumbnail", "status audio"],
+      "order": 4,
+      "body": "Videos must be 60 seconds or shorter. Chatgram reads the duration when you pick the file and rejects longer videos with a message — trim the clip and try again.\n\nFor a video we generate a poster frame automatically, so the status shows a thumbnail before it plays.\n\nVoice-note statuses have a waveform player with a cover placeholder. Audio is limited to 20 MB."
+    },
+    {
+      "slug": "calls-availability",
+      "collectionSlug": "calls",
+      "title": "Voice and video calls",
+      "summary": "Calls are not available in this version yet.",
+      "keywords": ["calls", "voice call", "video call", "webrtc", "call someone"],
+      "order": 1,
+      "body": "Voice and video calls are not available in Chatgram yet. The call buttons in a profile and in the conversation header show a notice instead of starting a call.\n\nYou can still send voice notes in a chat and post voice-note statuses.\n\nIf calls matter to you, send a message to support and tell us — it is planned."
+    },
+    {
+      "slug": "profile-privacy",
+      "collectionSlug": "privacy",
+      "title": "Control what your profile shows",
+      "summary": "Hide your photo, about, phone, email, online state or last seen.",
+      "keywords": ["privacy", "hide last seen", "hide online", "hide phone", "hide profile photo", "profile privacy"],
+      "order": 1,
+      "body": "Open Settings and the Privacy section. Each switch saves immediately:\n\nShow when I am online hides both your online dot and your last seen.\nShow my profile photo, Show my about, Show my phone number and Show my email each hide that field.\n\nPhone and email are only ever shown to people in your contacts, even when the switch is on. You can also hide your last seen from specific contacts with Manage."
+    },
+    {
+      "slug": "blocked-users",
+      "collectionSlug": "privacy",
+      "title": "Block and unblock someone",
+      "summary": "Blocked people cannot message you or see your profile.",
+      "keywords": ["block", "unblock", "blocked users", "stop messages", "harassment"],
+      "order": 2,
+      "body": "Open the person's profile and choose Block. Confirm in the panel.\n\nWhile blocked, they cannot send you messages or start a chat, and they cannot open your profile or see your status. You cannot open their profile either.\n\nTo undo it, open Settings, Privacy and use Unblock under Blocked users.\n\nYou can also report a person from their profile. Reports go to the Chatgram moderation team only."
+    },
+    {
+      "slug": "read-receipts",
+      "collectionSlug": "privacy",
+      "title": "Turn read receipts off",
+      "summary": "Read messages without sending teal ticks.",
+      "keywords": ["read receipts", "blue ticks off", "privacy", "delivery only"],
+      "order": 3,
+      "body": "Open Settings, Privacy and switch Read receipts off.\n\nWith receipts off, people you chat with see delivery ticks only; they never see that you read their message. Your own messages still show their read state when the other person has receipts on.\n\nChanging this applies to new read activity from that moment."
+    },
+    {
+      "slug": "desktop-notifications",
+      "collectionSlug": "notifications",
+      "title": "Desktop notifications",
+      "summary": "Allow browser popups for new messages.",
+      "keywords": ["notifications", "desktop notification", "popup", "allow notifications", "browser permission"],
+      "order": 1,
+      "body": "Open Settings and the Notifications section, then switch Desktop notifications on. Your browser asks for permission; choose Allow.\n\nIf you previously chose Block, the switch cannot help: open the site settings in your browser, find Notifications and allow them, then try again.\n\nNotifications only pop up while the window is in the background, so they never interrupt a conversation you are reading. The tab title and favicon show the unread count."
+    },
+    {
+      "slug": "notification-settings",
+      "collectionSlug": "notifications",
+      "title": "Sounds and muted chats",
+      "summary": "Message sounds, unread badges and per-chat mute.",
+      "keywords": ["sound", "chime", "unread badge", "mute notifications", "silent"],
+      "order": 2,
+      "body": "Message sounds is the second switch in Settings, Notifications. Turning it off keeps popups but silences the chime.\n\nUnread counts appear on the chat list rows and in the browser tab title. The favicon also gets a small badge.\n\nTo silence one conversation only, mute it from the person's profile or the conversation menu; muted chats are listed in Settings, Notifications so you can unmute them."
+    },
+    {
+      "slug": "windows-install",
+      "collectionSlug": "install",
+      "title": "Install Chatgram on Windows",
+      "summary": "Download and run the Windows installer.",
+      "keywords": ["windows", "install", "download", "exe", "desktop app"],
+      "order": 1,
+      "body": "Go to the Chatgram download page and choose Download for Windows. The installer is called Chatgram Setup and is about 80 MB.\n\nRun the installer and follow the steps. Windows may show a SmartScreen warning because the installer is not code-signed; choose More info, then Run anyway.\n\nSign in with your existing account. The desktop app shares your chats with the web and Android versions."
+    },
+    {
+      "slug": "android-install",
+      "collectionSlug": "install",
+      "title": "Install Chatgram on Android",
+      "summary": "Sideload the APK and allow installation.",
+      "keywords": ["android", "apk", "sideload", "install on phone", "unknown sources"],
+      "order": 2,
+      "body": "Download the Chatgram APK from the download page on your phone.\n\nOpen the downloaded file. Android asks for permission to install apps from this source; allow it for your browser, then tap Install.\n\nIf the installation is blocked, open Settings, Apps, Special access, Install unknown apps and allow your browser. The build is debug-signed (sideload only) and is not on the Play Store yet."
+    },
+    {
+      "slug": "cant-sign-in",
+      "collectionSlug": "troubleshooting",
+      "title": "I cannot sign in",
+      "summary": "Wrong password, locked account or a verification code that never arrives.",
+      "keywords": ["can't sign in", "login failed", "wrong password", "account locked", "code not received", "too many attempts"],
+      "order": 1,
+      "body": "First check Caps Lock and make sure you are using the same email address or phone number you registered with.\n\nAfter several wrong attempts the account is locked for 15 minutes for safety; the error tells you how long to wait.\n\nIf you do not remember the password, use Forgot password on the sign-in screen. If the verification code does not arrive, check spam, wait a minute and resend — codes expire after 10-15 minutes.\n\nIf two-factor is on, use your authenticator code or one of the recovery codes you saved when you enabled it."
+    },
+    {
+      "slug": "messages-not-sending",
+      "collectionSlug": "troubleshooting",
+      "title": "Messages are not sending",
+      "summary": "Connection, block and group-permission checks.",
+      "keywords": ["message failed", "not sending", "reconnecting", "connection problem", "offline"],
+      "order": 2,
+      "body": "If the header says Reconnecting, the websocket dropped; Chatgram retries automatically. Check your internet connection and wait a moment.\n\nA single conversation may refuse messages if the other person blocked you, or if a group admin set 'only admins can send messages'. In that case the message is removed and an error is shown.\n\nReload the page to refresh the conversation, then try again."
+    },
+    {
+      "slug": "upload-fails",
+      "collectionSlug": "troubleshooting",
+      "title": "Uploads fail or are rejected",
+      "summary": "Size, type and storage checks.",
+      "keywords": ["upload failed", "file too large", "unsupported file", "storage error", "photo won't upload"],
+      "order": 3,
+      "body": "Check the file type and size against the limits: images 10 MB, videos 50 MB and 60 seconds, audio 20 MB, chat attachments 10 MB.\n\nIf the error says Storage unavailable, try again in a moment — the media service was briefly unreachable.\n\nVery large videos are usually the cause. Trim the clip or lower the recording quality, then retry. The composer keeps your file selected so retrying does not mean picking it again."
+    },
+    {
+      "slug": "no-notifications",
+      "collectionSlug": "troubleshooting",
+      "title": "I get no notifications",
+      "summary": "Permission, mute and focus checks.",
+      "keywords": ["no notifications", "no sound", "notifications not working", "muted", "do not disturb"],
+      "order": 4,
+      "body": "Notifications only appear when the Chatgram window is in the background. If you are looking at the tab, no popup appears by design.\n\nCheck Settings, Notifications: Desktop notifications must be on and the browser permission must be Allowed. If the browser blocked it earlier, allow it in the site settings.\n\nAlso check that the conversation is not muted, and that Do Not Disturb on your computer is off."
+    }
+  ]
+}

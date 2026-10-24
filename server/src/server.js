@@ -131,6 +131,11 @@ connectDB().then(() => {
   } catch (error) {
     console.warn('Status cleanup could not start:', error.message);
   }
+
+  // Help-centre articles (idempotent upsert from articles.seed.json).
+  require('./help/seed')
+    .seedHelpCentre()
+    .catch((error) => console.warn('Help centre seeding failed:', error.message));
 });
 
 // ---------------------------------------------------------------- middleware
@@ -256,8 +261,14 @@ app.use('/api/users', userRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/messages', messageRoutes);
+
+// Health details for the help widget's Status card. NOTE: `/api/status` is the
+// existing statuses (stories) feed, so the health endpoint lives under it.
+app.get('/api/status/health', require('./help/controller').getServiceStatus);
+
 app.use('/api/status', statusRoutes);
 app.use('/api/app', appRoutes);
+app.use('/api/help', require('./help'));
 app.use('/api/support', supportRoutes);
 
 // SPA fallback: any non-API GET that did not match a file returns index.html so
