@@ -630,3 +630,15 @@ signed-in endpoint hides completed items (2FA on, photo set) and per-user dismis
 (`User.dismissedRecommendations`), and strips admin fields from the user payload; the admin
 endpoint requires the session + CSRF and writes an audit row. `hideWhen`/URL/order are stored so
 no code change is needed to tune the card.
+
+## D37 - Health, audit, AI usage and knowledge pages are admin-session only (2026-10-24)
+
+Four more dashboard pages are live behind the admin session (never a user token): System health
+(news process/uptime/memory, Mongo state, socket registry counts, AI health + provider health,
+newest backup archive on the host, disk/RAM meters — assembled from safe data only), Audit log
+(filterable/paginated append-only view with CSV export and expandable rows), AI usage (aggregates
+from AiMessage/AdminInbox/AiKnowledge) and the Knowledge base editor (create/update/delete,
+audited). No payload returns env values, database URIs, hashes, tokens or API keys; list views
+are paginated and the audit log has no write route. Still crossed in 9b: Reports/moderation,
+Groups, Statuses & media, Support extras, Releases, Feature flags/maintenance, Safety & abuse,
+Settings, Data requests, broadcast announcements, plus security-review conversation access (9d).

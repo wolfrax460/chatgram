@@ -26,6 +26,15 @@
 `/api` proxy verified (GET health + POST login). Last web deployment `chatgram-oazzw9gg7`, backend
 PM2 restart #79, backups `20261024-173554` and `20261024-182636` with source snapshots.
 
+### 9b pages deployed in the final rounds of this session
+- Admin dashboard shell + Overview/Users/User detail/Inbox/Providers/Security (chunk 1).
+- Item 4 server-driven recommendations + Announcements editor.
+- System health, Audit log (read-only, verified in production).
+- Chatgram AI usage + Knowledge base editor (verified in production).
+Owner actions unchanged: rotate both admin passwords (panel password now set to the owner's
+chosen value and stored in the credentials file), delete the credentials file after changing it,
+enable TOTP once built, paste the Groq key.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,
