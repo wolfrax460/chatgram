@@ -621,3 +621,12 @@ counters only; message content stays behind the 9d reason prompt), and the audit
 `POST /api/admin/users/:id/reset-2fa`. Suspend/ban, device/session lists, reports/groups/
 content/support/AI-usage/announcements/releases/flags/safety/health/audit/settings/data-request
 pages and the 9d security-review + global search are still to build (crossed).
+
+## D36 - Empty-screen recommendations are a seeded, editable collection (2026-10-24)
+
+The Recommendation collection is seeded once with five defaults (downloads, two-step verification,
+profile photo, Chatgram AI, invite), ordered and edited in /web/admin → Announcements. The
+signed-in endpoint hides completed items (2FA on, photo set) and per-user dismissals
+(`User.dismissedRecommendations`), and strips admin fields from the user payload; the admin
+endpoint requires the session + CSRF and writes an audit row. `hideWhen`/URL/order are stored so
+no code change is needed to tune the card.
