@@ -693,3 +693,14 @@ an existing member, and the new owner is promoted to group admin), remove member
 (removes the group's messages and marks its reports actioned). Every action writes an audit row
 (`group_freeze`, `group_unfreeze`, `group_change_owner`, `group_remove_member`, `group_delete`).
 Admins still cannot send messages as a user.
+
+## D42 - Statuses & media console and its honest limits (2026-10-25)
+
+The admin console lists recent statuses (owner, media type, stored bytes, open-report count) and a
+media library merged from message attachments and statuses, with audited removals: removing a
+status uses the shared status cleanup (deletes the stored file), removing an attachment soft-deletes
+the message for everyone. Storage totals add Status.mediaSize; message attachments do not record
+their byte size, so byte totals cover status media only, and there is no media registry, so
+"orphaned Cloudinary files" detection is not implemented. The media library is fetched from both
+collections and merged in memory (bounded) because the staging MongoDB does not support every
+`$unionWith` form.
