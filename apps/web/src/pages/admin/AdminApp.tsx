@@ -342,11 +342,18 @@ function SecurityPage({ session, onSignOut }: { session: AdminSessionInfo; onSig
   const [sessions, setSessions] = useState<{ id: string; current: boolean; createdAt: string; lastSeenAt: string; expiresAt: string; ip: string; userAgent: string }[]>([]);
   const [audit, setAudit] = useState<{ action: string; detail: string; ip: string; at: string }[]>([]);
   const [confirmSignOutAll, setConfirmSignOutAll] = useState(false);
+  const [totp, setTotp] = useState<{ totpEnabled: boolean; recoveryCodesRemaining: number; currentIp?: string } | null>(null);
+  const [enrolment, setEnrolment] = useState<{ secret: string; otpauth: string; qr: string; instructions: string } | null>(null);
+  const [totpCode, setTotpCode] = useState('');
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+  const [disableForm, setDisableForm] = useState({ password: '', code: '' });
 
   const load = useCallback(async () => {
     try {
       const sessionPayload = await adminFetch<{ sessions: typeof sessions }>('/api/admin/auth/sessions');
       const auditPayload = await adminFetch<{ entries: typeof audit }>('/api/admin/auth/audit');
+      const securityPayload = await adminFetch<{ totpEnabled: boolean; recoveryCodesRemaining: number; currentIp?: string }>('/api/admin/security');
+      setTotp(securityPayload);
       setSessions(sessionPayload.sessions ?? []);
       setAudit(auditPayload.entries ?? []);
     } catch (loadError) {
@@ -378,6 +385,85 @@ function SecurityPage({ session, onSignOut }: { session: AdminSessionInfo; onSig
       toast.show('Admin password changed.');
     } catch (changeError) {
       setError(changeError instanceof AdminError ? changeError.message : 'Could not change the password.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startTotp() {
+    setBusy(true);
+    setError('');
+    try {
+      const payload = await adminFetch<{ secret: string; otpauth: string; qr: string; instructions: string }>('/api/admin/security/totp/start', {
+        method: 'POST',
+        csrf: session.csrfToken,
+        body: {},
+      });
+      setEnrolment(payload);
+      setRecoveryCodes(null);
+    } catch (startError) {
+      setError(startError instanceof AdminError ? startError.message : 'Could not start the setup.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function enableTotp() {
+    setBusy(true);
+    setError('');
+    try {
+      const payload = await adminFetch<{ message: string; recoveryCodes: string[] }>('/api/admin/security/totp/enable', {
+        method: 'POST',
+        csrf: session.csrfToken,
+        body: { code: totpCode },
+      });
+      setRecoveryCodes(payload.recoveryCodes);
+      setEnrolment(null);
+      setTotpCode('');
+      toast.show(payload.message);
+      await load();
+    } catch (enableError) {
+      setError(enableError instanceof AdminError ? enableError.message : 'Could not enable two-step verification.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disableTotp() {
+    setBusy(true);
+    setError('');
+    try {
+      const payload = await adminFetch<{ message: string }>('/api/admin/security/totp/disable', {
+        method: 'POST',
+        csrf: session.csrfToken,
+        body: disableForm,
+      });
+      toast.show(payload.message);
+      setDisableForm({ password: '', code: '' });
+      setRecoveryCodes(null);
+      await load();
+    } catch (disableError) {
+      setError(disableError instanceof AdminError ? disableError.message : 'Could not disable two-step verification.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function regenerateRecovery() {
+    setBusy(true);
+    setError('');
+    try {
+      const payload = await adminFetch<{ message: string; recoveryCodes: string[] }>('/api/admin/security/recovery-codes', {
+        method: 'POST',
+        csrf: session.csrfToken,
+        body: { password: disableForm.password },
+      });
+      setRecoveryCodes(payload.recoveryCodes);
+      setDisableForm({ ...disableForm, password: '' });
+      toast.show(payload.message);
+      await load();
+    } catch (regenError) {
+      setError(regenError instanceof AdminError ? regenError.message : 'Could not generate new recovery codes.');
     } finally {
       setBusy(false);
     }
@@ -424,6 +510,132 @@ function SecurityPage({ session, onSignOut }: { session: AdminSessionInfo; onSig
             Save new password
           </button>
         </form>
+        <div className="admin-card admin-card-pad md:col-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="admin-card-title">Two-step verification</p>
+            {totp ? (
+              <span className={'admin-chip ' + (totp.totpEnabled ? 'admin-chip-success' : 'admin-chip-default')}>
+                {totp.totpEnabled ? 'on' : 'off'}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 text-[11.5px] text-[var(--ad-muted)]">
+            Optional. When it is on, signing in also needs a 6-digit code from an authenticator app (Google Authenticator,
+            1Password, Authy…). Recovery codes work once each if you lose the phone.
+          </p>
+
+          {!totp?.totpEnabled && !enrolment ? (
+            <button type="button" className="admin-btn admin-btn-primary mt-2" onClick={() => void startTotp()} disabled={busy}>
+              Turn on two-step verification
+            </button>
+          ) : null}
+
+          {enrolment ? (
+            <div className="mt-3 grid gap-3 lg:grid-cols-[260px_1fr]">
+              <div className="rounded-xl border border-[var(--ad-border)] bg-white p-2">
+                <img src={enrolment.qr} alt="QR code for the authenticator app" className="h-[260px] w-[260px]" />
+              </div>
+              <div>
+                <p className="text-[12.5px]">{enrolment.instructions}</p>
+                <p className="mt-2 text-[11px] text-[var(--ad-muted)]">Can't scan it? Enter this key manually:</p>
+                <p className="mt-1 break-all font-mono text-[12px] text-[var(--ad-accent)]">{enrolment.secret}</p>
+                <div className="mt-3 flex flex-wrap items-end gap-2">
+                  <label className="block text-[11.5px] font-semibold text-[var(--ad-muted)]">
+                    6-digit code
+                    <input
+                      className="admin-input mt-1 w-40 tracking-[0.3em]"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={totpCode}
+                      onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))}
+                      placeholder="123456"
+                    />
+                  </label>
+                  <button type="button" className="admin-btn admin-btn-primary" onClick={() => void enableTotp()} disabled={busy || totpCode.length !== 6}>
+                    Turn on
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-btn"
+                    onClick={() => {
+                      setEnrolment(null);
+                      setTotpCode('');
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {recoveryCodes ? (
+            <div className="mt-3 rounded-xl border border-[var(--ad-warning)]/40 bg-[var(--ad-warning)]/5 p-3">
+              <p className="text-[12.5px] font-semibold">Save these recovery codes now — they are shown once.</p>
+              <div className="mt-2 grid grid-cols-2 gap-1 font-mono text-[12px] sm:grid-cols-4">
+                {recoveryCodes.map((code) => (
+                  <span key={code} className="rounded-md bg-[var(--ad-sunken)] px-2 py-1">{code}</span>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="admin-btn admin-btn-sm mt-2"
+                onClick={() => void navigator.clipboard?.writeText(recoveryCodes.join('\n')).then(() => toast.show('Recovery codes copied.'))}
+              >
+                Copy recovery codes
+              </button>
+            </div>
+          ) : null}
+
+          {totp?.totpEnabled ? (
+            <div className="mt-3 grid gap-2 lg:grid-cols-2">
+              <div className="rounded-xl border border-[var(--ad-border)] p-3">
+                <p className="text-[12px] font-semibold">Turn it off</p>
+                <p className="mt-1 text-[11.5px] text-[var(--ad-muted)]">Needs the panel password and a current code (or a recovery code).</p>
+                <label className="mt-2 block text-[11.5px] font-semibold text-[var(--ad-muted)]">
+                  Panel password
+                  <input
+                    type="password"
+                    className="admin-input mt-1"
+                    value={disableForm.password}
+                    onChange={(event) => setDisableForm({ ...disableForm, password: event.target.value })}
+                    autoComplete="current-password"
+                  />
+                </label>
+                <label className="mt-2 block text-[11.5px] font-semibold text-[var(--ad-muted)]">
+                  Code
+                  <input
+                    className="admin-input mt-1"
+                    inputMode="numeric"
+                    value={disableForm.code}
+                    onChange={(event) => setDisableForm({ ...disableForm, code: event.target.value })}
+                    placeholder="123456 or a recovery code"
+                  />
+                </label>
+                <button type="button" className="admin-btn admin-btn-danger mt-2" onClick={() => void disableTotp()} disabled={busy || !disableForm.password || !disableForm.code}>
+                  Turn off two-step verification
+                </button>
+              </div>
+              <div className="rounded-xl border border-[var(--ad-border)] p-3">
+                <p className="text-[12px] font-semibold">Recovery codes</p>
+                <p className="mt-1 text-[11.5px] text-[var(--ad-muted)]">{totp.recoveryCodesRemaining} unused code(s) left.</p>
+                <label className="mt-2 block text-[11.5px] font-semibold text-[var(--ad-muted)]">
+                  Panel password (to generate new ones)
+                  <input
+                    type="password"
+                    className="admin-input mt-1"
+                    value={disableForm.password}
+                    onChange={(event) => setDisableForm({ ...disableForm, password: event.target.value })}
+                    autoComplete="current-password"
+                  />
+                </label>
+                <button type="button" className="admin-btn mt-2" onClick={() => void regenerateRecovery()} disabled={busy || !disableForm.password}>
+                  Generate new recovery codes
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
         <div className="admin-card admin-card-pad">
           <p className="admin-card-title">Sessions</p>
           <p className="mt-1 text-[11.5px] text-[var(--ad-muted)]">Sliding 30 minutes idle, 8 hours absolute.</p>

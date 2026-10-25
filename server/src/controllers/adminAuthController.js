@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 const AdminSession = require('../models/AdminSession');
 const AdminAudit = require('../models/AdminAudit');
 const admin = require('../admin/auth');
+const adminTotp = require('../admin/totp');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -43,6 +44,30 @@ const login = async (req, res) => {
       return res.status(429).json({ message: 'Too many failed attempts. Temporarily locked.', code: 'ADMIN_LOCKED', retryAfter: seconds });
     }
     return genericError(res);
+  }
+
+  // Optional second factor (9a): a TOTP or single-use recovery code.
+  const security = await adminTotp.status();
+  if (security.totpEnabled) {
+    const code = String(req.body?.code || req.body?.totp || '').trim();
+    if (!code) {
+      return res.status(401).json({
+        message: 'Enter the 6-digit code from your authenticator app.',
+        code: 'ADMIN_TOTP_REQUIRED',
+      });
+    }
+    const verified = await adminTotp.verifyLogin(code, req);
+    if (!verified.ok) {
+      const state = admin.registerFailure(ip);
+      await admin.audit('admin_totp_failure', req, `attempt ${state.count}`);
+      if (state.lockedUntil) {
+        await admin.audit('lockout', req);
+        const seconds = Math.max(1, Math.ceil((state.lockedUntil - Date.now()) / 1000));
+        res.set('Retry-After', String(seconds));
+        return res.status(429).json({ message: 'Too many failed attempts. Temporarily locked.', code: 'ADMIN_LOCKED', retryAfter: seconds });
+      }
+      return res.status(401).json({ message: 'That code is not correct.', code: 'ADMIN_TOTP_INVALID' });
+    }
   }
 
   admin.clearFailures(ip);

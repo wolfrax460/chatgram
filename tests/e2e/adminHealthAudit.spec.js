@@ -25,7 +25,7 @@ test.describe('admin system health and audit log', () => {
     await expect(page.getByRole('heading', { name: 'System health' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText('API', { exact: true })).toBeVisible();
     await expect(page.getByText('MongoDB')).toBeVisible();
-    await expect(page.getByText('Realtime')).toBeVisible();
+    await expect(page.getByText('Realtime', { exact: true })).toBeVisible();
     await expect(page.getByText('AI layer')).toBeVisible();
     await expect(page.getByText('Backups')).toBeVisible();
     await expect(page.getByText(/uptime/)).toBeVisible();

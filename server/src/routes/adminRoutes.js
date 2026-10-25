@@ -21,6 +21,7 @@ const {
 } = require('../controllers/adminOverviewController');
 const { systemHealth, auditList } = require('../controllers/adminHealthController');
 const moderation = require('../controllers/adminModerationController');
+const adminSecurity = require('../controllers/adminSecurityController');
 
 router.post('/auth/login', login);
 router.get('/auth/session', requireAdminSession, sessionInfo);
@@ -28,6 +29,13 @@ router.get('/auth/sessions', requireAdminSession, listSessions);
 router.get('/auth/audit', requireAdminSession, listAudit);
 router.post('/auth/logout', requireAdminSession, requireAdminCsrf, logout);
 router.post('/auth/logout-all', requireAdminSession, requireAdminCsrf, logoutAll);
+
+// Admin security (9a): optional TOTP two-step + recovery codes.
+router.get('/security', requireAdminSession, adminSecurity.state);
+router.post('/security/totp/start', requireAdminSession, requireAdminCsrf, adminSecurity.start);
+router.post('/security/totp/enable', requireAdminSession, requireAdminCsrf, adminSecurity.enable);
+router.post('/security/totp/disable', requireAdminSession, requireAdminCsrf, adminSecurity.disable);
+router.post('/security/recovery-codes', requireAdminSession, requireAdminCsrf, adminSecurity.regenerateCodes);
 router.post('/auth/change-password', requireAdminSession, requireAdminCsrf, changePassword);
 
 // Dashboard (Change 2): Overview + Users. Read-only fields only; no secrets.
