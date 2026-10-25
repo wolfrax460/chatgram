@@ -165,7 +165,19 @@ export function NewChatPanel({
             </p>
             {search.isLoading ? <p className="p-3 text-sm text-ink-500">Searching…</p> : null}
             {searchResults.map((person) => (
-              <div key={person.id} className="flex items-center gap-3 px-3 py-2">
+              <div
+                key={person.id}
+                className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-ink-100/70 dark:hover:bg-white/[.04]"
+                onClick={() => void openOrStartChat(person.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    void openOrStartChat(person.id);
+                  }
+                }}
+              >
                 <span className={`grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br ${avatarGradient(person.id)} text-xs font-bold text-white`}>
                   {person.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : initialsFor(person.displayName)}
                 </span>
@@ -174,11 +186,25 @@ export function NewChatPanel({
                   <span className="block truncate text-[11.5px] text-ink-500 dark:text-ink-300">{person.about || 'on Chatgram'}</span>
                 </span>
                 {contactIds.has(person.id) ? (
-                  <button type="button" className="btn-ghost !px-2 text-[12px]" onClick={() => void openOrStartChat(person.id)}>
+                  <button
+                    type="button"
+                    className="btn-ghost !px-2 text-[12px]"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void openOrStartChat(person.id);
+                    }}
+                  >
                     Message
                   </button>
                 ) : (
-                  <button type="button" className="btn-primary !h-8 !px-3 !text-[12px]" onClick={() => addContact.mutate(person.id)}>
+                  <button
+                    type="button"
+                    className="btn-primary !h-8 !px-3 !text-[12px]"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      addContact.mutate(person.id);
+                    }}
+                  >
                     Add
                   </button>
                 )}
