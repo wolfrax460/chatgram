@@ -166,6 +166,14 @@ enable TOTP once built, paste the Groq key.
 - 9d left: retention-setting UI; devices/session + login-history model. Remaining 9b: Safety & abuse,
   Settings, broadcasts, Users extras, Inbox merge-duplicates.
 
+### 9b Safety & abuse deployed 2026-10-25
+- Blocked words/links/email domains, message + signup rate limits, signup throttling, IP bans and
+  spam signals, all enforced server-side and editable from the new Safety & abuse page; every change audited.
+- Tests: integration 21/21, unit 22/22, Playwright page; production smoke 13/13 with settings restored.
+- Cross: device bans (no device-id model), counters are per-process in-memory.
+- 9b left: Settings page, broadcast announcements, Users extras (delete-with-grace/verify-email/warn/
+  devices+sessions/saved views/bulk actions), Inbox merge-duplicates. 9d left: retention-setting UI.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,

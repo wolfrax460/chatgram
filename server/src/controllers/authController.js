@@ -65,6 +65,9 @@ const userPayload = (user, accessToken, refreshToken) => ({
 // @access  Public
 const registerUser = async (req, res) => {
   try {
+    const safety = require('../middleware/safety');
+    const throttle = await safety.checkSignup(req);
+    if (throttle) return res.status(throttle.status).json(throttle.body);
     const settings = await require('../utils/platformSettings').get();
     if (!settings.registrationEnabled) {
       return res.status(403).json({ message: 'New account creation is temporarily disabled.', code: 'REGISTRATION_DISABLED' });
@@ -93,6 +96,19 @@ const registerUser = async (req, res) => {
 
     if (!password || String(password).length < 6) {
       return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+    }
+
+    // Safety: blocked email domains cannot register.
+    if (parsed.channel === 'email') {
+      const safetySettings = await require('../utils/platformSettings').get();
+      const domain = String(parsed.target || '').split('@')[1] ? String(parsed.target).split('@')[1].toLowerCase() : '';
+      const blocked = (safetySettings.blockedEmailDomains || []).find((entry) => domain === entry || domain.endsWith('.' + entry));
+      if (blocked) {
+        return res.status(403).json({
+          message: 'Sign-ups from this email domain are not accepted.',
+          code: 'EMAIL_DOMAIN_BLOCKED',
+        });
+      }
     }
 
     // Optional gate: only accept sign-ups whose email/phone was verified.
@@ -149,6 +165,8 @@ const registerUser = async (req, res) => {
         }
       }
     }
+
+    try { require('../middleware/safety').recordSignup(req); } catch (safetyError) { console.warn('Signup counter failed:', safetyError.message); }
 
     const accessToken = generateToken(user._id, tokenVersionOf(user));
     const refreshToken = generateRefreshToken(user._id, tokenVersionOf(user));

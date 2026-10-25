@@ -17,6 +17,16 @@ const platformSettingsSchema = new mongoose.Schema(
     maintenanceMessage: { type: String, default: 'Chatgram is under maintenance. We will be back shortly.', maxlength: 500 },
     readOnlyMode: { type: Boolean, default: false },
     maxUploadMb: { type: Number, default: 100 },
+    // 9b Safety & abuse.
+    blockedWords: { type: [String], default: [] },
+    blockedLinkDomains: { type: [String], default: [] },
+    blockedEmailDomains: { type: [String], default: [] },
+    messagesPerMinute: { type: Number, default: 60 },
+    signupsPerHourPerIp: { type: Number, default: 20 },
+    massMessageHourly: { type: Number, default: 200 },
+    signupThrottleEnabled: { type: Boolean, default: true },
+    // [{ ip, reason, createdAt }] managed by the Safety controller.
+    ipBans: { type: [{ ip: String, reason: String, createdAt: Date }], default: [] },
   },
   { timestamps: true },
 );

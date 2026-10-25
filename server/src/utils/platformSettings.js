@@ -16,7 +16,33 @@ const DEFAULTS = {
   maintenanceMessage: 'Chatgram is under maintenance. We will be back shortly.',
   readOnlyMode: false,
   maxUploadMb: 100,
+  // 9b Safety & abuse (enforced by middleware/safety.js).
+  blockedWords: [],
+  blockedLinkDomains: [],
+  blockedEmailDomains: [],
+  messagesPerMinute: 60,
+  signupsPerHourPerIp: 20,
+  massMessageHourly: 200,
+  signupThrottleEnabled: true,
+  ipBans: [],
 };
+
+const SAFETY_LISTS = ['blockedWords', 'blockedLinkDomains', 'blockedEmailDomains'];
+const SAFETY_NUMBERS = { messagesPerMinute: [5, 600], signupsPerHourPerIp: [1, 1000], massMessageHourly: [10, 10000] };
+
+function cleanList(value, maxLength) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const raw of value) {
+    const item = String(raw || '').trim().toLowerCase().replace(/^\*\./, '');
+    if (!item || item.length > maxLength || seen.has(item)) continue;
+    seen.add(item);
+    out.push(item);
+    if (out.length >= 200) break;
+  }
+  return out;
+}
 
 const CACHE_MS = 5000;
 let cache = { at: 0, value: null };
@@ -49,6 +75,20 @@ async function update(patch, req) {
       next[key] = Math.round(value);
     } else if (key === 'maintenanceMessage') {
       next[key] = String(patch[key] || '').slice(0, 500) || DEFAULTS.maintenanceMessage;
+    } else if (SAFETY_LISTS.includes(key)) {
+      next[key] = cleanList(patch[key], key === 'blockedWords' ? 60 : 120);
+    } else if (SAFETY_NUMBERS[key]) {
+      const [min, max] = SAFETY_NUMBERS[key];
+      const value = Number(patch[key]);
+      if (!Number.isFinite(value) || value < min || value > max) {
+        const error = new Error(`${key} must be between ${min} and ${max}.`);
+        error.status = 400;
+        throw error;
+      }
+      next[key] = Math.round(value);
+    } else if (key === 'ipBans') {
+      // Managed by the Safety controller only.
+      next[key] = current.ipBans || [];
     }
   }
   await PlatformSettings.updateOne({ singleton: 'platform' }, { $set: next }, { upsert: true });

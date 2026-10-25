@@ -786,3 +786,15 @@ search-scope session (conversation endpoints reject it, and search rejects conve
 keyword/sender/group/date filters, caps results at 500 with 25 per page, writes a review_search audit row
 with the keyword and filters, and is limited to 120 searches per hour per admin session. No results carry
 password hashes, tokens or 2FA secrets, and there is no write route: the search page can only read.
+
+## D50 - Safety controls live in PlatformSettings with middleware enforcement (2026-10-25)
+
+Blocked words, blocked message-link domains, blocked sign-up email domains, message/sign-up rate limits,
+the mass-messaging threshold, the signup-throttle toggle and the IP ban list are one cached
+PlatformSettings document edited from the Safety & abuse page. Enforcement is in dedicated middleware
+and controller hooks: the IP-ban middleware runs on /api and deliberately exempts /admin and /status/health
+so a mistaken ban can always be lifted; registration checks throttling and blocked email domains;
+message sending checks blocked words/link domains and a per-user messages-per-minute window. Counters
+are per-process in-memory sliding windows (one PM2 API process) — burst protection, not a durable
+audit trail; every settings change and IP ban/unban is audited instead. Device bans are not enforced:
+users have no stable device identifier yet, which is recorded as a cross.

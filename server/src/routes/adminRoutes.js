@@ -28,6 +28,7 @@ const releases = require('../controllers/appReleasesController');
 const platform = require('../controllers/adminPlatformController');
 const dataRequests = require('../controllers/adminDataRequestController');
 const reviews = require('../controllers/adminReviewController');
+const safetyAdmin = require('../controllers/adminSafetyController');
 
 router.post('/auth/login', login);
 router.get('/auth/session', requireAdminSession, sessionInfo);
@@ -117,5 +118,12 @@ router.post('/reviews/:id/end', requireAdminSession, requireAdminCsrf, reviews.e
 router.get('/reviews/:id/conversations', requireAdminSession, reviews.conversations);
 router.get('/reviews/:id/messages', requireAdminSession, reviews.messages);
 router.get('/reviews/:id/search', requireAdminSession, reviews.search);
+
+// 9b Safety & abuse: blocked words/links/domains, IP bans, limits, spam signals.
+router.get('/safety', requireAdminSession, safetyAdmin.state);
+router.put('/safety', requireAdminSession, requireAdminCsrf, safetyAdmin.save);
+router.get('/safety/signals', requireAdminSession, safetyAdmin.signals);
+router.post('/safety/ip-bans', requireAdminSession, requireAdminCsrf, safetyAdmin.addIpBan);
+router.delete('/safety/ip-bans/:ip', requireAdminSession, requireAdminCsrf, safetyAdmin.removeIpBan);
 
 module.exports = router;

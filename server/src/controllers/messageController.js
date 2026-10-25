@@ -44,6 +44,14 @@ const sendMessage = async (req, res) => {
       return res.status(400).json({ message: `${type} message must have a mediaUrl` });
     }
 
+    // Safety: blocked words/links and the per-user message rate limit.
+    try {
+      const refusal = await require('../middleware/safety').checkMessage(req.user._id, content || '');
+      if (refusal) return res.status(refusal.status).json(refusal.body);
+    } catch (safetyError) {
+      console.warn('Message safety check failed:', safetyError.message);
+    }
+
     // Blocking: if either side blocked the other, a direct message is refused.
     if (chat.type === 'direct') {
       const other = chat.participants.find((id) => String(id) !== String(req.user._id));

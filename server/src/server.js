@@ -274,6 +274,7 @@ app.use('/api', (req, res, next) => {
 
 // Feature flags + maintenance / read-only mode (9b item 10).
 app.use('/api', require('./utils/platformSettings').platformGate);
+app.use('/api', require('./middleware/safety').blockBannedIp);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
