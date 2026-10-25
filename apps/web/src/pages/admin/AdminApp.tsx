@@ -20,6 +20,7 @@ const AuditPage = lazy(() => import('./AuditPage'));
 const AiUsagePage = lazy(() => import('./AiUsagePage'));
 const KnowledgePage = lazy(() => import('./KnowledgePage'));
 const ReportsPage = lazy(() => import('./ReportsPage'));
+const SupportPage = lazy(() => import('./SupportPage'));
 
 /* ------------------------------------------------------------------- routes */
 
@@ -33,7 +34,7 @@ const NAV: NavEntry[] = [
   { path: '/admin/reports', label: 'Reports', icon: AlertTriangle, group: 'People' },
   { path: '/admin/groups', label: 'Groups', icon: Globe, group: 'People' },
   { path: '/admin/content', label: 'Statuses & media', icon: MessageSquare, group: 'Content' },
-  { path: '/admin/support', label: 'Support', icon: LifeBuoy, group: 'Content' },
+  { path: '/admin/support', label: 'Support', icon: LifeBuoy, group: 'Content', built: true },
   { path: '/admin/inbox', label: 'Inbox', icon: Inbox, group: 'Chatgram AI', built: true, badge: 'inbox' },
   { path: '/admin/providers', label: 'Model providers', icon: Workflow, group: 'Chatgram AI', built: true },
   { path: '/admin/knowledge', label: 'Knowledge base', icon: BookOpen, group: 'Chatgram AI', built: true },
@@ -294,6 +295,7 @@ function PageForPath({
   if (normalized === '/admin/providers') return <ProvidersPage session={session} />;
   if (normalized === '/admin/security') return <SecurityPage session={session} onSignOut={onSignOut} />;
   if (normalized === '/admin/reports') return <ReportsPage session={session} />;
+  if (normalized === '/admin/support') return <SupportPage session={session} />;
   if (normalized === '/admin/health') return <HealthPage />;
   if (normalized === '/admin/audit') return <AuditPage />;
   if (normalized === '/admin/ai-usage') return <AiUsagePage />;
