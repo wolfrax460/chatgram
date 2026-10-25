@@ -136,6 +136,16 @@ enable TOTP once built, paste the Groq key.
 - Remaining 9b: Safety & abuse, Settings, broadcast announcements, Users extras, Inbox merge.
 - 9d oversight not started.
 
+### Item 7 landing page deployed 2026-10-25
+- Features list Chatgram AI + Windows/Android apps, updated hero copy, fresh dark screenshots
+  captured with Playwright from test accounts.
+- Downloads tab is generated from the published App releases: Windows/Android/Web cards with
+  version, size, release date, SHA-256 (+copy), requirements, install steps, SmartScreen and
+  unknown-apps notes, APK QR, Open in browser, and a changelog from release notes.
+- Verified in production (10/10) and by tests/e2e/landing.spec.js. **Items 5, 6 and 7 are done.**
+- Remaining work: 9b Safety & abuse, Settings, broadcast announcements, Users extras, Inbox merge;
+  and the whole 9d administration oversight programme.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,

@@ -258,7 +258,17 @@ const FEATURES = [
   {
     icon: Icon.help,
     title: 'Help centre & AI assistant',
-    body: '37 searchable help articles, an AI assistant that answers instantly, and a one-tap hand-off to a human when it cannot.',
+    body: 'Searchable help articles, an AI assistant that answers instantly, and a one-tap hand-off to a human when it cannot.',
+  },
+  {
+    icon: Icon.sparkles || Icon.help,
+    title: 'Chatgram AI conversation',
+    body: 'Chatgram AI sits at the top of your chat list like any contact: ask anything, get streamed markdown answers, copy or rate them, clear the chat or start a new conversation. Mention @Chatgram AI in a group when an admin enables it.',
+  },
+  {
+    icon: Icon.windows || Icon.devices,
+    title: 'Windows and Android apps',
+    body: 'Install Chatgram for Windows (tray, taskbar badge, auto-update) or sideload the Android APK. Both use the same account and the same web build as the browser.',
   },
 ];
 
@@ -279,21 +289,21 @@ export function Features() {
 /* ------------------------------------------------------------ screenshots */
 const PHONE_SHOTS = [
   {
-    src: '/assets/web-chat-list.png',
-    alt: 'Chatgram chat list showing unread badges and read receipts',
-    caption: 'Your conversations',
+    src: '/assets/landing-chat-list.png',
+    alt: 'Chatgram dark chat list with the pinned Chatgram AI row, groups and unread badges',
+    caption: 'Your conversations, with Chatgram AI on top',
   },
   {
-    src: '/assets/web-conversation.png',
-    alt: 'A real-time Chatgram conversation with delivery ticks',
+    src: '/assets/landing-conversation.png',
+    alt: 'A dark Chatgram conversation with delivery ticks',
     caption: 'Live chat with delivery and read ticks',
   },
 ];
 
 const WIDE_SHOT = {
-  src: '/assets/web-desktop.png',
-  alt: 'Chatgram three-pane desktop layout: navigation, chat list and conversation',
-  caption: 'The full three-pane layout on a larger screen',
+  src: '/assets/landing-ai.png',
+  alt: 'Chatgram AI open as a normal conversation inside the app',
+  caption: 'Chatgram AI is just another conversation',
 };
 
 export function Screenshots() {
@@ -371,8 +381,8 @@ export function Security() {
 
 /* ---------------------------------------------------------------- download */
 export const DOWNLOADS = {
-  android: 'https://chatgram.duckdns.org/downloads/chatgram.apk',
-  windows: 'https://chatgram.duckdns.org/downloads/chatgram-windows-setup.exe',
+  android: '/downloads/chatgram-android.apk',
+  windows: '/downloads/chatgram-windows-setup.exe',
   web: '/web/',
 };
 

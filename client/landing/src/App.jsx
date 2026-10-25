@@ -9,16 +9,15 @@ import {
   Features,
   Screenshots,
   Security,
-  Download,
   Steps,
-  Changelog,
   Roadmap,
   Faq,
   DOWNLOADS,
 } from './sections.jsx';
+import { Downloads, ReleaseNotes } from './downloads.jsx';
 
 /* Fallback sizes — replaced by the real Content-Length when reachable. */
-const FALLBACK_SIZES = { android: '55.3', windows: '12.3' };
+const FALLBACK_SIZES = { android: '3.9', windows: '78.0' };
 
 function useDownloadSizes() {
   const [sizes, setSizes] = useState(FALLBACK_SIZES);
@@ -97,7 +96,7 @@ function Nav({ mode, setMode }) {
     ['#features', 'Features'],
     ['#preview', 'Preview'],
     ['#security', 'Privacy'],
-    ['#download', 'Download'],
+    ['#download', 'Downloads'],
     ['#whats-new', "What's new"],
     ['#faq', 'FAQ'],
   ];
@@ -152,9 +151,9 @@ function Hero({ sizes }) {
           </h1>
           <p className="lead">
             Chatgram keeps you close to the people who matter — real-time chat, voice notes,
-            photos, groups, 24-hour status and voice or video calls with up to 20 people, with
-            two-step verification and privacy you actually control. On Android, Windows or right
-            in your browser.
+            photos, groups, 24-hour status with photo, video and voice, voice and video calls,
+            Chatgram AI for questions and writing help, two-step verification and privacy you
+            actually control. On Android, Windows or right in your browser.
           </p>
           <div className="hero-actions">
             <a className="btn btn-primary btn-lg" href="/web/">
@@ -264,7 +263,7 @@ export default function App() {
           title="Pick your platform"
           lead="One account works across all three. Start on your phone, continue on your PC."
         >
-          <Download sizes={sizes} />
+          <Downloads />
         </Section>
 
         <Section
@@ -283,7 +282,7 @@ export default function App() {
           title="Release notes"
           lead="Everything that shipped in the current version."
         >
-          <Changelog />
+          <ReleaseNotes />
         </Section>
 
         <Section

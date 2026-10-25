@@ -751,3 +751,13 @@ VM under `/var/www/downloads` (nginx, attachment headers) and are served at the 
 are published through the admin App releases page so the landing Downloads tab and the updater share
 the same source of truth. The installers are unsigned/debug-signed and say so wherever they are
 linked.
+
+## D47 - The landing Downloads tab is generated from App releases (2026-10-25)
+
+The landing site fetches GET /api/app/releases and renders the Windows, Android and Web cards from it
+(version, size, release date, SHA-256 with a copy button, requirements, install steps, SmartScreen and
+unknown-apps notes, QR code, Open in browser) plus the changelog from the release notes, so publishing
+a new build in the admin App releases page updates the landing page without code changes. A cached
+last-known-good fallback keeps the page usable if the API is unreachable (and says so). The APK QR is
+a static SVG for the stable /downloads/chatgram-android.apk URL. Screenshots in the preview section
+are real Playwright captures from the app using temporary test accounts (no personal data).

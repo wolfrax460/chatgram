@@ -1305,3 +1305,48 @@ svg {
   .shot-wide .shot-frame { padding: 6px; border-radius: 14px; }
   .shot-wide .shot-frame img { border-radius: 9px; }
 }
+
+/* ---------------------------------------------------- downloads (data-driven) */
+.dl-notice {
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(240, 180, 41, 0.12);
+  border: 1px solid rgba(240, 180, 41, 0.35);
+  font-size: 13px;
+}
+.dl-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+  margin: 14px 0;
+  font-size: 12.5px;
+}
+.dl-meta > div.wide { grid-column: 1 / -1; }
+.dl-meta dt {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.dl-meta dd { margin: 2px 0 0; word-break: break-all; }
+.dl-android { display: grid; grid-template-columns: 1fr 96px; gap: 10px; align-items: start; }
+.dl-qr { margin: 12px 0 0; text-align: center; }
+.dl-qr img { width: 96px; height: 96px; border-radius: 8px; background: #fff; padding: 4px; }
+.dl-qr figcaption { margin-top: 4px; font-size: 10.5px; color: var(--muted); }
+.sha { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sha code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.sha-copy {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.sha-copy:hover { background: var(--surface-2); }
+.install-steps { margin: 12px 0 16px; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
+.install-steps li { margin: 4px 0; }
+.dl-body { font-size: 13px; color: var(--muted); margin: 10px 0; }
+.muted { color: var(--muted); }
