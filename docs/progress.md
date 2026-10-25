@@ -104,6 +104,16 @@ enable TOTP once built, paste the Groq key.
   login-history data, saved filters/bulk actions/column visibility), Inbox merge-duplicates.
 - 9d oversight and items 5/6/7 are not started.
 
+### Feature flags, maintenance & read-only deployed 2026-10-25
+- Admin page with six feature toggles, maintenance mode + custom message, read-only mode and
+  the upload limit; public /api/app/features for clients; maintenance screen in the web app.
+- Server enforcement for every flag (503 maintenance/read-only, 403 per feature), audited.
+- Remaining 9b: Safety & abuse, Settings, Data requests, broadcast announcements, Users extras
+  (delete-with-grace, verify email, warn, device/session + login-history data, saved filters/bulk
+  actions/column visibility), Inbox merge-duplicates. The stored upload limit does not override
+  the per-type multer caps yet.
+- 9d oversight and items 5/6/7 are not started.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,

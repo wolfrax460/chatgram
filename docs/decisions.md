@@ -714,3 +714,15 @@ the landing Downloads tab and the desktop/mobile apps get new versions without a
 Versions and checksums are validated; a published release needs a version and a file URL. Production
 stays empty (no fake releases) until the Windows installer and Android APK are actually built and
 hosted under /downloads/.
+
+## D44 - Platform flags are enforced server-side and cached (2026-10-25)
+
+A PlatformSettings singleton holds the feature flags (registration, status, groups, file uploads,
+Chatgram AI, support widget), maintenance mode + message, read-only mode and the platform upload
+limit. utils/platformSettings caches the document for 5 seconds and exposes get/update plus gates.
+The global /api gate returns 503 MAINTENANCE (admins, /status/health, /auth and /config stay
+reachable) or 503 READ_ONLY for non-GET user requests; per-feature gates return 403 with stable
+codes. The public GET /api/app/features feeds the clients, which show a maintenance screen, hide the
+AI rail when AI is off and the help widget when support is off. Every save is audited. The platform
+upload limit is stored and shown in the UI but the existing per-type multer limits keep enforcing
+the actual file caps.
