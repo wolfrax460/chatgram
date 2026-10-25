@@ -12,9 +12,12 @@ const {
   reportStatus
 } = require('../controllers/statusController');
 const { statusUpload } = require('../utils/upload');
+const { featureGate } = require('../utils/platformSettings');
 
 // All routes require authentication
 router.use(protect);
+// Admin feature flag: status can be disabled platform-wide.
+router.use(featureGate('statusEnabled', 'STATUS_DISABLED', 'Status is temporarily disabled.'));
 
 // Media rules (image 10 MB, video 50 MB / 60 s, audio 20 MB)
 router.get('/limits', getStatusLimits);

@@ -4,6 +4,9 @@ const router = express.Router();
 const { protect } = require('../middleware/auth');
 const ai = require('../ai/chatgram');
 
+// Admin feature flag: Chatgram AI can be disabled platform-wide.
+router.use(require('../utils/platformSettings').featureGate('aiEnabled', 'AI_DISABLED', 'Chatgram AI is temporarily disabled.'));
+
 router.use(protect);
 
 function fail(res, error) {

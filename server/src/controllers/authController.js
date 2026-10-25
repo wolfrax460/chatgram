@@ -65,6 +65,14 @@ const userPayload = (user, accessToken, refreshToken) => ({
 // @access  Public
 const registerUser = async (req, res) => {
   try {
+    const settings = await require('../utils/platformSettings').get();
+    if (!settings.registrationEnabled) {
+      return res.status(403).json({ message: 'New account creation is temporarily disabled.', code: 'REGISTRATION_DISABLED' });
+    }
+  } catch (gateError) {
+    console.error('Registration gate error:', gateError.message);
+  }
+  try {
     const { password, displayName, verificationToken } = req.body;
 
     if (!displayName || !String(displayName).trim()) {

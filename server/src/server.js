@@ -272,6 +272,9 @@ app.use('/api', (req, res, next) => {
   return next();
 });
 
+// Feature flags + maintenance / read-only mode (9b item 10).
+app.use('/api', require('./utils/platformSettings').platformGate);
+
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/contacts', contactRoutes);

@@ -23,7 +23,7 @@ const upload = require('../utils/upload');
 router.use(protect);
 
 // Upload media file (declared before the `/:id/...` routes for clarity)
-router.post('/media', upload.single('file'), uploadMedia);
+router.post('/media', require('../utils/platformSettings').featureGate('fileUploadsEnabled', 'UPLOADS_DISABLED', 'File uploads are temporarily disabled.'), upload.single('file'), uploadMedia);
 
 // Send a message over REST (also broadcast over Socket.IO)
 router.post('/', sendMessage);

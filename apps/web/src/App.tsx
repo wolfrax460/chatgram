@@ -737,7 +737,7 @@ const NAV: { key: Tab; label: string; Icon: typeof MessageCircle }[] = [
   { key: 'settings', label: 'Settings', Icon: SettingsIcon },
 ];
 
-function Shell() {
+function Shell({ features }: { features: AppFeatures | null }) {
   const user = useSession((s) => s.user);
   const setUser = useSession((s) => s.setUser);
   const { mode, cycle } = useTheme();
@@ -912,6 +912,7 @@ function Shell() {
           </span>
           AI
         </button>
+        {features?.supportWidgetEnabled === false ? null : (
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('chatgram-open-help'))}
@@ -923,6 +924,7 @@ function Shell() {
           <LifeBuoy className="h-5 w-5" />
           Help
         </button>
+        )}
         <span className="flex-1" />
         <button type="button" onClick={cycle} className="btn-ghost !px-2" title={`Theme: ${mode}`} aria-label="Toggle theme">
           {mode === 'dark' ? <Moon className="h-4 w-4" /> : mode === 'light' ? <Sun className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
@@ -1137,10 +1139,38 @@ function Shell() {
 
 /* -------------------------------------------------------------------- app */
 
+type AppFeatures = {
+  registrationEnabled: boolean;
+  statusEnabled: boolean;
+  groupsEnabled: boolean;
+  fileUploadsEnabled: boolean;
+  aiEnabled: boolean;
+  supportWidgetEnabled: boolean;
+  maintenanceMode: boolean;
+  maintenanceMessage: string;
+  readOnlyMode: boolean;
+  maxUploadMb: number;
+};
+
 export default function App() {
   const user = useSession((s) => s.user);
   const setUser = useSession((s) => s.setUser);
   const setReady = useSession((s) => s.setReady);
+  const [features, setFeatures] = useState<AppFeatures | null>(null);
+
+  // Feature flags + maintenance state (the server also enforces every flag).
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/app/features')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!cancelled && payload) setFeatures(payload as AppFeatures);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1177,6 +1207,18 @@ export default function App() {
     );
   }
 
+  if (features?.maintenanceMode) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-ink-900 p-6 text-center text-ink-100">
+        <div className="max-w-md rounded-2xl border border-white/10 bg-white/[.03] p-6">
+          <p className="text-2xl font-bold">Chatgram is under maintenance</p>
+          <p className="mt-2 text-sm text-ink-300">{features.maintenanceMessage || 'We will be back shortly.'}</p>
+          <p className="mt-3 text-[11.5px] text-ink-500">Health: /api/status/health · status updates will appear here when it ends.</p>
+        </div>
+      </div>
+    );
+  }
+
   // Group invite links: /web/join/<token>
   const joinMatch =
     typeof window !== 'undefined' ? window.location.pathname.match(/\/join\/([^/]+)\/?$/) : null;
@@ -1191,8 +1233,8 @@ export default function App() {
 
   return (
     <>
-      {user ? <Shell /> : <Auth />}
-      <SupportWidget hideLauncher={Boolean(user)} />
+      {user ? <Shell features={features} /> : <Auth />}
+      {features?.supportWidgetEnabled === false ? null : <SupportWidget hideLauncher={Boolean(user)} />}
     </>
   );
 }

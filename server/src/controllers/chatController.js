@@ -17,6 +17,14 @@ const PARTICIPANT_FIELDS = '_id displayName avatarUrl about isOnline lastSeen ph
 // @access  Private
 const createChat = async (req, res) => {
   try {
+    const settings = await require('../utils/platformSettings').get();
+    if (String(req.body?.type || 'direct') === 'group' && !settings.groupsEnabled) {
+      return res.status(403).json({ message: 'Group creation is temporarily disabled.', code: 'GROUPS_DISABLED' });
+    }
+  } catch (gateError) {
+    console.error('Groups gate error:', gateError.message);
+  }
+  try {
     const { type } = req.body;
 
     if (!type || !['direct', 'group'].includes(type)) {

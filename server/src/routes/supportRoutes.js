@@ -6,6 +6,10 @@ const { openSupportChat, supportInfo } = require('../controllers/supportControll
 const { createTicket, getTicket, deleteTicket, getTicketByChat, closeTicket } = require('../controllers/supportTicketController');
 const { askSupportAssistant } = require('../controllers/supportAssistantController');
 const { webhookHandler: telegramWebhook } = require('../support/telegramBot');
+const { featureGate } = require('../utils/platformSettings');
+// Admin feature flag: the help/support widget can be disabled platform-wide.
+router.use(featureGate('supportWidgetEnabled', 'SUPPORT_DISABLED', 'Support is temporarily unavailable.'));
+
 // --- public help-widget endpoints (no auth) ---
 router.post('/assistant', askSupportAssistant);
 // Telegram bot webhook (secret in the path).

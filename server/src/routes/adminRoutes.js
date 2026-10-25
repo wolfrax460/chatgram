@@ -25,6 +25,7 @@ const adminSecurity = require('../controllers/adminSecurityController');
 const groups = require('../controllers/adminGroupsController');
 const media = require('../controllers/adminMediaController');
 const releases = require('../controllers/appReleasesController');
+const platform = require('../controllers/adminPlatformController');
 
 router.post('/auth/login', login);
 router.get('/auth/session', requireAdminSession, sessionInfo);
@@ -49,6 +50,9 @@ router.post('/users/:id/suspend', requireAdminSession, requireAdminCsrf, moderat
 router.post('/users/:id/ban', requireAdminSession, requireAdminCsrf, moderation.ban);
 router.post('/users/:id/unban', requireAdminSession, requireAdminCsrf, moderation.unban);
 // Statuses & media (9b item 5).
+router.get('/platform-settings', requireAdminSession, platform.getSettings);
+router.put('/platform-settings', requireAdminSession, requireAdminCsrf, platform.saveSettings);
+
 router.get('/releases', requireAdminSession, releases.listReleases);
 router.put('/releases', requireAdminSession, requireAdminCsrf, releases.saveReleases);
 
