@@ -27,6 +27,7 @@ const media = require('../controllers/adminMediaController');
 const releases = require('../controllers/appReleasesController');
 const platform = require('../controllers/adminPlatformController');
 const dataRequests = require('../controllers/adminDataRequestController');
+const reviews = require('../controllers/adminReviewController');
 
 router.post('/auth/login', login);
 router.get('/auth/session', requireAdminSession, sessionInfo);
@@ -106,5 +107,14 @@ router.put('/recommendations', requireAdminSession, requireAdminCsrf, async (req
     return res.status(400).json({ message: error.message || 'Could not save recommendations.' });
   }
 });
+
+// 9d oversight: time-boxed, reasoned, audited read-only conversation review.
+router.get('/reviews', requireAdminSession, reviews.list);
+router.get('/reviews/stats', requireAdminSession, reviews.stats);
+router.post('/reviews', requireAdminSession, requireAdminCsrf, reviews.start);
+router.get('/reviews/:id', requireAdminSession, reviews.current);
+router.post('/reviews/:id/end', requireAdminSession, requireAdminCsrf, reviews.end);
+router.get('/reviews/:id/conversations', requireAdminSession, reviews.conversations);
+router.get('/reviews/:id/messages', requireAdminSession, reviews.messages);
 
 module.exports = router;

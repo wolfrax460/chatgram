@@ -151,7 +151,7 @@ export default function Docs() {
             Passwords are hashed with bcrypt and never stored or logged in plain text. Access
             tokens are short-lived. Please note: <strong>messages are not end-to-end encrypted</strong> —
             they are encrypted in transit, but our servers can technically read them. End-to-end
-            encryption is on the roadmap.
+            encryption is on the roadmap. Authorised Chatgram administrators can review conversation content (messages, media and account data) for security, abuse and legal reasons. Every review requires a written reason, is read-only, and is recorded in an append-only audit log kept for two years.
           </p>
 
           <h3>9. Children</h3>

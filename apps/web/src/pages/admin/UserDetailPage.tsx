@@ -5,8 +5,9 @@ import {
   adminFetch, formatNumber, initials, relativeTime, shortDate, type AdminSessionInfo, type AdminUserDetailPayload,
 } from './api';
 import { Chip, ConfirmDialog, PageHead, Skeleton, Toast, useToast } from './ui';
+import ReviewConversationsTab from './ReviewConversationsTab';
 
-type Tab = 'profile' | 'activity' | 'actions';
+type Tab = 'profile' | 'activity' | 'conversations' | 'actions';
 
 /** User detail: read-only profile, activity counters and the safe account actions. */
 export default function UserDetailPage({ session, id }: { session: AdminSessionInfo; id: string }) {
@@ -96,6 +97,7 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
           {([
             ['profile', 'Profile', UserRound],
             ['activity', 'Activity', Clock],
+            ['conversations', 'Conversations', MessageSquare],
             ['actions', 'Actions', ShieldCheck],
           ] as const).map(([key, label, Icon]) => (
             <button
@@ -170,6 +172,10 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
             </div>
           ) : null}
 
+          {tab === 'conversations' ? (
+            <ReviewConversationsTab session={session} userId={id} userName={user.displayName} />
+          ) : null}
+
           {tab === 'actions' ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-[var(--ad-border)] p-3">
@@ -219,7 +225,7 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
                 </div>
                 <ul className="mt-3 space-y-1 text-[11.5px] text-[var(--ad-muted)]">
                   <li>Delete account with a 30-day grace and email verification are still to build (crossed in the report).</li>
-                  <li>Conversation review stays behind the 9d security-review reason prompt.</li>
+                  <li>Conversation review (the Conversations tab) requires a written reason and is audited.</li>
                   <li>Admins can never send messages as a user or edit their messages.</li>
                 </ul>
               </div>

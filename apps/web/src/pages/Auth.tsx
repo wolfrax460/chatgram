@@ -596,6 +596,13 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
       ) : null}
 
       {step === 'details' ? (
+        <p className="pt-1 text-center text-[11px] leading-relaxed text-ink-500 dark:text-ink-400" data-testid="signup-privacy-notice">
+          Chats are encrypted in transit but <strong>not end-to-end encrypted</strong>. Authorised Chatgram
+          administrators may review conversation content for security, abuse and legal reasons.
+        </p>
+      ) : null}
+
+      {step === 'details' ? (
         <>
           <Field id="signup-name" label={t('fullName')} error={errors.fullName}>
             <div className="relative">

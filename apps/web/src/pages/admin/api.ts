@@ -252,3 +252,60 @@ export function initials(name: string | undefined): string {
     .map((part) => part[0]?.toUpperCase() || '')
     .join('');
 }
+
+/* ------------------------------------------------- 9d security-review oversight */
+
+export interface ReviewRow {
+  id: string;
+  reason: string;
+  reference: string;
+  scope: 'conversations' | 'search';
+  status: 'active' | 'ended' | 'expired';
+  createdAt: string;
+  expiresAt: string;
+  endedAt: string | null;
+  secondsLeft: number;
+  views: number;
+  user: { id: string; displayName: string; email: string; avatarUrl: string } | null;
+}
+
+export interface ReviewLogPayload {
+  reviews: ReviewRow[];
+  page: number;
+  limit: number;
+  total: number;
+  retentionDays: number;
+}
+
+export interface ReviewStats {
+  lastHour: number;
+  lastDay: number;
+  active: number;
+  burstThreshold: number;
+  rateLimitPerHour: number;
+  retentionDays: number;
+  burst: boolean;
+}
+
+export interface ReviewConversation {
+  id: string;
+  type: 'direct' | 'group';
+  title: string;
+  participants: { id: string; displayName: string; avatarUrl: string }[];
+  lastMessageAt: string | null;
+  lastMessage: string;
+  frozen: boolean;
+}
+
+export interface ReviewMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  type: string;
+  content: string;
+  mediaUrl: string;
+  sentAt: string;
+  editedAt: string | null;
+  isDeleted: boolean;
+  readCount: number;
+}

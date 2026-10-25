@@ -761,3 +761,17 @@ a new build in the admin App releases page updates the landing page without code
 last-known-good fallback keeps the page usable if the API is unreachable (and says so). The APK QR is
 a static SVG for the stable /downloads/chatgram-android.apk URL. Screenshots in the preview section
 are real Playwright captures from the app using temporary test accounts (no personal data).
+
+## D48 - Read-only admin review is time-boxed, reasoned and audited (2026-10-25)
+
+Conversation oversight (9d) never happens from a bare admin session. Starting a review requires a written
+reason (>= 10 characters) and an optional report/ticket reference, and creates a ReviewSession bound to
+the admin panel session that started it. It expires after 15 minutes of inactivity (each read slides it),
+can be ended manually, and only serves GET content: there are deliberately no admin routes that send,
+edit or delete messages. Every start, list, read and expiry is written to the append-only AdminAudit log,
+"who viewed what" is a paginated page with CSV export, and the audit rows are the evidence trail. Reviews
+are rate-limited to 20 per hour per admin session and a burst of 10 or more in 15 minutes raises an admin
+Inbox alert (type review_burst). Review-log retention defaults to 2 years (REVIEW_LOG_RETENTION_DAYS,
+minimum 30) and old sessions are pruned when the log is read. Users are told plainly, in the sign-up form,
+Settings, and the Privacy Policy, that chats are not end-to-end encrypted and that authorised
+administrators can review content for security, abuse and legal reasons.

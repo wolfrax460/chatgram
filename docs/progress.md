@@ -146,6 +146,17 @@ enable TOTP once built, paste the Groq key.
 - Remaining work: 9b Safety & abuse, Settings, broadcast announcements, Users extras, Inbox merge;
   and the whole 9d administration oversight programme.
 
+### 9d chunk 1 deployed 2026-10-25
+- Security review gate on user detail (reason required), read-only transcript, 15-minute idle session,
+  per-session binding, audit of every start/list/read/expiry, rate limit 20/h, burst alert, retention
+  env `REVIEW_LOG_RETENTION_DAYS` (default 2 years).
+- "Who viewed what" page with stats, filters and CSV export; sign-up, Settings and Privacy Policy
+  notices updated.
+- Tests: integration 26/26, unit 22/22, Playwright review flow; production smoke 17/17, fixtures
+  removed afterwards.
+- 9d still open: global cross-user message search with the same reason prompt/audit (#4); retention
+  setting UI; device/session and login-history data model (also 9b users extras).
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,
