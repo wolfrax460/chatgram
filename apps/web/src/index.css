@@ -7,6 +7,7 @@
   body,
   #root {
     height: 100%;
+    overflow: hidden;
   }
   body {
     @apply bg-ink-50 text-ink-800 dark:bg-ink-900 dark:text-ink-100;
@@ -260,3 +261,20 @@ html.dark {
   .auth-footer { flex-wrap: wrap; }
 }
 
+
+
+/* ---------------------------------------------------------------------------
+   App shell sizing. The shell is exactly the visible viewport; the document
+   itself never scrolls (inner panes own their scrollbars). 100dvh accounts for
+   mobile browser chrome/keyboard where supported.
+--------------------------------------------------------------------------- */
+.app-viewport {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+.composer-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  flex-shrink: 0;
+}

@@ -1610,3 +1610,9 @@ authenticated AI test, then the Groq key replacement through the admin providers
 - Cleanup script added (dry run + backup + preview recompute). Production dry run found 1 bad message; after
   backup \`cleanup-bad-system-answers-20261025-131819.json\` it was deleted and a re-run found 0 (0 bad KB entries).
 - Tests: integration systemAnswers 24/24; Playwright systemAnswers green.
+
+
+### Session 47 (2026-10-25) — bugfix: whole-page scroll / composer gap
+- Cause: shell `flex h-full` with no overflow containment; the pinned Chatgram AI row (and announcement banner) were siblings of a `.h-full` chat-list column, and scroll panes lacked `min-h-0`, so the document itself scrolled.
+- Fix: html/body/#root 100% + overflow hidden; `.app-viewport` 100vh/100dvh shell; min-h-0/min-w-0 on every flex pane; ChatList `flex-1 min-h-0` with only the list scrolling; chat message list the only scroller and composer `shrink-0` with safe-area inset; same wrapper for status/groups/contacts/settings/help/empty screen; admin shell 100dvh with internal scroller.
+- Verified: tsc + production build green; measurement 1366x620 → scrollHeight 620 / innerHeight 620 / scrollY 0 / composer gap 0; 1920x1080 → 1080 / 1080 / 0 / 0. Web deployed `chatgram-hzq0ubnp5`.

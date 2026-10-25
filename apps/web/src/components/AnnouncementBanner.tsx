@@ -50,7 +50,7 @@ export default function AnnouncementBanner() {
   );
 
   return (
-    <div className="flex items-start gap-2 border-b border-brand-600/30 bg-brand-50 px-3 py-2 dark:border-brand-400/25 dark:bg-brand-600/10" data-testid="announcement-banner" role="status">
+    <div className="flex shrink-0 items-start gap-2 border-b border-brand-600/30 bg-brand-50 px-3 py-2 dark:border-brand-400/25 dark:bg-brand-600/10" data-testid="announcement-banner" role="status">
       {banner.link ? (
         <a href={banner.link} className="flex min-w-0 flex-1 items-start gap-2 text-inherit hover:underline">
           {content}
