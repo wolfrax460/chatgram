@@ -17,6 +17,7 @@ const REFRESH_SECRET = () => process.env.JWT_REFRESH_SECRET || 'your-refresh-sec
  * version 0 so a deploy does not sign the world out.
  */
 const tokenVersionOf = (user) => Number(user && user.tokenVersion) || 0;
+const { assertAccountActive } = require('../utils/accountStatus');
 
 const generateToken = (userId, tokenVersion = 0) =>
   jwt.sign({ userId, tv: Number(tokenVersion) || 0 }, ACCESS_SECRET(), {
@@ -114,6 +115,7 @@ const registerUser = async (req, res) => {
       lastSeen: new Date(),
     });
 
+
     // Two-factor gate: the password was correct, now a TOTP code is required.
     if (user.twoFactorEnabled) {
       const { verifyCode } = require('./twoFactorController');
@@ -184,6 +186,10 @@ const loginUser = async (req, res) => {
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
+    }
+    const loginBlocked = await assertAccountActive(user);
+    if (loginBlocked) {
+      return res.status(403).json({ message: loginBlocked.message, code: loginBlocked.code });
     }
 
     // Two-factor gate: the password was correct, now a TOTP code is required.
@@ -275,6 +281,11 @@ const refreshToken = async (req, res) => {
 
     // A token from before the latest password change / "log out other devices"
     // must not be able to mint fresh tokens.
+    const refreshBlocked = await assertAccountActive(user);
+    if (refreshBlocked) {
+      return res.status(403).json({ message: refreshBlocked.message, code: refreshBlocked.code });
+    }
+
     if ((Number(decoded.tv) || 0) !== tokenVersionOf(user)) {
       return res.status(401).json({
         message: 'This session was signed out. Please sign in again.',

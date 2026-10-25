@@ -52,6 +52,14 @@ const userSchema = new mongoose.Schema({
 
   // Set for accounts handed over by an operator; the UI asks them to change it.
   mustChangePassword: { type: Boolean, default: false },
+
+  // Account moderation (9b): active by default. Suspended accounts are blocked
+  // until suspendedUntil passes; banned accounts are blocked until an admin
+  // unbans them. Enforced in the auth middleware and at login.
+  status: { type: String, enum: ['active', 'suspended', 'banned'], default: 'active', index: true },
+  moderationReason: { type: String, default: '', maxlength: 500 },
+  suspendedUntil: { type: Date, default: null },
+  moderatedAt: { type: Date, default: null },
   isSupportAccount: {
     type: Boolean,
     default: false

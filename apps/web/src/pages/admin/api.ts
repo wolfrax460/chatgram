@@ -99,6 +99,9 @@ export interface AdminUserRow {
   mustChangePassword: boolean;
   isSupportAccount: boolean;
   isAiAccount: boolean;
+  status: 'active' | 'suspended' | 'banned';
+  suspendedUntil: string | null;
+  moderationReason: string;
   reportCount: number;
 }
 
@@ -125,6 +128,9 @@ export interface AdminUserDetailPayload {
     mustChangePassword: boolean;
     isSupportAccount: boolean;
     isAiAccount: boolean;
+    status: 'active' | 'suspended' | 'banned';
+    suspendedUntil: string | null;
+    moderationReason: string;
   };
   counts: {
     messages: number;

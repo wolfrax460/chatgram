@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Ban, Clock, KeyRound, Lock, MessageSquare, ShieldCheck, UserRound } from 'lucide-react';
 import {
@@ -15,7 +15,9 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
   const [tab, setTab] = useState<Tab>('profile');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<'logout' | 'reset2fa' | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'logout' | 'reset2fa' | 'suspend' | 'ban' | 'unban' | null>(null);
+  const [moderationReason, setModerationReason] = useState('');
+  const [suspendDays, setSuspendDays] = useState('7');
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -36,11 +38,17 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
     setBusy(true);
     setError('');
     try {
-      const path = confirmAction === 'logout' ? 'force-logout' : 'reset-2fa';
-      const result = await adminFetch<{ message: string }>(`/api/admin/users/${id}/${path}`, {
+      const paths = { logout: 'force-logout', reset2fa: 'reset-2fa', suspend: 'suspend', ban: 'ban', unban: 'unban' } as const;
+      const body =
+        confirmAction === 'suspend'
+          ? { days: Number(suspendDays) || 7, reason: moderationReason }
+          : confirmAction === 'ban'
+            ? { reason: moderationReason }
+            : {};
+      const result = await adminFetch<{ message: string }>(`/api/admin/users/${id}/${paths[confirmAction]}`, {
         method: 'POST',
         csrf: session.csrfToken,
-        body: {},
+        body,
       });
       toast.show(result.message);
       setConfirmAction(null);
@@ -74,6 +82,8 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
           <>
             {user.online ? <Chip tone="success">online</Chip> : <Chip>offline · {relativeTime(user.lastSeen)}</Chip>}
             {user.twoFactorEnabled ? <Chip tone="accent">2FA on</Chip> : <Chip>2FA off</Chip>}
+            {user.status === 'suspended' ? <Chip tone="warning">suspended</Chip> : null}
+            {user.status === 'banned' ? <Chip tone="danger">banned</Chip> : null}
             {user.isSupportAccount ? <Chip tone="accent">official support</Chip> : null}
             {user.isAiAccount ? <Chip tone="accent">Chatgram AI</Chip> : null}
           </>
@@ -119,6 +129,8 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
                   ['Created', shortDate(user.createdAt)],
                   ['Last seen', user.online ? 'online now' : relativeTime(user.lastSeen)],
                   ['Two-step verification', user.twoFactorEnabled ? 'enabled' : 'disabled'],
+                  ['Account status', user.status],
+                  ['Moderation reason', user.moderationReason || '—'],
                   ['Must change password', user.mustChangePassword ? 'yes' : 'no'],
                 ].map(([label, value]) => (
                   <div key={label}>
@@ -179,9 +191,34 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
                 </button>
               </div>
               <div className="rounded-xl border border-[var(--ad-border)] p-3 sm:col-span-2">
-                <p className="admin-card-title">Not available yet</p>
-                <ul className="mt-1 space-y-1 text-[12px] text-[var(--ad-muted)]">
-                  <li>Suspend / ban, force-delete with a 30-day grace and email verification arrive with the rest of 9b.</li>
+                <p className="admin-card-title">Suspend or ban this account</p>
+                <p className="mt-1 text-[12px] text-[var(--ad-muted)]">
+                  A suspension blocks sign-in and every API call until it expires; a ban blocks the account until an admin
+                  unbans it. Both bump the session generation. Every action is audited.
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-[120px_1fr]">
+                  <label className="block text-[11.5px] font-semibold text-[var(--ad-muted)]">
+                    Suspension days
+                    <input className="admin-input mt-1" type="number" min={1} max={3650} value={suspendDays} onChange={(event) => setSuspendDays(event.target.value)} />
+                  </label>
+                  <label className="block text-[11.5px] font-semibold text-[var(--ad-muted)]">
+                    Reason (recorded in the audit log)
+                    <input className="admin-input mt-1" value={moderationReason} onChange={(event) => setModerationReason(event.target.value)} placeholder="e.g. abusive messages" />
+                  </label>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" className="admin-btn admin-btn-danger" onClick={() => setConfirmAction('suspend')} disabled={busy || user.isSupportAccount || user.isAiAccount}>
+                    <Clock className="h-3.5 w-3.5" /> Suspend
+                  </button>
+                  <button type="button" className="admin-btn admin-btn-danger" onClick={() => setConfirmAction('ban')} disabled={busy || user.isSupportAccount || user.isAiAccount}>
+                    <Ban className="h-3.5 w-3.5" /> Ban
+                  </button>
+                  <button type="button" className="admin-btn" onClick={() => setConfirmAction('unban')} disabled={busy || user.isSupportAccount || user.status === 'active'}>
+                    <ShieldCheck className="h-3.5 w-3.5" /> Restore access
+                  </button>
+                </div>
+                <ul className="mt-3 space-y-1 text-[11.5px] text-[var(--ad-muted)]">
+                  <li>Delete account with a 30-day grace and email verification are still to build (crossed in the report).</li>
                   <li>Conversation review stays behind the 9d security-review reason prompt.</li>
                   <li>Admins can never send messages as a user or edit their messages.</li>
                 </ul>
@@ -193,14 +230,40 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
 
       {confirmAction ? (
         <ConfirmDialog
-          title={confirmAction === 'logout' ? 'Sign out every device?' : 'Reset two-step verification?'}
+          title={
+            confirmAction === 'logout'
+              ? 'Sign out every device?'
+              : confirmAction === 'reset2fa'
+                ? 'Reset two-step verification?'
+                : confirmAction === 'suspend'
+                  ? `Suspend ${user.displayName}?`
+                  : confirmAction === 'ban'
+                    ? `Ban ${user.displayName}?`
+                    : `Restore ${user.displayName}?`
+          }
           body={
             confirmAction === 'logout'
               ? `Every token for ${user.displayName} will be invalidated.`
-              : `2FA will be disabled for ${user.displayName} and the recovery codes deleted. This is audited.`
+              : confirmAction === 'reset2fa'
+                ? `2FA will be disabled for ${user.displayName} and the recovery codes deleted. This is audited.`
+                : confirmAction === 'suspend'
+                  ? `${user.displayName} cannot sign in or use the API for ${suspendDays} day(s). Reason: ${moderationReason || 'none given'}. Audited.`
+                  : confirmAction === 'ban'
+                    ? `${user.displayName} is blocked until an admin restores the account. Reason: ${moderationReason || 'none given'}. Audited.`
+                    : `${user.displayName} will be active again and can sign in normally. Audited.`
           }
-          confirmLabel={confirmAction === 'logout' ? 'Sign out' : 'Reset 2FA'}
-          danger
+          confirmLabel={
+            confirmAction === 'logout'
+              ? 'Sign out'
+              : confirmAction === 'reset2fa'
+                ? 'Reset 2FA'
+                : confirmAction === 'suspend'
+                  ? 'Suspend account'
+                  : confirmAction === 'ban'
+                    ? 'Ban account'
+                    : 'Restore access'
+          }
+          danger={confirmAction !== 'unban'}
           busy={busy}
           onCancel={() => setConfirmAction(null)}
           onConfirm={() => void runAction()}

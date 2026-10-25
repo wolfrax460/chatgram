@@ -287,11 +287,44 @@ const viewStatus = async (req, res) => {
   }
 };
 
+// @desc    Report a status (abuse)
+// @route   POST /api/status/:id/report
+const reportStatus = async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const Report = require('../models/Report');
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+      return res.status(400).json({ message: 'Invalid status id.' });
+    }
+    const status = await Status.findById(req.params.id);
+    if (!status) return res.status(404).json({ message: 'Status not found.' });
+    if (String(status.userId) === String(req.user._id)) {
+      return res.status(400).json({ message: 'You cannot report your own status.' });
+    }
+    const reason = ['spam', 'abuse', 'harassment', 'impersonation', 'scam', 'other'].includes(req.body?.reason)
+      ? req.body.reason
+      : 'other';
+    const report = await Report.create({
+      reporterId: req.user._id,
+      targetUserId: status.userId,
+      targetStatusId: status._id,
+      reason,
+      details: String(req.body?.details || '').slice(0, 2000),
+      messageSnapshot: String(status.caption || status.mediaUrl || '').slice(0, 500),
+    });
+    return res.status(201).json({ message: 'Report received. Thank you.', reportId: String(report._id), reason });
+  } catch (error) {
+    console.error('Report status error:', error.message);
+    return res.status(500).json({ message: 'Could not send the report.' });
+  }
+};
+
 module.exports = {
   getStatuses,
   getStatusLimits,
   uploadStatusMedia,
   createStatus,
   deleteStatus,
-  viewStatus
+  viewStatus,
+  reportStatus,
 };

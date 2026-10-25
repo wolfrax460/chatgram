@@ -10,6 +10,8 @@ function StatusChips({ user }: { user: AdminUserRow }) {
   return (
     <span className="flex flex-wrap items-center gap-1">
       {user.online ? <Chip tone="success">online</Chip> : <Chip>offline</Chip>}
+      {user.status === 'suspended' ? <Chip tone="warning">suspended</Chip> : null}
+      {user.status === 'banned' ? <Chip tone="danger">banned</Chip> : null}
       {user.twoFactorEnabled ? <Chip tone="accent">2FA</Chip> : null}
       {user.mustChangePassword ? <Chip tone="warning">must change password</Chip> : null}
       {user.isSupportAccount ? <Chip tone="accent">official support</Chip> : null}
@@ -59,7 +61,7 @@ export default function UsersPage() {
   }, [payload?.users, sort]);
 
   function exportCsv() {
-    const header = ['id', 'displayName', 'email', 'phone', 'createdAt', 'lastSeen', 'online', 'twoFactorEnabled', 'reportCount'];
+    const header = ['id', 'displayName', 'email', 'phone', 'createdAt', 'lastSeen', 'online', 'twoFactorEnabled', 'reportCount', 'status'];
     const lines = [header.join(',')].concat(
       rows.map((row) =>
         [

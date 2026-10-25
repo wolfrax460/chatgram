@@ -1,7 +1,7 @@
 // Chat routes
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../middleware/auth');
+const {protect } = require('../middleware/auth');
 const { clearChatMessages } = require('../controllers/messageController');
 const upload = require('../utils/upload');
 const {
@@ -27,6 +27,7 @@ const {
   pinMessage,
   unpinMessage,
   getChatMedia,
+  reportChat,
 } = require('../controllers/chatController');
 
 // All routes require authentication
@@ -76,6 +77,9 @@ router.post('/:id/avatar', upload.single('avatar'), updateGroupAvatar);
 router.post('/:id/participants', addParticipants);
 router.delete('/:id/participants/:userId', removeParticipant);
 router.post('/:id/admins', setGroupAdmin);
+
+// Report a group for abuse
+router.post('/:id/report', reportChat);
 
 // Clear this chat's messages for me only (additive)
 router.delete('/:id/messages', clearChatMessages);

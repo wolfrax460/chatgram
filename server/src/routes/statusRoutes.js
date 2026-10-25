@@ -8,7 +8,8 @@ const {
   uploadStatusMedia,
   createStatus,
   deleteStatus,
-  viewStatus
+  viewStatus,
+  reportStatus
 } = require('../controllers/statusController');
 const { statusUpload } = require('../utils/upload');
 
@@ -34,5 +35,6 @@ router.delete('/:id', deleteStatus);
 
 // Mark status as viewed
 router.post('/:id/view', viewStatus);
+router.post('/:id/report', reportStatus);
 
 module.exports = router;

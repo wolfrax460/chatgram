@@ -20,6 +20,7 @@ const {
   resetTwoFactor,
 } = require('../controllers/adminOverviewController');
 const { systemHealth, auditList } = require('../controllers/adminHealthController');
+const moderation = require('../controllers/adminModerationController');
 
 router.post('/auth/login', login);
 router.get('/auth/session', requireAdminSession, sessionInfo);
@@ -31,6 +32,13 @@ router.post('/auth/change-password', requireAdminSession, requireAdminCsrf, chan
 
 // Dashboard (Change 2): Overview + Users. Read-only fields only; no secrets.
 router.get('/overview', requireAdminSession, overview);
+// Moderation (9b): account states + the report queue. Every change is audited.
+router.post('/users/:id/suspend', requireAdminSession, requireAdminCsrf, moderation.suspend);
+router.post('/users/:id/ban', requireAdminSession, requireAdminCsrf, moderation.ban);
+router.post('/users/:id/unban', requireAdminSession, requireAdminCsrf, moderation.unban);
+router.get('/reports', requireAdminSession, moderation.listReports);
+router.get('/reports/:id', requireAdminSession, moderation.reportDetail);
+router.post('/reports/:id/resolve', requireAdminSession, requireAdminCsrf, moderation.resolveReport);
 router.get('/health', requireAdminSession, systemHealth);
 router.get('/audit', requireAdminSession, auditList);
 router.get('/users', requireAdminSession, listUsers);

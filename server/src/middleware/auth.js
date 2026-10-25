@@ -1,6 +1,7 @@
 // Auth middleware
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { assertAccountActive } = require('../utils/accountStatus');
 
 const JWT_SECRET = () => process.env.JWT_SECRET || 'your-secret-key';
 
@@ -45,6 +46,13 @@ const protect = async (req, res, next) => {
         message: 'This session was signed out. Please sign in again.',
         code: 'SESSION_REVOKED',
       });
+    }
+
+    // Moderation gate: suspended/banned accounts cannot use the API even with a
+    // valid token (a suspension may have started after the token was issued).
+    const blocked = await assertAccountActive(user);
+    if (blocked) {
+      return res.status(403).json({ message: blocked.message, code: blocked.code });
     }
 
     req.user = user;

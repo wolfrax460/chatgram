@@ -374,3 +374,11 @@ html.dark .admin-nav-item .admin-nav-badge { color: #06231b; }
 @media (max-width: 900px) {
   .admin-mobile-nav { display: block; }
 }
+
+/* Selected row in master-detail tables (Reports) */
+.admin-row-active {
+  background: color-mix(in srgb, var(--ad-accent) 10%, transparent);
+}
+.admin-row-active td:first-child {
+  box-shadow: inset 2px 0 0 var(--ad-accent);
+}

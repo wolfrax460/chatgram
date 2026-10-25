@@ -1111,6 +1111,38 @@ const updateGroupAvatar = async (req, res) => {
   }
 };
 
+// @desc    Report a group conversation (abuse)
+// @route   POST /api/chats/:id/report
+const reportChat = async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const Report = require('../models/Report');
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+      return res.status(400).json({ message: 'Invalid chat id.' });
+    }
+    const chat = await Chat.findById(req.params.id);
+    if (!chat || chat.type !== 'group') return res.status(404).json({ message: 'Group not found.' });
+    if (!chat.participants.some((participant) => String(participant) === String(req.user._id))) {
+      return res.status(403).json({ message: 'You are not a member of this group.' });
+    }
+    const reason = ['spam', 'abuse', 'harassment', 'impersonation', 'scam', 'other'].includes(req.body?.reason)
+      ? req.body.reason
+      : 'other';
+    const report = await Report.create({
+      reporterId: req.user._id,
+      chatId: chat._id,
+      targetUserId: chat.groupCreatedBy || null,
+      reason,
+      details: String(req.body?.details || '').slice(0, 2000),
+      messageSnapshot: String(chat.groupName || '').slice(0, 500),
+    });
+    return res.status(201).json({ message: 'Report received. Thank you.', reportId: String(report._id), reason });
+  } catch (error) {
+    console.error('Report group error:', error.message);
+    return res.status(500).json({ message: 'Could not send the report.' });
+  }
+};
+
 module.exports = {
   createChat,
   getChats,
@@ -1134,5 +1166,6 @@ module.exports = {
   pinMessage,
   unpinMessage,
   getChatMedia,
+  reportChat,
   MAX_GROUP_MEMBERS,
 };

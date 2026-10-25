@@ -159,7 +159,7 @@ async function listUsers(req, res) {
     }
     const [rows, total] = await Promise.all([
       User.find(filter)
-        .select('displayName email phone avatarUrl createdAt lastSeen isOnline twoFactorEnabled isSupportAccount isAiAccount mustChangePassword')
+        .select('displayName email phone avatarUrl createdAt lastSeen isOnline twoFactorEnabled isSupportAccount isAiAccount mustChangePassword status suspendedUntil moderationReason')
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -189,6 +189,9 @@ async function listUsers(req, res) {
         online: realtime.isUserOnline(row._id),
         twoFactorEnabled: row.twoFactorEnabled === true,
         mustChangePassword: row.mustChangePassword === true,
+        status: row.status || 'active',
+        suspendedUntil: row.suspendedUntil || null,
+        moderationReason: row.moderationReason || '',
         isSupportAccount: row.isSupportAccount === true,
         isAiAccount: row.isAiAccount === true,
         reportCount: reportsByUser.get(String(row._id)) || 0,
@@ -207,7 +210,7 @@ async function listUsers(req, res) {
 async function userDetail(req, res) {
   try {
     const user = await User.findById(req.params.id)
-      .select('displayName email phone avatarUrl about createdAt lastSeen isOnline twoFactorEnabled mustChangePassword isSupportAccount isAiAccount')
+      .select('displayName email phone avatarUrl about createdAt lastSeen isOnline twoFactorEnabled mustChangePassword isSupportAccount isAiAccount status suspendedUntil moderationReason moderatedAt')
       .lean();
     if (!user) return res.status(404).json({ message: 'User not found.' });
 
@@ -215,7 +218,7 @@ async function userDetail(req, res) {
       Message.countDocuments({ senderId: user._id }),
       Chat.countDocuments({ participants: user._id }),
       Chat.countDocuments({ participants: user._id, type: 'group' }),
-      Status.countDocuments({ user: user._id }),
+      Status.countDocuments({ userId: user._id }),
       Report.countDocuments({ targetUserId: user._id }),
       Report.countDocuments({ reporterId: user._id }),
       Message.findOne({ senderId: user._id }).sort({ sentAt: -1 }).select('sentAt').lean(),
@@ -233,6 +236,10 @@ async function userDetail(req, res) {
         lastSeen: user.lastSeen || null,
         online: realtime.isUserOnline(user._id),
         twoFactorEnabled: user.twoFactorEnabled === true,
+        status: user.status || 'active',
+        suspendedUntil: user.suspendedUntil || null,
+        moderationReason: user.moderationReason || '',
+        moderatedAt: user.moderatedAt || null,
         mustChangePassword: user.mustChangePassword === true,
         isSupportAccount: user.isSupportAccount === true,
         isAiAccount: user.isAiAccount === true,

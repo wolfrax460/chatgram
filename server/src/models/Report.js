@@ -46,6 +46,11 @@ const reportSchema = new mongoose.Schema({
     default: 'open',
     index: true
   },
+  // Moderation outcome (set by an admin through /api/admin/reports/:id/resolve).
+  resolution: { type: String, default: '' },
+  resolvedAt: { type: Date, default: null },
+  resolvedBy: { type: String, default: '' },
+  targetStatusId: { type: mongoose.Schema.Types.ObjectId, ref: 'Status', default: null },
   createdAt: {
     type: Date,
     default: Date.now,
