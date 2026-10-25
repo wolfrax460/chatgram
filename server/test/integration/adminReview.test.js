@@ -183,6 +183,9 @@ async function main() {
   });
   check('reviews are rate limited per admin session', limited.status === 429, limited.status);
 
+  // Remove the filler so the search tests below are not blocked by the limit.
+  await ReviewSession.deleteMany({ reason: new RegExp('Rate-limit filler') });
+
   // --- who viewed what + CSV export ----------------------------------------
   const log = await api('GET', '/api/admin/reviews?limit=100', { headers });
   check('the review log lists the sessions', log.status === 200 && (log.body?.reviews || []).some((row) => row.id === String(reviewId)), log.status);
@@ -191,6 +194,37 @@ async function main() {
   check('the review log exports as CSV', csv.status === 200 && /text\/csv/.test(String(csv.headers.get('content-type'))) && csv.text.includes('reason'), csv.status);
   const stats = await api('GET', '/api/admin/reviews/stats', { headers });
   check('review statistics are available for the dashboard', stats.status === 200 && typeof stats.body?.lastHour === 'number', stats.status);
+
+  // --- global message search (9d #4) ----------------------------------------
+  const searchNoScope = await api('GET', `/api/admin/reviews/${reviewId}/search?q=Oversight`, { headers });
+  check('a conversation review cannot run a global message search', searchNoScope.status === 410 || searchNoScope.status === 409, searchNoScope.status);
+
+  const searchReview = await api('POST', '/api/admin/reviews', {
+    headers,
+    body: { scope: 'search', reason: `Global search fixture ${run}: locating abusive messages.` },
+  });
+  const searchReviewId = searchReview.body?.review?.id;
+  check('a search review starts with a reason and no target user', searchReview.status === 201 && searchReview.body?.review?.scope === 'search', searchReview.status);
+  const scopeMismatch = await api('GET', `/api/admin/reviews/${searchReviewId}/conversations`, { headers });
+  check('a search review cannot open conversations', scopeMismatch.status === 409, scopeMismatch.status);
+  check('a search review is not tied to a user', searchReview.body?.review?.userId === null || searchReview.body?.review?.userId === undefined, searchReview.body?.review?.userId);
+  const shortQuery = await api('GET', `/api/admin/reviews/${searchReviewId}/search?q=x`, { headers });
+  check('a one-character search is rejected', shortQuery.status === 422, shortQuery.status);
+  const search = await api('GET', `/api/admin/reviews/${searchReviewId}/search?q=${encodeURIComponent('fixture ' + run)}`, { headers });
+  check('global search returns the fixture message', search.status === 200 && (search.body?.results || []).some((row) => String(row.content).includes('Oversight review fixture')), search.status);
+  check('search results carry sender and conversation context', (search.body?.results || []).every((row) => row.senderName && row.chatTitle), null);
+  check('search results carry no password/token/2FA fields', !/password|accessToken|refreshToken|totpSecret|recoveryCode/i.test(search.text), null);
+  check('the result set is capped and paginated', search.body?.cap === 500 && search.body?.limit === 25 && typeof search.body?.page === 'number', { cap: search.body?.cap, limit: search.body?.limit });
+  const searchByKeywordAndUser = await api('GET', `/api/admin/reviews/${searchReviewId}/search?q=fixture&user=${partner.user.id}`, { headers });
+  check('search can be filtered by sender', searchByKeywordAndUser.status === 200 && (searchByKeywordAndUser.body?.results || []).length === 0, (searchByKeywordAndUser.body?.results || []).length);
+  const searchBySender = await api('GET', `/api/admin/reviews/${searchReviewId}/search?q=fixture&user=${subject.user.id}`, { headers });
+  check('search filtered to the sender finds the fixture', searchBySender.status === 200 && (searchBySender.body?.results || []).length >= 1, (searchBySender.body?.results || []).length);
+  const searchAudit = await AdminAudit.findOne({ action: 'review_search', detail: new RegExp(`review=${searchReviewId}`) }).lean();
+  check('every message search is audited with the keyword and review', Boolean(searchAudit), null);
+  const userSearchAttempt = await api('GET', `/api/admin/reviews/${searchReviewId}/search?q=fixture`, { token: subject.accessToken });
+  check('a normal user token cannot run a global search', userSearchAttempt.status === 401, userSearchAttempt.status);
+  const searchNoWrite = await api('POST', `/api/admin/reviews/${searchReviewId}/search`, { headers, body: { q: 'x' } });
+  check('message search has no write variant', searchNoWrite.status === 404, searchNoWrite.status);
 
   // --- cleanup --------------------------------------------------------------
   await Message.deleteMany({ chatId });

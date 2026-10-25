@@ -116,5 +116,6 @@ router.get('/reviews/:id', requireAdminSession, reviews.current);
 router.post('/reviews/:id/end', requireAdminSession, requireAdminCsrf, reviews.end);
 router.get('/reviews/:id/conversations', requireAdminSession, reviews.conversations);
 router.get('/reviews/:id/messages', requireAdminSession, reviews.messages);
+router.get('/reviews/:id/search', requireAdminSession, reviews.search);
 
 module.exports = router;

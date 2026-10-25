@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 9d oversight guard rails that are enforced by code shape rather than runtime
  * state: the notices users see, the reason requirement, the absence of any
  * write route in the admin review API, and the model's expiry fields.
@@ -56,7 +56,11 @@ check('message payloads never select password/token fields', !/password|refreshT
 const routes = read('server/src/routes/adminRoutes.js');
 check('the review API exposes read-only endpoints', /router\.get\('\/reviews\/:id\/messages'/.test(routes) && /router\.get\('\/reviews\/:id\/conversations'/.test(routes));
 check('no admin route can POST messages or conversations', !/router\.post\('\/reviews\/:id\/(messages|conversations)'/.test(routes));
-check('every review route requires the admin session', (routes.match(/router\.(get|post)\('\/reviews[^']*', requireAdminSession/g) || []).length === 7);
+check('the global message search route is read-only', /router\.get\('\/reviews\/:id\/search'/.test(routes) && !/router\.post\('\/reviews\/:id\/search'/.test(routes));
+check('message search requires a search-scope review session', /scope !== 'search'/.test(controller));
+check('message search results are capped and paginated', /MAX_SEARCH_ROWS = 500/.test(controller) && /clampLimit/.test(controller));
+check('the dashboard has a Message search page', fs.existsSync(require('path').join(repo, 'apps/web/src/pages/admin/SearchPage.tsx')));
+check('every review route requires the admin session', (routes.match(/router\.(get|post)\('\/reviews[^']*', requireAdminSession/g) || []).length === 8);
 check('review state changes require the CSRF token', /router\.post\('\/reviews', requireAdminSession, requireAdminCsrf/.test(routes) && /router\.post\('\/reviews\/:id\/end', requireAdminSession, requireAdminCsrf/.test(routes));
 
 const dashboard = read('apps/web/src/pages/admin/AdminApp.tsx');
@@ -71,3 +75,4 @@ if (failures.length) {
   console.log('Failures:', failures.join(' | '));
   process.exit(1);
 }
+

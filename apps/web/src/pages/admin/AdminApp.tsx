@@ -27,6 +27,7 @@ const ReleasesPage = lazy(() => import('./ReleasesPage'));
 const FeatureFlagsPage = lazy(() => import('./FeatureFlagsPage'));
 const DataRequestsPage = lazy(() => import('./DataRequestsPage'));
 const ReviewsPage = lazy(() => import('./ReviewsPage'));
+const SearchPage = lazy(() => import('./SearchPage'));
 
 /* ------------------------------------------------------------------- routes */
 
@@ -37,6 +38,7 @@ const NAV: NavEntry[] = [
   { path: '/admin/health', label: 'System health', icon: Gauge, group: 'Monitor', built: true },
   { path: '/admin/audit', label: 'Audit log', icon: ClipboardList, group: 'Monitor', built: true },
   { path: '/admin/reviews', label: 'Who viewed what', icon: ShieldCheck, group: 'Monitor', built: true },
+  { path: '/admin/search', label: 'Message search', icon: Search, group: 'Monitor', built: true },
   { path: '/admin/users', label: 'Users', icon: Users, group: 'People', built: true },
   { path: '/admin/reports', label: 'Reports', icon: AlertTriangle, group: 'People', built: true },
   { path: '/admin/groups', label: 'Groups', icon: Globe, group: 'People', built: true },
@@ -311,6 +313,7 @@ function PageForPath({
   if (normalized === '/admin/health') return <HealthPage />;
   if (normalized === '/admin/audit') return <AuditPage />;
   if (normalized === '/admin/reviews') return <ReviewsPage />;
+  if (normalized === '/admin/search') return <SearchPage session={session} />;
   if (normalized === '/admin/ai-usage') return <AiUsagePage />;
   if (normalized === '/admin/knowledge') return <KnowledgePage session={session} />;
   if (normalized === '/admin/announcements') return <AnnouncementsPage session={session} />;

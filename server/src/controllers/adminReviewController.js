@@ -18,6 +18,7 @@ const User = require('../models/User');
 const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const ReviewSession = require('../models/ReviewSession');
+const AdminAudit = require('../models/AdminAudit');
 const admin = require('../admin/auth');
 const chatgramAi = require('../ai/chatgram');
 
@@ -50,7 +51,7 @@ function secondsLeft(session) {
 function publicReview(session) {
   return {
     id: String(session._id),
-    userId: String(session.userId),
+    userId: session.userId ? String(session.userId) : null,
     reason: session.reason,
     reference: session.reference || '',
     scope: session.scope,
@@ -102,13 +103,14 @@ async function loadActive(req, res) {
   return session;
 }
 
-/** POST /reviews — write a reason and start a 15-minute read-only review. */
+/** POST /reviews â€” write a reason and start a 15-minute read-only review. */
 async function start(req, res) {
   try {
     const reason = String(req.body?.reason || '').trim();
     const reference = String(req.body?.reference || '').trim();
+    const scope = req.body?.scope === 'search' ? 'search' : 'conversations';
     const userId = toObjectId(req.body?.userId);
-    if (!userId) return res.status(400).json({ message: 'A user is required.' });
+    if (scope === 'conversations' && !userId) return res.status(400).json({ message: 'A user is required.' });
     if (reason.length < MIN_REASON) {
       return res.status(422).json({
         message: `Write a reason of at least ${MIN_REASON} characters before opening conversations.`,
@@ -120,8 +122,8 @@ async function start(req, res) {
     }
     if (reference.length > 120) return res.status(422).json({ message: 'The reference is too long.' });
 
-    const user = await User.findById(userId).select(ACTIVE_USER_FIELDS).lean();
-    if (!user) return res.status(404).json({ message: 'User not found.' });
+    const user = userId ? await User.findById(userId).select(ACTIVE_USER_FIELDS).lean() : null;
+    if (scope === 'conversations' && !user) return res.status(404).json({ message: 'User not found.' });
 
     // Rate limit: reviews started by this admin panel session in the last hour.
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
@@ -137,10 +139,11 @@ async function start(req, res) {
       });
     }
 
-    // Reuse an already-active review of the same user from this admin session.
+    // Reuse an already-active review of the same scope/user from this admin session.
     const existing = await ReviewSession.findOne({
       adminSessionId: req.adminSession._id,
-      userId,
+      userId: userId || null,
+      scope,
       status: 'active',
       lastActivityAt: { $gte: new Date(Date.now() - IDLE_MS) },
     });
@@ -153,10 +156,10 @@ async function start(req, res) {
 
     const session = await ReviewSession.create({
       adminSessionId: req.adminSession._id,
-      userId,
+      userId: userId || null,
       reason,
       reference,
-      scope: 'conversations',
+      scope,
       ip: req.ip || '',
       userAgent: String(req.headers?.['user-agent'] || '').slice(0, 300),
       expiresAt: new Date(Date.now() + IDLE_MS),
@@ -165,7 +168,7 @@ async function start(req, res) {
     await admin.audit(
       'review_start',
       req,
-      `review=${session._id} user=${userId}${reference ? ` ref=${reference}` : ''} reason="${reason.slice(0, 160)}"`,
+      `review=${session._id} scope=${scope} user=${userId || '-'}${reference ? ` ref=${reference}` : ''} reason="${reason.slice(0, 160)}"`,
     );
 
     // Burst alert: many reviews in a short window raises an admin Inbox record.
@@ -196,14 +199,14 @@ async function start(req, res) {
   }
 }
 
-/** GET /reviews/:id — poll the remaining time of an active review. */
+/** GET /reviews/:id â€” poll the remaining time of an active review. */
 async function current(req, res) {
   const session = await loadActive(req, res);
   if (!session) return;
   return res.json({ review: publicReview(session) });
 }
 
-/** POST /reviews/:id/end — end the review immediately. */
+/** POST /reviews/:id/end â€” end the review immediately. */
 async function end(req, res) {
   const id = toObjectId(req.params.id);
   if (!id) return res.status(400).json({ message: 'Invalid review session id.' });
@@ -220,10 +223,16 @@ async function end(req, res) {
   return res.json({ review: publicReview(session) });
 }
 
-/** GET /reviews/:id/conversations — read-only list of the user's chats. */
+/** GET /reviews/:id/conversations â€” read-only list of the user's chats. */
 async function conversations(req, res) {
   const session = await loadActive(req, res);
   if (!session) return;
+  if (session.scope !== 'conversations') {
+    return res.status(409).json({
+      message: "Start a conversation review (with a reason) before opening a user's chats.",
+      code: 'REVIEW_SCOPE_REQUIRED',
+    });
+  }
   try {
     const chats = await Chat.find({ participants: session.userId })
       .sort({ updatedAt: -1 })
@@ -263,10 +272,16 @@ async function conversations(req, res) {
   }
 }
 
-/** GET /reviews/:id/messages?chatId=&page= — read-only, paginated, audited. */
+/** GET /reviews/:id/messages?chatId=&page= â€” read-only, paginated, audited. */
 async function messages(req, res) {
   const session = await loadActive(req, res);
   if (!session) return;
+  if (session.scope !== 'conversations') {
+    return res.status(409).json({
+      message: "Start a conversation review (with a reason) before opening a user's messages.",
+      code: 'REVIEW_SCOPE_REQUIRED',
+    });
+  }
   try {
     const chatId = toObjectId(req.query?.chatId);
     if (!chatId) return res.status(400).json({ message: 'A conversation is required.' });
@@ -333,7 +348,7 @@ async function messages(req, res) {
   }
 }
 
-/** GET /reviews — "Who viewed what" list, paginated, with optional CSV export. */
+/** GET /reviews â€” "Who viewed what" list, paginated, with optional CSV export. */
 async function list(req, res) {
   try {
     await ReviewSession.deleteMany({ createdAt: { $lt: new Date(Date.now() - retentionDays() * 24 * 60 * 60 * 1000) } });
@@ -406,7 +421,7 @@ async function list(req, res) {
   }
 }
 
-/** GET /reviews/stats — counters for the dashboard attention panel. */
+/** GET /reviews/stats â€” counters for the dashboard attention panel. */
 async function stats(req, res) {
   try {
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
@@ -430,4 +445,156 @@ async function stats(req, res) {
   }
 }
 
-module.exports = { start, current, end, conversations, messages, list, stats, retentionDays };
+const MAX_SEARCH_ROWS = 500;
+const MAX_KEYWORD = 80;
+const SEARCH_LIMIT_PER_HOUR = 120;
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * GET /reviews/:id/search â€” global message search for abuse hunting. Only a
+ * review session started with scope=search may use it, so it inherits the
+ * written reason, the 15-minute expiry, the rate limits and the audit trail.
+ */
+async function search(req, res) {
+  const session = await loadActive(req, res);
+  if (!session) return;
+  if (session.scope !== 'search') {
+    return res.status(409).json({
+      message: 'Start a message-search review (with a reason) before searching messages.',
+      code: 'REVIEW_SCOPE_REQUIRED',
+    });
+  }
+  try {
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const searchesThisHour = await AdminAudit.countDocuments({
+      action: 'review_search',
+      sessionId: String(req.adminSession?._id || ''),
+      at: { $gte: hourAgo },
+    });
+    if (searchesThisHour >= SEARCH_LIMIT_PER_HOUR) {
+      await admin.audit('review_search_limited', req, 'hourly search cap reached');
+      return res.status(429).json({ message: 'Too many message searches this hour. Wait before searching again.', code: 'REVIEW_SEARCH_RATE_LIMITED' });
+    }
+
+    const keyword = String(req.query?.q || '').trim();
+    if (keyword.length < 2) {
+      return res.status(422).json({ message: 'Enter at least 2 characters to search messages.', code: 'REVIEW_SEARCH_QUERY_REQUIRED' });
+    }
+    if (keyword.length > MAX_KEYWORD) {
+      return res.status(422).json({ message: `The search term must be under ${MAX_KEYWORD} characters.` });
+    }
+
+    const limit = clampLimit(req.query?.limit, 25);
+    const requestedPage = Math.max(0, Math.floor(Number(req.query?.page) || 0));
+    const page = Math.min(requestedPage, Math.floor((MAX_SEARCH_ROWS - 1) / limit));
+
+    const filter = { content: { $regex: escapeRegex(keyword), $options: 'i' }, isDeleted: false };
+
+    // Optional user filter: an id, or a name/email/username fragment.
+    const rawUser = String(req.query?.user || '').trim();
+    if (rawUser) {
+      const userId = toObjectId(rawUser);
+      if (userId) {
+        filter.senderId = userId;
+      } else if (rawUser.length >= 2) {
+        const matches = await User.find({
+          $or: [
+            { displayName: { $regex: escapeRegex(rawUser), $options: 'i' } },
+            { username: { $regex: escapeRegex(rawUser), $options: 'i' } },
+            { email: { $regex: escapeRegex(rawUser), $options: 'i' } },
+          ],
+        })
+          .select('_id')
+          .limit(20)
+          .lean();
+        filter.senderId = { $in: matches.map((row) => row._id) };
+      }
+    }
+
+    // Optional group/conversation filter: a chat id or a group-name fragment.
+    const rawChat = String(req.query?.group || '').trim();
+    if (rawChat) {
+      const chatId = toObjectId(rawChat);
+      if (chatId) {
+        filter.chatId = chatId;
+      } else if (rawChat.length >= 2) {
+        const chats = await Chat.find({ type: 'group', groupName: { $regex: escapeRegex(rawChat), $options: 'i' } })
+          .select('_id')
+          .limit(20)
+          .lean();
+        filter.chatId = { $in: chats.map((row) => row._id) };
+      }
+    }
+
+    const from = req.query?.from ? new Date(String(req.query.from)) : null;
+    const to = req.query?.to ? new Date(String(req.query.to)) : null;
+    if ((from && !Number.isNaN(from.getTime())) || (to && !Number.isNaN(to.getTime()))) {
+      filter.sentAt = {};
+      if (from && !Number.isNaN(from.getTime())) filter.sentAt.$gte = from;
+      if (to && !Number.isNaN(to.getTime())) filter.sentAt.$lte = to;
+    }
+
+    const [total, rows] = await Promise.all([
+      Message.countDocuments(filter),
+      Message.find(filter)
+        .sort({ sentAt: -1, _id: -1 })
+        .skip(page * limit)
+        .limit(limit)
+        .populate('senderId', 'displayName username avatarUrl')
+        .lean(),
+    ]);
+
+    const chatIds = [...new Set(rows.map((row) => String(row.chatId)))];
+    const chats = await Chat.find({ _id: { $in: chatIds } })
+      .select('type groupName participants')
+      .populate('participants', 'displayName username')
+      .lean();
+    const chatMap = new Map(chats.map((row) => [String(row._id), row]));
+
+    session.views = (session.views || 0) + 1;
+    await session.save();
+    await admin.audit(
+      'review_search',
+      req,
+      `review=${session._id} q="${keyword.slice(0, MAX_KEYWORD)}" user="${rawUser.slice(0, 60)}" group="${rawChat.slice(0, 60)}" rows=${rows.length} total=${total}`,
+    );
+
+    return res.json({
+      review: publicReview(session),
+      results: rows.map((message) => {
+        const chat = chatMap.get(String(message.chatId));
+        const others = (chat?.participants || []).filter((participant) => String(participant._id) !== String(message.senderId?._id || message.senderId || ''));
+        return {
+          id: String(message._id),
+          chatId: String(message.chatId),
+          chatTitle:
+            chat?.type === 'group'
+              ? chat.groupName || 'Group'
+              : others.map((participant) => participant.displayName || participant.username || 'Chatgram user').join(', ') || 'Direct chat',
+          chatType: chat?.type || 'direct',
+          senderId: String(message.senderId?._id || message.senderId || ''),
+          senderName: message.senderId?.displayName || message.senderId?.username || 'Chatgram user',
+          content: message.content || '',
+          type: message.type,
+          sentAt: message.sentAt,
+          editedAt: message.editedAt || null,
+        };
+      }),
+      keyword,
+      page,
+      limit,
+      total,
+      capped: total > MAX_SEARCH_ROWS,
+      cap: MAX_SEARCH_ROWS,
+      filters: { user: rawUser, group: rawChat, from: req.query?.from || '', to: req.query?.to || '' },
+    });
+  } catch (error) {
+    console.error('Review search failed:', error.message);
+    return res.status(500).json({ message: 'Could not search messages.' });
+  }
+}
+
+module.exports = { start, current, end, conversations, messages, list, stats, search, retentionDays };

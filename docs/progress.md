@@ -157,6 +157,15 @@ enable TOTP once built, paste the Groq key.
 - 9d still open: global cross-user message search with the same reason prompt/audit (#4); retention
   setting UI; device/session and login-history data model (also 9b users extras).
 
+### 9d chunk 2 deployed 2026-10-25
+- Global message search behind a search-scope review: keyword/sender/group/date filters, 500-result cap,
+  25 per page, review_search audit, 120 searches/hour; conversation and search review scopes are
+  mutually exclusive. New "Message search" dashboard page with the reason gate.
+- Production smoke found a missing scope guard on the conversation endpoints; fixed, re-tested and
+  re-deployed (PM2 #94).
+- 9d left: retention-setting UI; devices/session + login-history model. Remaining 9b: Safety & abuse,
+  Settings, broadcasts, Users extras, Inbox merge-duplicates.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,

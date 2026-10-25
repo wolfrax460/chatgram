@@ -1,7 +1,8 @@
 /**
  * 9d — security review mode in the admin dashboard: content stays hidden until a
  * written reason is entered, the transcript is read-only, the session is time
- * boxed, and "Who viewed what" records the review.
+ * boxed, global message search requires the same reason and "Who viewed what"
+ * records both.
  */
 const { test, expect } = require('@playwright/test');
 
@@ -16,6 +17,7 @@ let subject = null;
 let partner = null;
 let chatId = '';
 const messageText = `Oversight spec fixture ${run}: review this conversation please.`;
+const searchReason = `Spec ${run}: global search review.`;
 
 async function registerUser(request, label) {
   const identifier = `rv-ui-${label}-${run}@chatgram.test`;
@@ -108,5 +110,20 @@ test.describe('admin oversight', () => {
     await expect(page.getByText(`Spec ${run}: verifying the oversight review flow.`)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(`ReviewUI subject ${run}`).first()).toBeVisible();
     await expect(page.getByRole('button', { name: /Export CSV/ })).toBeVisible();
+
+    // Global message search (9d #4): reason gate, then a read-only result.
+    await page.locator('nav[aria-label="Admin sections"] a', { hasText: 'Message search' }).click();
+    await expect(page.getByRole('heading', { name: 'Message search' })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText('Security review required before searching')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start search review' })).toBeDisabled();
+    await page.getByPlaceholder(/Report #1234: locating abusive messages/).fill(searchReason);
+    await page.getByRole('button', { name: 'Start search review' }).click();
+    await expect(page.getByText(/read-only search/)).toBeVisible({ timeout: 20_000 });
+    await page.getByPlaceholder('keyword or phrase (2+ characters)').fill(`fixture ${run}`);
+    await page.getByRole('button', { name: 'Search messages' }).click();
+    await expect(page.getByText(messageText)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(searchReason, { exact: false })).toBeVisible();
+    await page.getByRole('button', { name: /End review/ }).click();
+    await expect(page.getByText('Security review required before searching')).toBeVisible({ timeout: 20_000 });
   });
 });

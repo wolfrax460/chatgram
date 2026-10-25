@@ -11,8 +11,8 @@ const mongoose = require('mongoose');
 const reviewSessionSchema = new mongoose.Schema(
   {
     adminSessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminSession', required: true, index: true },
-    // The account whose content is being reviewed.
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    // The account whose content is being reviewed (null for a global search review).
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
     reason: { type: String, required: true, trim: true, maxlength: 500 },
     // Optional ticket/report reference the review relates to.
     reference: { type: String, default: '', trim: true, maxlength: 120 },

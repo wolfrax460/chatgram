@@ -775,3 +775,14 @@ Inbox alert (type review_burst). Review-log retention defaults to 2 years (REVIE
 minimum 30) and old sessions are pruned when the log is read. Users are told plainly, in the sign-up form,
 Settings, and the Privacy Policy, that chats are not end-to-end encrypted and that authorised
 administrators can review content for security, abuse and legal reasons.
+
+## D49 - Global message search runs inside a search-scope review session (2026-10-25)
+
+Abuse hunting needs to search message text across every account, which is the most sensitive admin read in
+the product. It therefore reuses the 9d review machinery instead of adding a bare search endpoint: the
+admin must start a review with scope search and a written reason, which is bound to the panel session,
+expires after 15 minutes of inactivity and is audited. GET /api/admin/reviews/:id/search only works for a
+search-scope session (conversation endpoints reject it, and search rejects conversation sessions), supports
+keyword/sender/group/date filters, caps results at 500 with 25 per page, writes a review_search audit row
+with the keyword and filters, and is limited to 120 searches per hour per admin session. No results carry
+password hashes, tokens or 2FA secrets, and there is no write route: the search page can only read.
