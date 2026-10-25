@@ -54,6 +54,15 @@ enable TOTP once built, paste the Groq key.
 - 9a left: optional IP allowlist with a lockout safety check, removing the legacy role-based
   support-admin guard (sign-out-all already exists).
 
+### 9a complete (2026-10-25)
+- Admin password gate + sessions + change password + lockout + sign-out-all.
+- Optional TOTP two-step with QR enrolment, single-use recovery codes and audited
+  actions (off until the owner enables it).
+- Optional IP allowlist (off by default, lockout safety check, audit).
+- Legacy role-based support-account guard removed; support/help admin operations
+  now require the admin session at /api/admin/support/*; legacy /admin/legacy
+  dashboard deleted. Removals listed in docs/decisions.md D40.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,

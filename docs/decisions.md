@@ -665,3 +665,20 @@ owner enrols. Enrolment returns the secret, otpauth URL and QR data URL once; th
 endpoint never returns secret material. Wrong panel codes and wrong TOTP codes both count
 toward the existing per-IP lockout, and every mutation is audited. Still to do in 9a: optional
 IP allowlist and removing the legacy role-based support-admin guard.
+
+## D40 - Admin IP allowlist and the legacy role guard removal (2026-10-25)
+
+The optional allowlist lives on the AdminSecurity singleton (off by default). Enabling requires the
+caller's current IP to match an entry (exact or IPv4 CIDR), which is the lockout safety check; when on,
+all /api/admin routes and the login endpoint reject other networks with ADMIN_IP_BLOCKED, and blocking
+is audited at most once per IP per minute. Removed in this change (per 9a item 3):
+- `requireSupportAccount` middleware in server/src/routes/supportRoutes.js and the whole
+  /api/support/admin/* dashboard block (settings, stats, AI layer, KB, tickets, ticket reply).
+- `requireSupportAccount` middleware and the /api/help/admin/* editor routes in server/src/help.
+- the middleware function itself in server/src/help/controller.js.
+- the /admin/legacy route in the dashboard and apps/web/src/pages/AdminGate.tsx (the old support-
+  account dashboard).
+Equivalent support operations now live at /api/admin/support/* and are reachable only with the admin
+session cookie (+ CSRF for writes); the retired support/help admin paths answer 404 to everyone.
+A route-enumeration test (adminGate.test.js) proves every /api/admin route rejects anonymous requests
+and user tokens.
