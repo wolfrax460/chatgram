@@ -112,6 +112,24 @@ export default function InboxPage({ session }: { session: AdminSessionInfo }) {
     }
   }
 
+  async function mergeDuplicates(item: InboxRow) {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await adminFetch<{ message: string }>(`/api/admin/ai/inbox/${encodeURIComponent(item.id)}/merge`, {
+        method: 'POST',
+        csrf: session.csrfToken,
+        body: {},
+      });
+      toast.show(result.message);
+      await load();
+    } catch (mergeError) {
+      setError(mergeError instanceof Error ? mergeError.message : 'Could not merge the duplicates.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function ignore(item: InboxRow) {
     setBusy(true);
     setError('');
@@ -255,8 +273,14 @@ export default function InboxPage({ session }: { session: AdminSessionInfo }) {
                 <button type="button" className="admin-btn" onClick={() => void ignore(selected)} disabled={busy}>
                   <X className="h-3.5 w-3.5" /> Ignore
                 </button>
-                <button type="button" className="admin-btn" disabled title="Merging duplicate questions is part of the next dashboard chunk">
-                  Merge duplicates (soon)
+                <button
+                  type="button"
+                  className="admin-btn"
+                  onClick={() => void mergeDuplicates(selected)}
+                  disabled={busy || !selected.duplicateCount}
+                  title={selected.duplicateCount ? `Merge ${selected.duplicateCount} duplicate record${selected.duplicateCount === 1 ? '' : 's'} of this question` : 'No duplicate records for this question'}
+                >
+                  Merge duplicates{selected.duplicateCount ? ` (${selected.duplicateCount})` : ''}
                 </button>
               </div>
             </>

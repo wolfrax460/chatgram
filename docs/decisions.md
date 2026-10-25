@@ -835,3 +835,13 @@ the shared account-status gate until cancelled; an hourly scheduler purges due a
 utils/accountDeletion, the same routine the user's own DELETE /api/auth/account uses. Every action is
 append-only audited, and the user detail response still never contains password hashes, tokens or 2FA
 secrets.
+
+## D54 - Inbox duplicates merge into the oldest record without losing history (2026-10-25)
+
+The Inbox already increments a counter for repeated identical questions, so exact duplicates normally never create
+new rows. The merge action exists for rows created through different paths (watchdog vs feedback vs support or
+manual imports): POST /api/admin/ai/inbox/:id/merge finds rows of the same type with the same normalized
+question in new/answered state, adds their counters to the target, refreshes the target's last-seen and marks
+each duplicate ignored with mergedInto pointing at the target. Duplicates are therefore never deleted - the
+history stays auditable - a second merge is a no-op, the action is audited (ai_inbox_merge), and it requires
+the admin session + CSRF like every other Inbox action.

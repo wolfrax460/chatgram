@@ -75,6 +75,8 @@ const adminInboxSchema = new mongoose.Schema(
     lastSeenAt: { type: Date, default: Date.now },
     deliveredAt: { type: Date, default: null },
     deliveredMessageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
+    // 9b Inbox merge: duplicate rows point at the record they were merged into.
+    mergedInto: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminInbox', default: null },
   },
   { timestamps: false },
 );
@@ -504,6 +506,15 @@ async function listInbox({ status = 'new', page = 1, limit = 25 } = {}) {
     AdminInbox.find(query).sort({ lastSeenAt: -1 }).skip(skip).limit(size),
     AdminInbox.countDocuments(query),
   ]);
+  // Duplicate counts per (type, normalized question) for the visible page.
+  const keys = items.map((item) => ({ type: item.type, normalized: item.normalized || item.question }));
+  const duplicateGroups = keys.length
+    ? await AdminInbox.aggregate([
+        { $match: { status: { $in: ['new', 'answered'] } } },
+        { $group: { _id: { type: '$type', normalized: { $ifNull: ['$normalized', '$question'] } }, count: { $sum: 1 } } },
+      ])
+    : [];
+  const duplicateMap = new Map(duplicateGroups.map((row) => [String(row._id.type) + '|' + String(row._id.normalized), row.count]));
   return {
     items: items.map((item) => ({
       id: String(item._id),
@@ -516,6 +527,7 @@ async function listInbox({ status = 'new', page = 1, limit = 25 } = {}) {
       errorReason: item.errorReason,
       answer: item.answer,
       canAnswerUser: Boolean(item.askerId),
+      duplicateCount: Math.max(0, (duplicateMap.get(String(item.type) + '|' + String(item.normalized || item.question)) || 1) - 1),
       createdAt: item.createdAt,
       lastSeenAt: item.lastSeenAt,
     })),
@@ -635,6 +647,35 @@ async function recordMessageFeedback(userId, messageId, value) {
   return { ok: true, recorded: true, itemId: String(item._id) };
 }
 
+
+/**
+ * 9b: merge exact duplicate Inbox records into one. Duplicates keep their row
+ * (marked ignored + mergedInto) so the history stays auditable; the target's
+ * counter and last-seen absorb them.
+ */
+async function mergeInboxDuplicates(id) {
+  const target = await AdminInbox.findById(id);
+  if (!target) return null;
+  const duplicateQuery = {
+    _id: { $ne: target._id },
+    type: target.type,
+    status: { $in: ['new', 'answered'] },
+    ...(target.normalized ? { normalized: target.normalized } : { question: target.question }),
+  };
+  const duplicates = await AdminInbox.find(duplicateQuery).select('_id count lastSeenAt').lean();
+  if (!duplicates.length) return { mergedCount: 0, item: target };
+  const mergedCount = duplicates.reduce((sum, row) => sum + (row.count || 1), 0);
+  const newest = duplicates.reduce((latest, row) => (new Date(row.lastSeenAt) > new Date(latest) ? row.lastSeenAt : latest), target.lastSeenAt);
+  await AdminInbox.updateMany(
+    { _id: { $in: duplicates.map((row) => row._id) } },
+    { $set: { status: 'ignored', mergedInto: target._id } },
+  );
+  target.count = (target.count || 1) + mergedCount;
+  target.lastSeenAt = newest;
+  await target.save();
+  return { mergedCount, duplicates: duplicates.length, item: target };
+}
+
 async function ignoreInboxItem(id) {
   const item = await AdminInbox.findById(id);
   if (!item) return null;
@@ -658,6 +699,7 @@ module.exports = {
   recordMessageFeedback,
   recordProviderFailure,
   ignoreInboxItem,
+  mergeInboxDuplicates,
   normalizeQuestion,
   lookupKnowledge,
   isChatgramQuestion,

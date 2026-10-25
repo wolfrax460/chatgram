@@ -202,6 +202,13 @@ enable TOTP once built, paste the Groq key.
 - Still open: bulk row actions / saved filter views / column visibility; Inbox merge-duplicates; then the
   single final report.
 
+### 9b Inbox merge-duplicates deployed 2026-10-25
+- Duplicate counts on Inbox rows, merge action folding exact duplicates into the target, duplicates kept as
+  ignored/mergedInto records, audited and idempotent.
+- Tests: integration 10/10, Playwright flow; production smoke 7/7 with fixtures cleaned.
+- Still open for the final report: Users-table extras (bulk row actions, saved filter views, column
+  visibility) — the only remaining Change 2 cross-cutting item.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,

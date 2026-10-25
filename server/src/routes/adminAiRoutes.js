@@ -84,6 +84,23 @@ router.post('/inbox/:id/answer', requireAdminCsrf, async (req, res) => {
   }
 });
 
+router.post('/inbox/:id/merge', requireAdminCsrf, async (req, res) => {
+  try {
+    const result = await ai.mergeInboxDuplicates(req.params.id);
+    if (!result) return res.status(404).json({ message: 'Inbox item not found.' });
+    await admin.audit('ai_inbox_merge', req, `${req.params.id} merged=${result.duplicates} count+=${result.mergedCount}`);
+    return res.json({
+      message: result.duplicates
+        ? `Merged ${result.duplicates} duplicate record${result.duplicates === 1 ? '' : 's'} (${result.mergedCount} occurrences).`
+        : 'No duplicates to merge.',
+      mergedCount: result.mergedCount,
+      totalCount: result.item.count,
+    });
+  } catch (error) {
+    return res.status(400).json({ message: error.message || 'Could not merge the duplicates.' });
+  }
+});
+
 router.post('/inbox/:id/ignore', requireAdminCsrf, async (req, res) => {
   try {
     const item = await ai.ignoreInboxItem(req.params.id);

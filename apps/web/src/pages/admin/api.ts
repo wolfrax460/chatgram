@@ -159,6 +159,7 @@ export interface InboxRow {
   errorReason: string | null;
   answer: string;
   canAnswerUser: boolean;
+  duplicateCount: number;
   createdAt: string;
   lastSeenAt: string;
 }
