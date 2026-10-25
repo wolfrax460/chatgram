@@ -209,6 +209,14 @@ enable TOTP once built, paste the Groq key.
 - Still open for the final report: Users-table extras (bulk row actions, saved filter views, column
   visibility) — the only remaining Change 2 cross-cutting item.
 
+### 9b Users table extras deployed 2026-10-25 — ALL REQUESTED ITEMS ARE BUILT
+- Row selection + bulk suspend/restore/force-logout (max 100, official accounts skipped, audited, CSRF),
+  saved filter views and column visibility (localStorage), selection-aware bulk bar.
+- Tests: integration 13/13, Playwright flow + dashboard regression; production smoke 11/11, probes removed.
+- FINISHED: every ordered item (Change 1/2/3, 9e, 9a, item 4, 5/6/7, 9b all pages, 9d oversight) is built,
+  tested and deployed. Remaining honest crosses are listed in the final report (real-device Android test,
+  Windows code signing, some non-blocking polish items).
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,

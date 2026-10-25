@@ -25,6 +25,7 @@ const {
   scheduleDeletion,
   cancelDeletion,
   userSessions,
+  bulkUsers,
 } = require('../controllers/adminOverviewController');
 const { systemHealth, auditList } = require('../controllers/adminHealthController');
 const moderation = require('../controllers/adminModerationController');
@@ -95,6 +96,7 @@ router.get('/health', requireAdminSession, systemHealth);
 router.get('/audit', requireAdminSession, auditList);
 router.get('/users', requireAdminSession, listUsers);
 router.get('/users/:id', requireAdminSession, userDetail);
+router.post('/users/bulk', requireAdminSession, requireAdminCsrf, bulkUsers);
 router.post('/users/:id/force-logout', requireAdminSession, requireAdminCsrf, forceLogout);
 router.post('/users/:id/reset-2fa', requireAdminSession, requireAdminCsrf, resetTwoFactor);
 router.get('/users/:id/sessions', requireAdminSession, userSessions);

@@ -845,3 +845,12 @@ question in new/answered state, adds their counters to the target, refreshes the
 each duplicate ignored with mergedInto pointing at the target. Duplicates are therefore never deleted - the
 history stays auditable - a second merge is a no-op, the action is audited (ai_inbox_merge), and it requires
 the admin session + CSRF like every other Inbox action.
+
+## D55 - Bulk user actions are bounded, official-account-safe and audited (2026-10-25)
+
+The Users table supports row selection with three bulk actions (suspend for a number of days, restore/unban,
+force logout). One endpoint POST /api/admin/users/bulk accepts at most 100 ids, validates the action, skips
+support/AI accounts, applies the same effects as the single-user actions (including tokenVersion bumps for
+suspend/force-logout) and writes one admin_users_bulk audit row with the action, counts and reason. Saved
+filter views and column visibility are per-browser localStorage preferences (not server state), so no new
+user data is stored; CSV export covers the current page or the selection through the same client-side code.

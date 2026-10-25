@@ -304,7 +304,7 @@ function PageForPath({
   const userMatch = normalized.match(/\/admin\/users\/([^/]+)$/);
   if (userMatch) return <UserDetailPage session={session} id={decodeURIComponent(userMatch[1]!)} />;
   if (normalized === '/admin') return <OverviewPage session={session} days={days} />;
-  if (normalized === '/admin/users') return <UsersPage />;
+  if (normalized === '/admin/users') return <UsersPage session={session} />;
   if (normalized === '/admin/inbox') return <InboxPage session={session} />;
   if (normalized === '/admin/providers') return <ProvidersPage session={session} />;
   if (normalized === '/admin/security') return <SecurityPage session={session} onSignOut={onSignOut} />;

@@ -3,6 +3,7 @@
  * Everything here is gated by the admin session (see routes/adminRoutes.js); no
  * password hashes, tokens or 2FA secrets are ever selected or returned.
  */
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const UserWarning = require('../models/UserWarning');
 const UserSession = require('../models/UserSession');
@@ -432,4 +433,44 @@ async function userSessions(req, res) {
   }
 }
 
-module.exports = { overview, listUsers, userDetail, forceLogout, resetTwoFactor, verifyEmail, warnUser, updateProfile, removePhoto, scheduleDeletion, cancelDeletion, userSessions };
+
+/** POST /users/bulk — row-selection actions from the Users table (max 100 ids). */
+async function bulkUsers(req, res) {
+  try {
+    const action = String(req.body?.action || '');
+    if (!['suspend', 'force-logout', 'unban'].includes(action)) {
+      return res.status(400).json({ message: 'Unknown bulk action.' });
+    }
+    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).filter((id) => mongoose.isValidObjectId(id)))].slice(0, 100);
+    if (!ids.length) return res.status(400).json({ message: 'Select at least one account.' });
+    const days = Math.min(3650, Math.max(1, Number(req.body?.days) || 7));
+    const reason = String(req.body?.reason || '').trim().slice(0, 300);
+    const admin = require('../admin/auth');
+    const users = await User.find({ _id: { $in: ids } }).select('displayName tokenVersion isSupportAccount isAiAccount status');
+    let changed = 0;
+    let skipped = 0;
+    for (const user of users) {
+      if (user.isSupportAccount || user.isAiAccount) {
+        skipped += 1;
+        continue;
+      }
+      if (action === 'suspend') {
+        const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+        await User.updateOne({ _id: user._id }, { $set: { status: 'suspended', suspendedUntil: until, moderationReason: reason || 'Bulk suspension' }, $inc: { tokenVersion: 1 } });
+      } else if (action === 'force-logout') {
+        await User.updateOne({ _id: user._id }, { $inc: { tokenVersion: 1 } });
+      } else {
+        await User.updateOne({ _id: user._id }, { $set: { status: 'active', suspendedUntil: null, moderationReason: '' } });
+      }
+      changed += 1;
+    }
+    await admin.audit('admin_users_bulk', req, `action=${action} changed=${changed} skipped=${skipped} ids=${ids.length}${reason ? ` reason="${reason}"` : ''}`);
+    return res.json({ message: `${changed} account${changed === 1 ? '' : 's'} updated${skipped ? `, ${skipped} official account${skipped === 1 ? '' : 's'} skipped` : ''}.`, changed, skipped });
+  } catch (error) {
+    console.error('Bulk user action failed:', error.message);
+    return res.status(500).json({ message: 'Could not run the bulk action.' });
+  }
+}
+
+module.exports = { overview, listUsers, userDetail, forceLogout, resetTwoFactor, verifyEmail, warnUser, updateProfile, removePhoto, scheduleDeletion, cancelDeletion, userSessions, bulkUsers };
+
