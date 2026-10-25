@@ -704,3 +704,13 @@ their byte size, so byte totals cover status media only, and there is no media r
 "orphaned Cloudinary files" detection is not implemented. The media library is fetched from both
 collections and merged in memory (bounded) because the staging MongoDB does not support every
 `$unionWith` form.
+
+## D43 - App releases are data, not code (2026-10-25)
+
+An AppRelease document per platform (windows/android/web) holds version, file name/URL, SHA-256,
+size, release notes, minimum supported version, force-update flag and publish state. The admin page
+edits them; the public GET /api/app/releases returns only published rows and never admin fields, so
+the landing Downloads tab and the desktop/mobile apps get new versions without a code change.
+Versions and checksums are validated; a published release needs a version and a file URL. Production
+stays empty (no fake releases) until the Windows installer and Android APK are actually built and
+hosted under /downloads/.

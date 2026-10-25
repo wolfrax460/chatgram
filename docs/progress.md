@@ -94,6 +94,16 @@ enable TOTP once built, paste the Groq key.
   visibility), Inbox merge-duplicates.
 - 9d oversight and items 5/6/7 are not started.
 
+### App releases deployed 2026-10-25
+- Admin App releases page (Windows/Android/Web cards) with validated versions, checksums,
+  file URLs, release notes, minimum supported version, force-update and publish toggles.
+- Public GET /api/app/releases feeds the landing Downloads tab and the apps; production stays
+  empty until the real installer/APK exist.
+- Remaining 9b: Feature flags & maintenance, Safety & abuse, Settings, Data requests,
+  broadcast announcements, Users extras (delete-with-grace, verify email, warn, device/session +
+  login-history data, saved filters/bulk actions/column visibility), Inbox merge-duplicates.
+- 9d oversight and items 5/6/7 are not started.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,
