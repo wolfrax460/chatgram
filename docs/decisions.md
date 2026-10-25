@@ -682,3 +682,14 @@ Equivalent support operations now live at /api/admin/support/* and are reachable
 session cookie (+ CSRF for writes); the retired support/help admin paths answer 404 to everyone.
 A route-enumeration test (adminGate.test.js) proves every /api/admin route rejects anonymous requests
 and user tokens.
+
+## D41 - Frozen groups are read-only and group changes are audited (2026-10-25)
+
+`Chat.groupFrozen` is the admin read-only switch: both the REST message controller and the socket
+message handler refuse posts with 403 GROUP_FROZEN for every member (including admins) until an
+admin unfreezes the group. Group administration lives under the admin session only: list/search,
+detail with members (owner/admin flags) and related reports, freeze/unfreeze, change owner (must be
+an existing member, and the new owner is promoted to group admin), remove member, delete group
+(removes the group's messages and marks its reports actioned). Every action writes an audit row
+(`group_freeze`, `group_unfreeze`, `group_change_owner`, `group_remove_member`, `group_delete`).
+Admins still cannot send messages as a user.

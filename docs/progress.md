@@ -72,6 +72,16 @@ enable TOTP once built, paste the Groq key.
   Inbox merge-duplicates.
 - 9d oversight and items 5/6/7 are not started.
 
+### Groups moderation deployed 2026-10-25
+- Groups page: search/filters, member + report inspection, freeze (read-only for
+  everyone, enforced in REST + sockets), change owner, remove member, delete group;
+  every action audited.
+- Remaining 9b: Statuses & media, App releases, Feature flags & maintenance, Safety &
+  abuse, Settings, Data requests, broadcast announcements, plus Users extras
+  (delete-with-grace, verify email, warn, device/session + login-history data, saved
+  filters/bulk actions/column visibility) and Inbox merge-duplicates.
+- 9d oversight and items 5/6/7 are not started.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,
