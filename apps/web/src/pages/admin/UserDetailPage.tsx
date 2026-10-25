@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Ban, Clock, KeyRound, Lock, MessageSquare, ShieldCheck, UserRound } from 'lucide-react';
+import { ArrowLeft, Ban, Clock, KeyRound, Lock, MessageSquare, Pencil, ShieldAlert, ShieldCheck, Smartphone, Trash2, UserCheck, UserRound } from 'lucide-react';
 import {
-  adminFetch, formatNumber, initials, relativeTime, shortDate, type AdminSessionInfo, type AdminUserDetailPayload,
+  adminFetch, formatNumber, initials, relativeTime, shortDate, type AdminSessionInfo, type AdminUserDetailPayload, type UserSessionsPayload,
 } from './api';
 import { Chip, ConfirmDialog, PageHead, Skeleton, Toast, useToast } from './ui';
 import ReviewConversationsTab from './ReviewConversationsTab';
 
-type Tab = 'profile' | 'activity' | 'conversations' | 'actions';
+type Tab = 'profile' | 'activity' | 'conversations' | 'devices' | 'actions';
 
 /** User detail: read-only profile, activity counters and the safe account actions. */
 export default function UserDetailPage({ session, id }: { session: AdminSessionInfo; id: string }) {
@@ -19,6 +19,10 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
   const [confirmAction, setConfirmAction] = useState<'logout' | 'reset2fa' | 'suspend' | 'ban' | 'unban' | null>(null);
   const [moderationReason, setModerationReason] = useState('');
   const [suspendDays, setSuspendDays] = useState('7');
+  const [warnReason, setWarnReason] = useState('');
+  const [displayNameDraft, setDisplayNameDraft] = useState('');
+  const [sessions, setSessions] = useState<UserSessionsPayload | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -33,6 +37,42 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (tab !== 'devices' || !id) return;
+    let cancelled = false;
+    adminFetch<UserSessionsPayload>(`/api/admin/users/${id}/sessions`)
+      .then((payload) => {
+        if (!cancelled) setSessions(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setSessions({ sessions: [], logins: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, id]);
+
+  async function runUserAction(path: string, body: unknown = {}, successReload = true) {
+    if (!id) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await adminFetch<{ message: string }>(`/api/admin/users/${id}/${path}`, {
+        method: path === 'profile' ? 'PATCH' : 'POST',
+        csrf: session.csrfToken,
+        body,
+      });
+      toast.show(result.message);
+      if (successReload) await load();
+      return true;
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'The action failed.');
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function runAction() {
     if (!confirmAction || !id) return;
@@ -98,6 +138,7 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
             ['profile', 'Profile', UserRound],
             ['activity', 'Activity', Clock],
             ['conversations', 'Conversations', MessageSquare],
+            ['devices', 'Devices & sessions', Smartphone],
             ['actions', 'Actions', ShieldCheck],
           ] as const).map(([key, label, Icon]) => (
             <button
@@ -134,6 +175,10 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
                   ['Account status', user.status],
                   ['Moderation reason', user.moderationReason || '—'],
                   ['Must change password', user.mustChangePassword ? 'yes' : 'no'],
+                  ['Verified', user.verifiedAt ? shortDate(user.verifiedAt) : 'not verified'],
+                  ['Deletion scheduled', user.deletionScheduledAt ? shortDate(user.deletionScheduledAt) : 'no'],
+                  ['Warnings', String(user.warningCount ?? 0)],
+                  ['Active sessions', String(user.sessionCount ?? 0)],
                 ].map(([label, value]) => (
                   <div key={label}>
                     <dt className="admin-section-label">{label}</dt>
@@ -172,6 +217,47 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
             </div>
           ) : null}
 
+          {tab === 'devices' ? (
+            <div className="grid gap-3 xl:grid-cols-2">
+              <div className="admin-card admin-card-pad">
+                <p className="admin-card-title flex items-center gap-2"><Smartphone className="h-4 w-4" /> Device sessions</p>
+                <p className="mt-1 text-[11.5px] text-[var(--ad-muted)]">Recorded on sign-in; only IP, user agent and last-seen are stored (never tokens).</p>
+                {!sessions ? <Skeleton lines={3} /> : sessions.sessions.length === 0 ? (
+                  <p className="mt-2 text-[12.5px] text-[var(--ad-muted)]">No recorded sessions (older sign-ins predate session recording).</p>
+                ) : (
+                  <ul className="mt-2 space-y-2">
+                    {sessions.sessions.map((row) => (
+                      <li key={row.id} className="rounded-lg border border-[var(--ad-border)] p-2 text-[12px]">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-mono">{row.ip || 'unknown IP'}</span>
+                          <Chip tone={row.revokedAt ? 'default' : 'success'}>{row.revokedAt ? 'signed out' : 'active'}</Chip>
+                        </div>
+                        <p className="mt-1 truncate text-[var(--ad-muted)]" title={row.userAgent}>{row.userAgent || 'unknown device'}</p>
+                        <p className="text-[11px] text-[var(--ad-muted)]">seen {relativeTime(row.lastSeenAt)}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="admin-card admin-card-pad">
+                <p className="admin-card-title flex items-center gap-2"><Clock className="h-4 w-4" /> Login history</p>
+                {!sessions ? <Skeleton lines={3} /> : sessions.logins.length === 0 ? (
+                  <p className="mt-2 text-[12.5px] text-[var(--ad-muted)]">No recorded logins yet.</p>
+                ) : (
+                  <ul className="mt-2 space-y-1.5">
+                    {sessions.logins.map((row) => (
+                      <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--ad-border)] pb-1 text-[12px]">
+                        <span>{relativeTime(row.at)}</span>
+                        <span className="font-mono text-[11px]">{row.ip || 'unknown IP'}</span>
+                        <span className="text-[11px] text-[var(--ad-muted)]">{row.method}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          ) : null}
+
           {tab === 'conversations' ? (
             <ReviewConversationsTab session={session} userId={id} userName={user.displayName} />
           ) : null}
@@ -195,6 +281,56 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
                 <button type="button" className="admin-btn admin-btn-danger mt-2" onClick={() => setConfirmAction('reset2fa')} disabled={busy || user.isSupportAccount}>
                   <ShieldCheck className="h-3.5 w-3.5" /> Reset 2FA
                 </button>
+              </div>
+              <div className="rounded-xl border border-[var(--ad-border)] p-3">
+                <p className="admin-card-title">Warn the account</p>
+                <p className="mt-1 text-[12px] text-[var(--ad-muted)]">Records a moderation warning (shown on the profile and stored in the audit log).</p>
+                <input className="admin-input mt-2 w-full" value={warnReason} maxLength={300} placeholder="Reason for the warning" onChange={(event) => setWarnReason(event.target.value)} />
+                <button type="button" className="admin-btn mt-2" disabled={busy || warnReason.trim().length < 3} onClick={() => void runUserAction('warn', { reason: warnReason }).then((ok) => { if (ok) setWarnReason(''); })}>
+                  <ShieldAlert className="h-3.5 w-3.5" /> Record warning
+                </button>
+              </div>
+              <div className="rounded-xl border border-[var(--ad-border)] p-3">
+                <p className="admin-card-title">Verify email</p>
+                <p className="mt-1 text-[12px] text-[var(--ad-muted)]">Marks the account as verified after you have checked the person's identity out of band.</p>
+                <button type="button" className="admin-btn mt-2" disabled={busy || Boolean(user.verifiedAt)} onClick={() => void runUserAction('verify-email')}>
+                  <UserCheck className="h-3.5 w-3.5" /> {user.verifiedAt ? 'Already verified' : 'Mark verified'}
+                </button>
+              </div>
+              <div className="rounded-xl border border-[var(--ad-border)] p-3">
+                <p className="admin-card-title">Edit display name</p>
+                <div className="mt-2 flex gap-2">
+                  <input className="admin-input flex-1" value={displayNameDraft} maxLength={50} placeholder={user.displayName} onChange={(event) => setDisplayNameDraft(event.target.value)} />
+                  <button type="button" className="admin-btn" disabled={busy || displayNameDraft.trim().length < 2} onClick={() => void runUserAction('profile', { displayName: displayNameDraft.trim() }).then((ok) => { if (ok) setDisplayNameDraft(''); })}>
+                    <Pencil className="h-3.5 w-3.5" /> Save
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-xl border border-[var(--ad-border)] p-3">
+                <p className="admin-card-title">Profile photo</p>
+                <p className="mt-1 text-[12px] text-[var(--ad-muted)]">Remove the current photo (the user can upload a new one).</p>
+                <button type="button" className="admin-btn mt-2" disabled={busy || !user.avatarUrl} onClick={() => void runUserAction('remove-photo')}>
+                  <Trash2 className="h-3.5 w-3.5" /> Remove photo
+                </button>
+              </div>
+              <div className="rounded-xl border border-[var(--ad-border)] p-3 sm:col-span-2">
+                <p className="admin-card-title">Delete this account (30-day grace)</p>
+                <p className="mt-1 text-[12px] text-[var(--ad-muted)]">
+                  {user.deletionScheduledAt
+                    ? `Scheduled for ${shortDate(user.deletionScheduledAt)}. The account is blocked and its data is purged after the grace period unless you cancel.`
+                    : 'Schedules deletion in 30 days, blocks sign-in immediately and signs out every device. You can cancel before the purge.'}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {user.deletionScheduledAt ? (
+                    <button type="button" className="admin-btn" disabled={busy} onClick={() => void runUserAction('cancel-delete')}>
+                      <UserCheck className="h-3.5 w-3.5" /> Cancel deletion
+                    </button>
+                  ) : (
+                    <button type="button" className="admin-btn admin-btn-danger" disabled={busy || user.isSupportAccount || user.isAiAccount} onClick={() => setConfirmDelete(true)}>
+                      <Trash2 className="h-3.5 w-3.5" /> Schedule deletion
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="rounded-xl border border-[var(--ad-border)] p-3 sm:col-span-2">
                 <p className="admin-card-title">Suspend or ban this account</p>
@@ -233,6 +369,22 @@ export default function UserDetailPage({ session, id }: { session: AdminSessionI
           ) : null}
         </div>
       </div>
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title="Schedule account deletion?"
+          body={`${user.displayName} will be signed out immediately, blocked from signing in, and purged after 30 days. You can cancel the deletion before then.`}
+          confirmLabel="Schedule deletion"
+          danger
+          busy={busy}
+          onConfirm={() => {
+            void runUserAction('delete', {}).then((ok) => {
+              if (ok) setConfirmDelete(false);
+            });
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
 
       {confirmAction ? (
         <ConfirmDialog

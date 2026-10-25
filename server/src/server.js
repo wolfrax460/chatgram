@@ -329,6 +329,24 @@ const broadcastTimer = setInterval(() => {
 }, 60_000);
 broadcastTimer.unref();
 
+// 9b Users extras: purge accounts whose 30-day deletion grace has ended.
+const deletionTimer = setInterval(async () => {
+  try {
+    const User = require('./models/User');
+    const due = await User.find({ deletionScheduledAt: { $ne: null, $lte: new Date() } }).select('_id displayName').limit(20);
+    if (!due.length) return;
+    const { deleteAccountData } = require('./utils/accountDeletion');
+    for (const user of due) {
+      await deleteAccountData(user._id, user.displayName);
+      await require('./admin/auth').audit('admin_user_deletion_purged', { ip: 'scheduler', headers: {} }, String(user._id));
+      console.log('Purged account after deletion grace:', String(user._id));
+    }
+  } catch (error) {
+    console.warn('Deletion scheduler failed:', error.message);
+  }
+}, 60 * 60 * 1000);
+deletionTimer.unref();
+
 server.listen(PORT, () => {
   // The verbose LAN banner is a local-development convenience; in production
   // nginx is the only public entry and the output just fills journald.

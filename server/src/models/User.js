@@ -48,6 +48,10 @@ const userSchema = new mongoose.Schema({
   // minted before the bump stops being accepted. Old tokens without the claim
   // are treated as version 0, so deploying this does not sign anybody out.
   tokenVersion: { type: Number, default: 0 },
+  // 9b Users extras: verification and the 30-day deletion grace.
+  verifiedAt: { type: Date, default: null },
+  deletionScheduledAt: { type: Date, default: null, index: true },
+  warningCount: { type: Number, default: 0 },
   passwordChangedAt: { type: Date, default: null },
 
   // Set for accounts handed over by an operator; the UI asks them to change it.

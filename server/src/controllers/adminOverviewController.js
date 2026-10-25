@@ -4,6 +4,9 @@
  * password hashes, tokens or 2FA secrets are ever selected or returned.
  */
 const User = require('../models/User');
+const UserWarning = require('../models/UserWarning');
+const UserSession = require('../models/UserSession');
+const LoginEvent = require('../models/LoginEvent');
 const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const Status = require('../models/Status');
@@ -210,11 +213,11 @@ async function listUsers(req, res) {
 async function userDetail(req, res) {
   try {
     const user = await User.findById(req.params.id)
-      .select('displayName email phone avatarUrl about createdAt lastSeen isOnline twoFactorEnabled mustChangePassword isSupportAccount isAiAccount status suspendedUntil moderationReason moderatedAt')
+      .select('displayName email phone avatarUrl about createdAt lastSeen isOnline twoFactorEnabled mustChangePassword isSupportAccount isAiAccount status suspendedUntil moderationReason moderatedAt verifiedAt deletionScheduledAt warningCount tokenVersion')
       .lean();
     if (!user) return res.status(404).json({ message: 'User not found.' });
 
-    const [messageCount, chatCount, groupCount, statusCount, reportsAgainst, reportsMade, lastMessage] = await Promise.all([
+    const [messageCount, chatCount, groupCount, statusCount, reportsAgainst, reportsMade, lastMessage, warningCount, sessionCount, recentWarnings] = await Promise.all([
       Message.countDocuments({ senderId: user._id }),
       Chat.countDocuments({ participants: user._id }),
       Chat.countDocuments({ participants: user._id, type: 'group' }),
@@ -222,6 +225,9 @@ async function userDetail(req, res) {
       Report.countDocuments({ targetUserId: user._id }),
       Report.countDocuments({ reporterId: user._id }),
       Message.findOne({ senderId: user._id }).sort({ sentAt: -1 }).select('sentAt').lean(),
+      UserWarning.countDocuments({ userId: user._id }),
+      UserSession.countDocuments({ userId: user._id, revokedAt: null }),
+      UserWarning.find({ userId: user._id }).sort({ createdAt: -1 }).limit(5).lean(),
     ]);
 
     return res.json({
@@ -243,7 +249,12 @@ async function userDetail(req, res) {
         mustChangePassword: user.mustChangePassword === true,
         isSupportAccount: user.isSupportAccount === true,
         isAiAccount: user.isAiAccount === true,
+        verifiedAt: user.verifiedAt || null,
+        deletionScheduledAt: user.deletionScheduledAt || null,
+        warningCount,
+        sessionCount,
       },
+      warnings: recentWarnings.map((row) => ({ id: String(row._id), reason: row.reason, createdAt: row.createdAt })),
       counts: {
         messages: messageCount,
         chats: chatCount,
@@ -294,4 +305,131 @@ async function resetTwoFactor(req, res) {
   }
 }
 
-module.exports = { overview, listUsers, userDetail, forceLogout, resetTwoFactor };
+
+/** POST /users/:id/verify-email — mark the account as verified after checking identity. */
+async function verifyEmail(req, res) {
+  try {
+    const user = await User.findById(req.params.id).select('displayName isSupportAccount isAiAccount');
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    if (user.isSupportAccount || user.isAiAccount) return res.status(400).json({ message: 'This account does not need verification.' });
+    const now = new Date();
+    await User.updateOne({ _id: user._id }, { $set: { verifiedAt: now } });
+    const admin = require('../admin/auth');
+    await admin.audit('admin_user_verify_email', req, String(user._id));
+    return res.json({ message: `Email marked verified for ${user.displayName}.` });
+  } catch (error) {
+    console.error('Admin verify email error:', error.message);
+    return res.status(500).json({ message: 'Could not verify the account.' });
+  }
+}
+
+/** POST /users/:id/warn — record a moderation warning (audited). */
+async function warnUser(req, res) {
+  try {
+    const reason = String(req.body?.reason || '').trim();
+    if (reason.length < 3) return res.status(400).json({ message: 'Write the warning reason (at least 3 characters).' });
+    const user = await User.findById(req.params.id).select('displayName isSupportAccount isAiAccount warningCount');
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    await UserWarning.create({ userId: user._id, reason: reason.slice(0, 500), issuedBy: req.adminSession?._id ? String(req.adminSession._id) : '' });
+    await User.updateOne({ _id: user._id }, { $inc: { warningCount: 1 } });
+    const admin = require('../admin/auth');
+    await admin.audit('admin_user_warn', req, `${user._id} reason="${reason.slice(0, 120)}"`);
+    return res.json({ message: `Warning recorded for ${user.displayName}.` });
+  } catch (error) {
+    console.error('Admin warn error:', error.message);
+    return res.status(500).json({ message: 'Could not record the warning.' });
+  }
+}
+
+/** PATCH /users/:id/profile — edit the display name. */
+async function updateProfile(req, res) {
+  try {
+    const displayName = String(req.body?.displayName || '').trim();
+    if (displayName.length < 2 || displayName.length > 50) return res.status(400).json({ message: 'The display name must be 2–50 characters.' });
+    const user = await User.findById(req.params.id).select('displayName');
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    const before = user.displayName;
+    user.displayName = displayName;
+    await user.save({ validateBeforeSave: false });
+    const admin = require('../admin/auth');
+    await admin.audit('admin_user_rename', req, `${user._id} "${before}" -> "${displayName}"`);
+    return res.json({ message: 'Display name updated.', displayName });
+  } catch (error) {
+    return res.status(500).json({ message: 'Could not update the profile.' });
+  }
+}
+
+/** POST /users/:id/remove-photo */
+async function removePhoto(req, res) {
+  try {
+    const user = await User.findById(req.params.id).select('displayName avatarUrl');
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    await User.updateOne({ _id: user._id }, { $set: { avatarUrl: '' } });
+    const admin = require('../admin/auth');
+    await admin.audit('admin_user_remove_photo', req, String(user._id));
+    return res.json({ message: `Profile photo removed for ${user.displayName}.` });
+  } catch (error) {
+    return res.status(500).json({ message: 'Could not remove the photo.' });
+  }
+}
+
+/** POST /users/:id/delete — schedule deletion after a 30-day grace. */
+async function scheduleDeletion(req, res) {
+  try {
+    const user = await User.findById(req.params.id).select('displayName tokenVersion isSupportAccount isAiAccount');
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    if (user.isSupportAccount || user.isAiAccount) return res.status(400).json({ message: 'This account cannot be deleted.' });
+    const when = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await User.updateOne({ _id: user._id }, { $set: { deletionScheduledAt: when }, $inc: { tokenVersion: 1 } });
+    const admin = require('../admin/auth');
+    await admin.audit('admin_user_schedule_deletion', req, `${user._id} at=${when.toISOString()}`);
+    return res.json({ message: `${user.displayName} will be deleted on ${when.toDateString()} unless the deletion is cancelled.`, deletionScheduledAt: when });
+  } catch (error) {
+    return res.status(500).json({ message: 'Could not schedule the deletion.' });
+  }
+}
+
+/** POST /users/:id/cancel-delete */
+async function cancelDeletion(req, res) {
+  try {
+    const user = await User.findById(req.params.id).select('displayName deletionScheduledAt');
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    await User.updateOne({ _id: user._id }, { $set: { deletionScheduledAt: null } });
+    const admin = require('../admin/auth');
+    await admin.audit('admin_user_cancel_deletion', req, String(user._id));
+    return res.json({ message: `Deletion cancelled for ${user.displayName}.` });
+  } catch (error) {
+    return res.status(500).json({ message: 'Could not cancel the deletion.' });
+  }
+}
+
+/** GET /users/:id/sessions — device sessions + login history (audited). */
+async function userSessions(req, res) {
+  try {
+    const user = await User.findById(req.params.id).select('displayName');
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+    const [sessions, logins] = await Promise.all([
+      UserSession.find({ userId: user._id }).sort({ lastSeenAt: -1 }).limit(50).lean(),
+      LoginEvent.find({ userId: user._id }).sort({ at: -1 }).limit(50).lean(),
+    ]);
+    const admin = require('../admin/auth');
+    await admin.audit('admin_user_sessions_view', req, String(user._id));
+    return res.json({
+      sessions: sessions.map((row) => ({
+        id: String(row._id),
+        ip: row.ip || '',
+        userAgent: row.userAgent || '',
+        deviceLabel: row.deviceLabel || '',
+        createdAt: row.createdAt,
+        lastSeenAt: row.lastSeenAt,
+        revokedAt: row.revokedAt,
+      })),
+      logins: logins.map((row) => ({ id: String(row._id), ip: row.ip || '', userAgent: row.userAgent || '', method: row.method || 'password', at: row.at })),
+    });
+  } catch (error) {
+    console.error('Admin sessions error:', error.message);
+    return res.status(500).json({ message: 'Could not load the sessions.' });
+  }
+}
+
+module.exports = { overview, listUsers, userDetail, forceLogout, resetTwoFactor, verifyEmail, warnUser, updateProfile, removePhoto, scheduleDeletion, cancelDeletion, userSessions };

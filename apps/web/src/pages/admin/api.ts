@@ -128,10 +128,15 @@ export interface AdminUserDetailPayload {
     mustChangePassword: boolean;
     isSupportAccount: boolean;
     isAiAccount: boolean;
+    verifiedAt: string | null;
+    deletionScheduledAt: string | null;
+    warningCount: number;
+    sessionCount: number;
     status: 'active' | 'suspended' | 'banned';
     suspendedUntil: string | null;
     moderationReason: string;
   };
+  warnings: { id: string; reason: string; createdAt: string }[];
   counts: {
     messages: number;
     chats: number;
@@ -308,4 +313,27 @@ export interface ReviewMessage {
   editedAt: string | null;
   isDeleted: boolean;
   readCount: number;
+}
+
+export interface UserSessionRow {
+  id: string;
+  ip: string;
+  userAgent: string;
+  deviceLabel: string;
+  createdAt: string;
+  lastSeenAt: string;
+  revokedAt: string | null;
+}
+
+export interface LoginEventRow {
+  id: string;
+  ip: string;
+  userAgent: string;
+  method: string;
+  at: string;
+}
+
+export interface UserSessionsPayload {
+  sessions: UserSessionRow[];
+  logins: LoginEventRow[];
 }

@@ -247,6 +247,30 @@ const loginUser = async (req, res) => {
     const accessToken = generateToken(user._id, tokenVersionOf(user));
     const refreshToken = generateRefreshToken(user._id, tokenVersionOf(user));
 
+    // 9b Users extras: record the device session and login history (no tokens).
+    try {
+      const UserSession = require('../models/UserSession');
+      const LoginEvent = require('../models/LoginEvent');
+      const ip = String(req.ip || '').replace(/^::ffff:/i, '');
+      const userAgent = String(req.headers?.['user-agent'] || '').slice(0, 300);
+      const existing = await UserSession.findOne({
+        userId: user._id,
+        userAgent,
+        revokedAt: null,
+        lastSeenAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      });
+      if (existing) {
+        existing.lastSeenAt = new Date();
+        existing.ip = ip || existing.ip;
+        await existing.save();
+      } else {
+        await UserSession.create({ userId: user._id, ip, userAgent, deviceLabel: userAgent.slice(0, 80) });
+      }
+      await LoginEvent.create({ userId: user._id, ip, userAgent, method: 'password' });
+    } catch (sessionError) {
+      console.warn('Login session record failed:', sessionError.message);
+    }
+
     // Do NOT mark the user online here: presence comes from live sockets.
     // Setting it on a REST login is what left flags stuck when the socket
     // never connected (or the process died before a clean disconnect).
@@ -317,6 +341,17 @@ const refreshToken = async (req, res) => {
         message: 'This session was signed out. Please sign in again.',
         code: 'SESSION_REVOKED',
       });
+    }
+
+    // 9b: a token refresh keeps the device session's last-seen fresh.
+    try {
+      await require('../models/UserSession').updateOne(
+        { userId: user._id, revokedAt: null },
+        { $set: { lastSeenAt: new Date() } },
+        { sort: { lastSeenAt: -1 } },
+      ).catch(() => {});
+    } catch (sessionError) {
+      console.warn('Refresh session touch failed:', sessionError.message);
     }
 
     // Rotate both tokens so a long-lived session can keep refreshing.
@@ -878,61 +913,7 @@ const deleteAccount = async (req, res) => {
     }
 
     const userId = user._id;
-
-    // Remove the user's statuses + stored files first.
-    try {
-      const Status = require('../models/Status');
-      const statusCleanup = require('../utils/statusCleanup');
-      const statuses = await Status.find({ userId });
-      for (const status of statuses) await statusCleanup.removeStatusWithMedia(status);
-    } catch (statusError) {
-      console.warn('Account deletion: status cleanup failed:', statusError.message);
-    }
-
-    // Chats: direct chats are removed with their messages; in groups the person
-    // is removed and a system message is posted.
-    try {
-      const Chat = require('../models/Chat');
-      const Message = require('../models/Message');
-      const groupSystem = require('../utils/groupSystem');
-
-      const directChats = await Chat.find({ type: 'direct', participants: userId });
-      for (const chat of directChats) {
-        await Message.deleteMany({ chatId: chat._id });
-        await Chat.deleteOne({ _id: chat._id });
-      }
-
-      const groups = await Chat.find({ type: 'group', participants: userId });
-      for (const group of groups) {
-        group.participants = group.participants.filter((id) => String(id) !== String(userId));
-        group.groupAdmins = (group.groupAdmins || []).filter((id) => String(id) !== String(userId));
-        if (group.participants.length === 0) {
-          await Message.deleteMany({ chatId: group._id });
-          await Chat.deleteOne({ _id: group._id });
-          continue;
-        }
-        if (group.groupAdmins.length === 0) group.groupAdmins = [group.participants[0]];
-        await group.save();
-        await groupSystem.postSystemMessage(group, `${user.displayName} deleted their account`);
-        await groupSystem.broadcastChatUpdate(group._id);
-        groupSystem.broadcastMemberList(group._id);
-      }
-    } catch (chatError) {
-      console.warn('Account deletion: chat cleanup failed:', chatError.message);
-    }
-
-    // Remove the user from other people's contacts / blocked lists.
-    try {
-      const User = require('../models/User');
-      await User.updateMany(
-        {},
-        { $pull: { contacts: userId, blocked: userId, onlineStatusExceptions: userId } },
-      );
-    } catch (contactError) {
-      console.warn('Account deletion: contact cleanup failed:', contactError.message);
-    }
-
-    await User.deleteOne({ _id: userId });
+    await require('../utils/accountDeletion').deleteAccountData(userId, user.displayName);
 
     return res.json({ message: 'Your Chatgram account has been deleted.' });
   } catch (error) {

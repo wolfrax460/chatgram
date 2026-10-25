@@ -18,6 +18,13 @@ const {
   userDetail,
   forceLogout,
   resetTwoFactor,
+  verifyEmail,
+  warnUser,
+  updateProfile,
+  removePhoto,
+  scheduleDeletion,
+  cancelDeletion,
+  userSessions,
 } = require('../controllers/adminOverviewController');
 const { systemHealth, auditList } = require('../controllers/adminHealthController');
 const moderation = require('../controllers/adminModerationController');
@@ -90,6 +97,13 @@ router.get('/users', requireAdminSession, listUsers);
 router.get('/users/:id', requireAdminSession, userDetail);
 router.post('/users/:id/force-logout', requireAdminSession, requireAdminCsrf, forceLogout);
 router.post('/users/:id/reset-2fa', requireAdminSession, requireAdminCsrf, resetTwoFactor);
+router.get('/users/:id/sessions', requireAdminSession, userSessions);
+router.post('/users/:id/verify-email', requireAdminSession, requireAdminCsrf, verifyEmail);
+router.post('/users/:id/warn', requireAdminSession, requireAdminCsrf, warnUser);
+router.patch('/users/:id/profile', requireAdminSession, requireAdminCsrf, updateProfile);
+router.post('/users/:id/remove-photo', requireAdminSession, requireAdminCsrf, removePhoto);
+router.post('/users/:id/delete', requireAdminSession, requireAdminCsrf, scheduleDeletion);
+router.post('/users/:id/cancel-delete', requireAdminSession, requireAdminCsrf, cancelDeletion);
 
 // Empty-screen recommendations editor (item 4, Announcements page).
 const recommendations = require('../ai/recommendations');

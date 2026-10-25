@@ -193,6 +193,15 @@ enable TOTP once built, paste the Groq key.
 - 9b left: Users extras (delete-with-grace, verify email, warn, devices/sessions, saved views, bulk
   actions), Inbox merge-duplicates. 9d left: device/session + login-history model.
 
+### 9b Users extras and device sessions deployed 2026-10-25
+- Device sessions + login history (no tokens stored, 90-day TTL) and the Devices & sessions tab (view audited).
+- Verify email, warn, edit display name, remove photo, delete with 30-day grace + cancel (sign-in blocked,
+  tokenVersion bumped, hourly purge through the shared account-deletion routine).
+- Tests: integration 21/21, Playwright flow; production smoke 17/17, probe data removed.
+- 9d device/session + login-history requirement is now covered.
+- Still open: bulk row actions / saved filter views / column visibility; Inbox merge-duplicates; then the
+  single final report.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,

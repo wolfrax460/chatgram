@@ -823,3 +823,15 @@ active (30 days), new (7 days) or selected ids (tests and individual follow-ups)
 are synchronous in batches and the scheduler ticks every 60 s inside the API process; there is no
 per-recipient delivery log beyond sent/failed counters, and sent announcements cannot be deleted (they stay
 in the audit trail).
+
+## D53 - Device sessions and login history are recorded without tokens; deletion has a 30-day grace (2026-10-25)
+
+Every successful password login upserts a UserSession (IP, user agent, device label, first/last seen) and
+writes a LoginEvent, refreshed on token refresh; sessions TTL out after 90 days and tokens are never stored.
+The admin user-detail "Devices & sessions" tab shows both and the view itself is audited. Account actions
+now include verify-email, warn (UserWarning + warningCount), rename, remove photo, and schedule-delete:
+the latter sets deletionScheduledAt, bumps tokenVersion (signs out everywhere) and blocks sign-in through
+the shared account-status gate until cancelled; an hourly scheduler purges due accounts through
+utils/accountDeletion, the same routine the user's own DELETE /api/auth/account uses. Every action is
+append-only audited, and the user detail response still never contains password hashes, tokens or 2FA
+secrets.

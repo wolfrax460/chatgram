@@ -30,6 +30,12 @@ function blockReason(user) {
         : 'This account is suspended.',
     };
   }
+  if (user.deletionScheduledAt) {
+    return {
+      code: 'ACCOUNT_DELETION_SCHEDULED',
+      message: 'This account is scheduled for deletion. Contact support to restore it before the 30 days end.',
+    };
+  }
   return null;
 }
 
