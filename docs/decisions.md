@@ -866,3 +866,27 @@ AdminInbox.deliveredAnswerMessageId, updates the chat lastMessage/preview and em
 AI thread no longer allows sharing an answer into arbitrary chats (that path produced the reported
 "Chatgram AI answer:" messages from the user's own account). Existing bad rows are cleaned by
 scripts/cleanup-bad-system-answers.js with a dry run and a JSON backup.
+
+## D57 - Group calls use an honest mesh cap (6 video / 12 audio) and need an SFU beyond that (2026-10-25)
+
+WebRTC group calls are a full mesh: every participant holds one peer connection per other person,
+so the number of upload streams grows with the square of the room. The server now enforces
+**6 participants for video** (15 connections) and **12 for audio-only** (66), and a video call can
+be joined audio-only past the video cap. A group video call above 6 people starts as audio-only and
+says so, instead of failing mid-call.
+
+**Why not 20:** the earlier 20-person cap was a number, not a capability. At 20 people each device
+would upload 19 video streams; several mobile networks cannot sustain even three. Capping honestly is
+better than promising a call that degrades into dropped tiles.
+
+**Next step for larger calls — a media server (SFU), e.g. self-hosted LiveKit.** That changes the
+architecture, so it is deliberately *not* built yet. It would need:
+- a LiveKit server on this VM (or a second one) with its own TURN story, an API key/secret pair,
+  and websocket ingress through nginx;
+- client migration from mesh peer connections to LiveKit rooms and tracks (publish/subscribe per
+  participant, active-speaker events, simulcast for scalable video quality);
+- room tokens minted by our API per call (so membership, blocking and privacy rules stay ours);
+- bandwidth and CPU budgeting on the VM (an SFU relays media, which the current design never did);
+- a fallback path so existing mesh calls keep working during rollout.
+
+Until then the caps are the contract: 6 video / 12 audio, enforced on the server, with clear UI.
