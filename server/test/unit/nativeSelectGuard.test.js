@@ -1,5 +1,5 @@
 /**
- * Guard (Change 3): raw native <select> elements are only allowed in the five
+ * Guard (Change 3): raw native <select> elements are only allowed in the three
  * legacy screens pinned below. Every new screen — and the whole admin dashboard
  * (pages/admin/**) — must use the shared dark dropdown component instead.
  *
@@ -19,7 +19,6 @@ const CSS = path.join(SRC, 'index.css');
 // shrink: adding one more to an allowlisted file is a failure.
 const LEGACY = new Map([
   ['pages/Admin.tsx', 2],
-  ['pages/AdminGate.tsx', 4],
   ['pages/Auth.tsx', 3],
   ['pages/Settings.tsx', 1],
 ]);
@@ -61,7 +60,7 @@ for (const file of files) {
   if (count > 0) found.set(path.relative(SRC, file).split(path.sep).join('/'), count);
 }
 
-check('the guard actually finds the legacy selects', found.size >= 4, [...found.keys()].join(', '));
+check('the guard actually finds the legacy selects', found.size >= 3, [...found.keys()].join(', '));
 
 const violations = [];
 for (const [rel, count] of found) {

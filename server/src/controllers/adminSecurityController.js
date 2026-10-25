@@ -4,6 +4,7 @@
  * inside the TOTP module.
  */
 const adminTotp = require('../admin/totp');
+const ipAllowlist = require('../admin/ipAllowlist');
 
 function fail(res, error) {
   const status = error.status || 500;
@@ -14,11 +15,31 @@ function fail(res, error) {
 async function state(req, res) {
   try {
     const status = await adminTotp.status();
+    const allowlist = await ipAllowlist.state();
     return res.json({
       ...status,
-      currentIp: req.ip || '',
+      ...allowlist,
+      currentIp: ipAllowlist.normalizeIp(req.ip) || '',
       note: 'Two-step verification is optional. When it is on, signing in also needs a 6-digit code from your authenticator app.',
     });
+  } catch (error) {
+    return fail(res, error);
+  }
+}
+
+async function setIpAllowlist(req, res) {
+  try {
+    return res.json(
+      await ipAllowlist.setAllowlist(
+        {
+          enabled: req.body?.enabled === true,
+          ips: req.body?.ips,
+          confirmCurrentIp: req.body?.confirmCurrentIp === true,
+        },
+        req.ip,
+        req,
+      ),
+    );
   } catch (error) {
     return fail(res, error);
   }
@@ -56,4 +77,4 @@ async function regenerateCodes(req, res) {
   }
 }
 
-module.exports = { state, start, enable, disable, regenerateCodes };
+module.exports = { state, setIpAllowlist, start, enable, disable, regenerateCodes };

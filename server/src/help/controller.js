@@ -650,10 +650,6 @@ const uploadAttachment = async (req, res) => {
 
 /* ------------------------------------------------------------------ admin */
 
-function requireSupportAccount(req, res, next) {
-  if (!req.user?.isSupportAccount) return res.status(403).json({ message: 'Support account required.' });
-  return next();
-}
 
 // @desc    Admin: all collections (including empty ones)
 // @route   GET /api/help/admin/collections
@@ -747,7 +743,6 @@ module.exports = {
   emailTranscript,
   messageFeedback,
   uploadAttachment,
-  requireSupportAccount,
   adminListCollections,
   adminUpsertCollection,
   adminDeleteCollection,

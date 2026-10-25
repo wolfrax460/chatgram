@@ -293,6 +293,7 @@ app.use('/api/support', supportRoutes);
 app.use('/api/ai', require('./routes/aiRoutes'));
 app.use('/api/admin/providers', require('./routes/adminProviderRoutes'));
 app.use('/api/admin/ai', require('./routes/adminAiRoutes'));
+app.use('/api/admin/support', require('./routes/adminSupportRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 
 // SPA fallback: any non-API GET that did not match a file returns index.html so

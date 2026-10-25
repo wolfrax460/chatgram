@@ -9,6 +9,7 @@ const AdminSession = require('../models/AdminSession');
 const AdminAudit = require('../models/AdminAudit');
 const admin = require('../admin/auth');
 const adminTotp = require('../admin/totp');
+const ipAllowlist = require('../admin/ipAllowlist');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -28,6 +29,15 @@ const login = async (req, res) => {
       message: `Too many failed attempts. Try again in ${Math.ceil(retryAfter / 60)} minute(s).`,
       code: 'ADMIN_LOCKED',
       retryAfter,
+    });
+  }
+
+  // The allowlist blocks sign-in from other networks as well.
+  if (await ipAllowlist.isBlocked(ip)) {
+    await admin.audit('login_ip_blocked', req);
+    return res.status(403).json({
+      message: 'This network is not allowed to use the admin panel.',
+      code: 'ADMIN_IP_BLOCKED',
     });
   }
 

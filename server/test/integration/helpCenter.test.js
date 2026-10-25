@@ -21,8 +21,8 @@ function check(name, condition, detail) {
   }
 }
 
-async function api(method, path, { token, body } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+async function api(method, path, { token, body, headers: extraHeaders } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(extraHeaders || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -171,26 +171,30 @@ async function main() {
   check('deleted conversation -> 404', gone.status === 404, `got ${gone.status}`);
 
   // --------------------------------------------------------------- admin
-  const User = require('../../src/models/User');
-  const adminEmail = `help-admin-${run}@chatgram.test`;
-  const registered = await api('POST', '/api/auth/register', {
-    body: { displayName: 'Help Admin', identifier: adminEmail, password: 'HelpAdminPass1!' },
+  // 9a: the help editor lives under the admin session only (the old
+  // support-account role guard was removed).
+  const adminLogin = await fetch(`${BASE}/api/admin/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'staging-admin-password-123' }),
   });
-  check('admin test user created', registered.status === 201, `got ${registered.status}`);
-  await User.updateOne({ email: adminEmail }, { $set: { isSupportAccount: true } });
-  const adminToken = registered.body.accessToken;
+  const adminLoginBody = await adminLogin.json();
+  const adminHeaders = {
+    Cookie: (adminLogin.headers.getSetCookie?.() ?? []).map((row) => row.split(';')[0]).join('; '),
+    'X-Admin-CSRF': adminLoginBody.csrfToken,
+  };
+  check('admin login for the help editor', adminLogin.status === 200 && Boolean(adminLoginBody.csrfToken), `got ${adminLogin.status}`);
 
-  const nonAdmin = await api('GET', '/api/help/admin/articles', {
-    token: (await api('POST', '/api/auth/register', {
-      body: { displayName: 'Normal User', identifier: `help-normal-${run}@chatgram.test`, password: 'NormalPass1!' },
-    })).body.accessToken,
+  const normalUser = await api('POST', '/api/auth/register', {
+    body: { displayName: 'Normal User', identifier: `help-normal-${run}@chatgram.test`, password: 'NormalPass1!' },
   });
-  check('non-admin cannot use the admin API -> 403', nonAdmin.status === 403, `got ${nonAdmin.status}`);
+  const nonAdmin = await api('GET', '/api/admin/support/help/articles', { token: normalUser.body.accessToken });
+  check('a normal user cannot use the admin help API -> 401', nonAdmin.status === 401, `got ${nonAdmin.status}`);
 
-  const adminArticles = await api('GET', '/api/help/admin/articles', { token: adminToken });
+  const adminArticles = await api('GET', '/api/admin/support/help/articles', { headers: adminHeaders });
   check('admin lists articles', adminArticles.status === 200 && (adminArticles.body || []).length >= 25, `got ${adminArticles.status}`);
-  const createdArticle = await api('PUT', '/api/help/admin/articles', {
-    token: adminToken,
+  const createdArticle = await api('PUT', '/api/admin/support/help/articles', {
+    headers: adminHeaders,
     body: {
       slug: `test-article-${run}`,
       collectionSlug: 'troubleshooting',
@@ -203,15 +207,15 @@ async function main() {
   check('admin creates an article', createdArticle.status === 200, `got ${createdArticle.status}`);
   const publicArticle = await api('GET', `/api/help/articles/test-article-${run}`);
   check('created article is public', publicArticle.status === 200, `got ${publicArticle.status}`);
-  const updatedArticle = await api('PUT', '/api/help/admin/articles', {
-    token: adminToken,
+  const updatedArticle = await api('PUT', '/api/admin/support/help/articles', {
+    headers: adminHeaders,
     body: { slug: `test-article-${run}`, collectionSlug: 'troubleshooting', title: 'Updated title', body: 'Updated body text.' },
   });
   check('admin updates the article', updatedArticle.body?.title === 'Updated title', updatedArticle.body?.title);
-  const deletedArticle = await api('DELETE', `/api/help/admin/articles/test-article-${run}`, { token: adminToken });
+  const deletedArticle = await api('DELETE', `/api/admin/support/help/articles/test-article-${run}`, { headers: adminHeaders });
   check('admin deletes the article', deletedArticle.status === 200, `got ${deletedArticle.status}`);
-  const badArticle = await api('PUT', '/api/help/admin/articles', {
-    token: adminToken,
+  const badArticle = await api('PUT', '/api/admin/support/help/articles', {
+    headers: adminHeaders,
     body: { slug: 'missing-fields' },
   });
   check('admin article validation -> 400', badArticle.status === 400, `got ${badArticle.status}`);
@@ -220,6 +224,7 @@ async function main() {
   const HelpConversation = require('../../src/help/models').HelpConversation;
   const HelpMessage = require('../../src/help/models').HelpMessage;
   const SupportTicket = require('../../src/models/SupportTicket');
+  const User = require('../../src/models/User');
   await HelpMessage.deleteMany({ conversationId: { $in: [] } });
   await HelpConversation.deleteMany({ guestId: { $in: [guestId, otherGuest] } });
   await SupportTicket.deleteMany({ contact: 'help-test@chatgram.test' });

@@ -43,12 +43,5 @@ router.post('/conversations/:id/handoff', controller.handoff);
 router.post('/conversations/:id/transcript', controller.emailTranscript);
 router.post('/messages/:id/feedback', controller.messageFeedback);
 
-// --- admin editor (support account only) ------------------------------------
-router.get('/admin/collections', protect, controller.requireSupportAccount, controller.adminListCollections);
-router.put('/admin/collections', protect, controller.requireSupportAccount, controller.adminUpsertCollection);
-router.delete('/admin/collections/:slug', protect, controller.requireSupportAccount, controller.adminDeleteCollection);
-router.get('/admin/articles', protect, controller.requireSupportAccount, controller.adminListArticles);
-router.put('/admin/articles', protect, controller.requireSupportAccount, controller.adminUpsertArticle);
-router.delete('/admin/articles/:slug', protect, controller.requireSupportAccount, controller.adminDeleteArticle);
 
 module.exports = router;

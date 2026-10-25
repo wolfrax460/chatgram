@@ -1,6 +1,10 @@
 /** Admin gate middleware: session cookie + CSRF. */
 const crypto = require('crypto');
 const admin = require('../admin/auth');
+const ipAllowlist = require('../admin/ipAllowlist');
+
+// Do not write an audit row on every blocked request from the same IP.
+const lastIpAudit = new Map();
 
 async function requireAdminSession(req, res, next) {
   if (!admin.configured()) {
@@ -13,6 +17,19 @@ async function requireAdminSession(req, res, next) {
     const session = await admin.loadSession(req);
     if (!session) {
       return res.status(401).json({ message: 'Admin sign-in required.', code: 'ADMIN_AUTH_REQUIRED' });
+    }
+    // Optional IP allowlist (9a): blocks other networks even with a valid cookie.
+    const blocked = await ipAllowlist.isBlocked(req.ip);
+    if (blocked) {
+      const now = Date.now();
+      if (!lastIpAudit.has(req.ip) || now - lastIpAudit.get(req.ip) > 60_000) {
+        lastIpAudit.set(req.ip, now);
+        void admin.audit('admin_ip_blocked', req, String(req.method || '') + ' ' + String(req.originalUrl || '').slice(0, 120));
+      }
+      return res.status(403).json({
+        message: 'This network is not allowed to use the admin panel.',
+        code: 'ADMIN_IP_BLOCKED',
+      });
     }
     req.adminSession = session;
     return next();

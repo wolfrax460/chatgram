@@ -16,6 +16,9 @@ const adminSecuritySchema = new mongoose.Schema(
     totpSecret: { type: String, default: '', select: false },
     // SHA-256 hashes of the recovery codes (never the codes themselves).
     recoveryCodes: { type: [String], default: [] },
+    // Optional IP allowlist (9a). Off by default; entries are IPs or IPv4 CIDRs.
+    ipAllowlistEnabled: { type: Boolean, default: false },
+    ipAllowlist: { type: [String], default: [] },
   },
   { timestamps: true },
 );

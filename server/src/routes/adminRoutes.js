@@ -36,6 +36,7 @@ router.post('/security/totp/start', requireAdminSession, requireAdminCsrf, admin
 router.post('/security/totp/enable', requireAdminSession, requireAdminCsrf, adminSecurity.enable);
 router.post('/security/totp/disable', requireAdminSession, requireAdminCsrf, adminSecurity.disable);
 router.post('/security/recovery-codes', requireAdminSession, requireAdminCsrf, adminSecurity.regenerateCodes);
+router.put('/security/ip-allowlist', requireAdminSession, requireAdminCsrf, adminSecurity.setIpAllowlist);
 router.post('/auth/change-password', requireAdminSession, requireAdminCsrf, changePassword);
 
 // Dashboard (Change 2): Overview + Users. Read-only fields only; no secrets.

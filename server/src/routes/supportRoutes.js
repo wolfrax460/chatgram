@@ -6,30 +6,6 @@ const { openSupportChat, supportInfo } = require('../controllers/supportControll
 const { createTicket, getTicket, deleteTicket, getTicketByChat, closeTicket } = require('../controllers/supportTicketController');
 const { askSupportAssistant } = require('../controllers/supportAssistantController');
 const { webhookHandler: telegramWebhook } = require('../support/telegramBot');
-const {
-  getAdminSettings,
-  updateAdminSettings,
-  getAdminStats,
-  testAi,
-  getKb,
-  updateKb,
-  resetKb,
-  listTickets,
-  getTicketDetail,
-  replyToTicketAdmin,
-  getAiLayerSettings,
-  updateAiLayerSettings,
-  testAiLayer,
-} = require('../controllers/supportAdminController');
-
-/** Only the built-in support account may use the dashboard. */
-const requireSupportAccount = (req, res, next) => {
-  if (!req.user?.isSupportAccount) {
-    return res.status(403).json({ message: 'Support account required.' });
-  }
-  return next();
-};
-
 // --- public help-widget endpoints (no auth) ---
 router.post('/assistant', askSupportAssistant);
 // Telegram bot webhook (secret in the path).
@@ -38,28 +14,16 @@ router.post('/tickets', createTicket);
 router.get('/tickets/:ticketId', getTicket);
 router.delete('/tickets/:ticketId', deleteTicket);
 
+// The old support-account dashboard is retired: support operations now live under
+// the admin session at /api/admin/support/*, so these paths must 404.
+router.use('/admin', (req, res) => res.status(404).json({ message: 'Not found.' }));
+
 router.use(protect);
 
 // Is support configured?
 // Support-account ticket badge + close (auth required, declared after protect)
 router.get('/tickets/by-chat/:chatId', getTicketByChat);
 router.post('/tickets/:ticketId/close', closeTicket);
-
-// Admin dashboard (support account only)
-router.get('/admin/settings', requireSupportAccount, getAdminSettings);
-router.put('/admin/settings', requireSupportAccount, updateAdminSettings);
-router.get('/admin/stats', requireSupportAccount, getAdminStats);
-router.post('/admin/test-ai', requireSupportAccount, testAi);
-// Provider-agnostic AI layer (encrypted key, fallback chain, test connection).
-router.get('/admin/ai', requireSupportAccount, getAiLayerSettings);
-router.put('/admin/ai', requireSupportAccount, updateAiLayerSettings);
-router.post('/admin/ai/test', requireSupportAccount, testAiLayer);
-router.get('/admin/kb', requireSupportAccount, getKb);
-router.put('/admin/kb', requireSupportAccount, updateKb);
-router.post('/admin/kb/reset', requireSupportAccount, resetKb);
-router.get('/admin/tickets', requireSupportAccount, listTickets);
-router.get('/admin/tickets/:ticketId', requireSupportAccount, getTicketDetail);
-router.post('/admin/tickets/:ticketId/reply', requireSupportAccount, replyToTicketAdmin);
 
 router.get('/', supportInfo);
 

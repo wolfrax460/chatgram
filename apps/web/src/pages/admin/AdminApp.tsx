@@ -20,7 +20,6 @@ const AuditPage = lazy(() => import('./AuditPage'));
 const AiUsagePage = lazy(() => import('./AiUsagePage'));
 const KnowledgePage = lazy(() => import('./KnowledgePage'));
 const ReportsPage = lazy(() => import('./ReportsPage'));
-const LegacyPanels = lazy(() => import('../AdminGate'));
 
 /* ------------------------------------------------------------------- routes */
 
@@ -46,7 +45,6 @@ const NAV: NavEntry[] = [
   { path: '/admin/settings', label: 'Settings', icon: Settings, group: 'Operations' },
   { path: '/admin/data-requests', label: 'Data requests', icon: Database, group: 'Operations' },
   { path: '/admin/security', label: 'Admin security', icon: ShieldCheck, group: 'Operations', built: true },
-  { path: '/admin/legacy', label: 'Legacy panels', icon: ClipboardList, group: 'Operations', built: true },
 ];
 
 const NAV_GROUPS = ['Monitor', 'People', 'Content', 'Chatgram AI', 'Operations'];
@@ -301,7 +299,6 @@ function PageForPath({
   if (normalized === '/admin/ai-usage') return <AiUsagePage />;
   if (normalized === '/admin/knowledge') return <KnowledgePage session={session} />;
   if (normalized === '/admin/announcements') return <AnnouncementsPage session={session} />;
-  if (normalized === '/admin/legacy') return <LegacyPanels />;
   const entry = NAV.find((item) => item.path === normalized) ?? NAV[0]!;
   return <PlaceholderPage entry={entry} />;
 }
@@ -347,13 +344,19 @@ function SecurityPage({ session, onSignOut }: { session: AdminSessionInfo; onSig
   const [totpCode, setTotpCode] = useState('');
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [disableForm, setDisableForm] = useState({ password: '', code: '' });
+  const [security, setSecurity] = useState<{ totpEnabled: boolean; recoveryCodesRemaining: number; ipAllowlistEnabled: boolean; ipAllowlist: string[]; currentIp?: string } | null>(null);
+  const [allowlistEnabled, setAllowlistEnabled] = useState(false);
+  const [allowlistText, setAllowlistText] = useState('');
 
   const load = useCallback(async () => {
     try {
       const sessionPayload = await adminFetch<{ sessions: typeof sessions }>('/api/admin/auth/sessions');
       const auditPayload = await adminFetch<{ entries: typeof audit }>('/api/admin/auth/audit');
-      const securityPayload = await adminFetch<{ totpEnabled: boolean; recoveryCodesRemaining: number; currentIp?: string }>('/api/admin/security');
+      const securityPayload = await adminFetch<{ totpEnabled: boolean; recoveryCodesRemaining: number; ipAllowlistEnabled: boolean; ipAllowlist: string[]; currentIp?: string }>('/api/admin/security');
       setTotp(securityPayload);
+      setSecurity(securityPayload);
+      setAllowlistEnabled(securityPayload.ipAllowlistEnabled === true);
+      setAllowlistText((securityPayload.ipAllowlist || []).join('\n'));
       setSessions(sessionPayload.sessions ?? []);
       setAudit(auditPayload.entries ?? []);
     } catch (loadError) {
@@ -385,6 +388,24 @@ function SecurityPage({ session, onSignOut }: { session: AdminSessionInfo; onSig
       toast.show('Admin password changed.');
     } catch (changeError) {
       setError(changeError instanceof AdminError ? changeError.message : 'Could not change the password.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveAllowlist() {
+    setBusy(true);
+    setError('');
+    try {
+      const payload = await adminFetch<{ message: string }>('/api/admin/security/ip-allowlist', {
+        method: 'PUT',
+        csrf: session.csrfToken,
+        body: { enabled: allowlistEnabled, ips: allowlistText, confirmCurrentIp: true },
+      });
+      toast.show(payload.message);
+      await load();
+    } catch (allowlistError) {
+      setError(allowlistError instanceof AdminError ? allowlistError.message : 'Could not save the IP allowlist.');
     } finally {
       setBusy(false);
     }
@@ -635,6 +656,44 @@ function SecurityPage({ session, onSignOut }: { session: AdminSessionInfo; onSig
               </div>
             </div>
           ) : null}
+        </div>
+        <div className="admin-card admin-card-pad md:col-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="admin-card-title">IP allowlist</p>
+            {security ? (
+              <span className={'admin-chip ' + (security.ipAllowlistEnabled ? 'admin-chip-success' : 'admin-chip-default')}>
+                {security.ipAllowlistEnabled ? 'on' : 'off'}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 text-[11.5px] text-[var(--ad-muted)]">
+            Optional. When it is on, signing in and every admin request must come from one of these IP addresses or IPv4
+            ranges. Your current IP is <span className="font-mono text-[var(--ad-text)]">{security?.currentIp || 'unknown'}</span>.
+          </p>
+          <label className="mt-2 flex items-center gap-2 text-[12px] font-semibold">
+            <input type="checkbox" checked={allowlistEnabled} onChange={(event) => setAllowlistEnabled(event.target.checked)} />
+            Only allow the addresses below
+          </label>
+          <label className="mt-2 block text-[11.5px] font-semibold text-[var(--ad-muted)]">
+            Addresses or ranges (one per line, or comma separated)
+            <textarea
+              className="admin-input mt-1 min-h-[80px] resize-y font-mono text-[12px]"
+              value={allowlistText}
+              onChange={(event) => setAllowlistText(event.target.value)}
+              placeholder={'203.0.113.10\n198.51.100.0/24'}
+            />
+          </label>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" className="admin-btn admin-btn-sm" onClick={() => setAllowlistText((current) => (current.trim() ? current + '\n' : '') + (security?.currentIp || ''))} disabled={!security?.currentIp}>
+              Add my current IP
+            </button>
+            <button type="button" className="admin-btn admin-btn-primary admin-btn-sm" onClick={() => void saveAllowlist()} disabled={busy}>
+              Save IP allowlist
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] text-[var(--ad-muted)]">
+            Safety check: turning this on is refused unless your current IP is included, so you cannot lock yourself out.
+          </p>
         </div>
         <div className="admin-card admin-card-pad">
           <p className="admin-card-title">Sessions</p>
