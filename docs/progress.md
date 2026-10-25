@@ -174,6 +174,15 @@ enable TOTP once built, paste the Groq key.
 - 9b left: Settings page, broadcast announcements, Users extras (delete-with-grace/verify-email/warn/
   devices+sessions/saved views/bulk actions), Inbox merge-duplicates. 9d left: retention-setting UI.
 
+### 9b Settings page deployed 2026-10-25
+- Site identity/URLs/support email, SMTP from fields + presence-only SMTP/Telegram status, privacy/terms
+  links, chat + review-log retention (review log now enforced from Settings), backups with real mongodump
+  ("Back up now"), last backup time/size, recent list and restore instructions.
+- Tabbed UI with save bar, unsaved-changes warning, server-side validation; no secret ever returned.
+- Tests: integration 15/15, unit 11/11, Playwright page; production smoke 17/17 including a real backup.
+- Honest limits: chat retention is policy metadata (no purge job yet); restores are manual.
+- 9b left: broadcast announcements, Users extras, Inbox merge-duplicates. 9d left: devices/session model.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,

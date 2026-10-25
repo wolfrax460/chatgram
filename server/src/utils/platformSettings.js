@@ -25,7 +25,28 @@ const DEFAULTS = {
   massMessageHourly: 200,
   signupThrottleEnabled: true,
   ipBans: [],
+  // 9b Settings page.
+  siteName: 'Chatgram',
+  siteUrl: 'https://chatgram-xi.vercel.app',
+  supportEmail: '',
+  smtpFromName: 'Chatgram',
+  smtpFromAddress: '',
+  privacyUrl: '/docs/#privacy',
+  termsUrl: '/docs/#terms',
+  dataRetentionDays: 365,
+  reviewLogRetentionDays: 730,
+  lastBackupAt: null,
+  lastBackupSizeBytes: 0,
+  lastBackupPath: '',
 };
+
+const SETTINGS_TEXTS = { siteName: 60, siteUrl: 300, supportEmail: 200, smtpFromName: 80, smtpFromAddress: 200, privacyUrl: 300, termsUrl: 300 };
+const SETTINGS_NUMBERS = { dataRetentionDays: [30, 3650], reviewLogRetentionDays: [30, 3650] };
+
+function validLink(value) {
+  const text = String(value || '').trim();
+  return text.startsWith('/') || /^https?:\/\//i.test(text);
+}
 
 const SAFETY_LISTS = ['blockedWords', 'blockedLinkDomains', 'blockedEmailDomains'];
 const SAFETY_NUMBERS = { messagesPerMinute: [5, 600], signupsPerHourPerIp: [1, 1000], massMessageHourly: [10, 10000] };
@@ -79,6 +100,34 @@ async function update(patch, req) {
       next[key] = cleanList(patch[key], key === 'blockedWords' ? 60 : 120);
     } else if (SAFETY_NUMBERS[key]) {
       const [min, max] = SAFETY_NUMBERS[key];
+      const value = Number(patch[key]);
+      if (!Number.isFinite(value) || value < min || value > max) {
+        const error = new Error(`${key} must be between ${min} and ${max}.`);
+        error.status = 400;
+        throw error;
+      }
+      next[key] = Math.round(value);
+    } else if (SETTINGS_TEXTS[key]) {
+      let value = String(patch[key] || '').trim();
+      if (value.length > SETTINGS_TEXTS[key]) {
+        const error = new Error(`${key} is too long (max ${SETTINGS_TEXTS[key]} characters).`);
+        error.status = 400;
+        throw error;
+      }
+      if ((key === 'siteUrl' || key === 'privacyUrl' || key === 'termsUrl') && !validLink(value)) {
+        const error = new Error(`${key} must be a /path or an http(s) URL.`);
+        error.status = 400;
+        throw error;
+      }
+      if (key === 'supportEmail' && value && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) {
+        const error = new Error('supportEmail must be a valid email address.');
+        error.status = 400;
+        throw error;
+      }
+      if (key === 'siteName' && !value) value = 'Chatgram';
+      next[key] = value;
+    } else if (SETTINGS_NUMBERS[key]) {
+      const [min, max] = SETTINGS_NUMBERS[key];
       const value = Number(patch[key]);
       if (!Number.isFinite(value) || value < min || value > max) {
         const error = new Error(`${key} must be between ${min} and ${max}.`);

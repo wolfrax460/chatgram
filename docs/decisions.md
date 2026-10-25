@@ -798,3 +798,15 @@ message sending checks blocked words/link domains and a per-user messages-per-mi
 are per-process in-memory sliding windows (one PM2 API process) — burst protection, not a durable
 audit trail; every settings change and IP ban/unban is audited instead. Device bans are not enforced:
 users have no stable device identifier yet, which is recorded as a cross.
+
+## D51 - Settings edits site policy; secrets stay in the environment; backups run mongodump (2026-10-25)
+
+The Settings page owns only non-secret policy (site name/URL, support email, from name/address, privacy/terms
+links, retention windows) plus the review-log retention, which the review log now reads from Settings
+instead of an environment variable. SMTP and Telegram credentials remain environment variables: the page
+reports only whether they are configured and never reads their values into a response, so a compromised
+admin session cannot exfiltrate them. "Back up now" shells out to mongodump with a 4-minute timeout into
+server/backups and records the last backup time/size; if mongodump is missing the endpoint returns 501
+BACKUP_TOOL_MISSING instead of pretending. The chat retention value is policy metadata only - there is no
+purge job yet, and restores are manual (mongorestore --gzip --archive --drop) following the documented
+guide.

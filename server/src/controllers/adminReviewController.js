@@ -33,7 +33,14 @@ const BURST_THRESHOLD = 10;
 const BURST_WINDOW_MS = 15 * 60 * 1000;
 const ACTIVE_USER_FIELDS = 'displayName username email phone avatarUrl status lastSeen createdAt';
 
-function retentionDays() {
+async function retentionDays() {
+  try {
+    const settings = await require('../utils/platformSettings').get();
+    const configuredValue = Number(settings.reviewLogRetentionDays);
+    if (Number.isFinite(configuredValue) && configuredValue >= 30) return Math.round(configuredValue);
+  } catch (error) {
+    console.warn('Review retention setting read failed:', error.message);
+  }
   const value = Number(process.env.REVIEW_LOG_RETENTION_DAYS);
   return Number.isFinite(value) && value > 30 ? Math.round(value) : 730;
 }
@@ -351,7 +358,8 @@ async function messages(req, res) {
 /** GET /reviews â€” "Who viewed what" list, paginated, with optional CSV export. */
 async function list(req, res) {
   try {
-    await ReviewSession.deleteMany({ createdAt: { $lt: new Date(Date.now() - retentionDays() * 24 * 60 * 60 * 1000) } });
+    const retention = await retentionDays();
+    await ReviewSession.deleteMany({ createdAt: { $lt: new Date(Date.now() - retention * 24 * 60 * 60 * 1000) } });
     await admin.audit('review_log_view', req, `page=${req.query?.page || 0} export=${req.query?.format || 'json'}`);
 
     const page = Math.max(0, Math.floor(Number(req.query?.page) || 0));
@@ -413,7 +421,7 @@ async function list(req, res) {
       page,
       limit,
       total,
-      retentionDays: retentionDays(),
+      retentionDays: await retentionDays(),
     });
   } catch (error) {
     console.error('Review log failed:', error.message);
@@ -437,7 +445,7 @@ async function stats(req, res) {
       active,
       burstThreshold: BURST_THRESHOLD,
       rateLimitPerHour: RATE_LIMIT_PER_HOUR,
-      retentionDays: retentionDays(),
+      retentionDays: await retentionDays(),
       burst: lastHour >= BURST_THRESHOLD,
     });
   } catch (error) {

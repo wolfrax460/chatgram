@@ -29,6 +29,7 @@ const DataRequestsPage = lazy(() => import('./DataRequestsPage'));
 const ReviewsPage = lazy(() => import('./ReviewsPage'));
 const SearchPage = lazy(() => import('./SearchPage'));
 const SafetyPage = lazy(() => import('./SafetyPage'));
+const SettingsPage = lazy(() => import('./SettingsPage'));
 
 /* ------------------------------------------------------------------- routes */
 
@@ -54,7 +55,7 @@ const NAV: NavEntry[] = [
   { path: '/admin/announcements', label: 'Announcements', icon: Megaphone, group: 'Operations', built: true },
   { path: '/admin/releases', label: 'App releases', icon: Download, group: 'Operations', built: true },
   { path: '/admin/flags', label: 'Feature flags', icon: Flag, group: 'Operations', built: true },
-  { path: '/admin/settings', label: 'Settings', icon: Settings, group: 'Operations' },
+  { path: '/admin/settings', label: 'Settings', icon: Settings, group: 'Operations', built: true },
   { path: '/admin/data-requests', label: 'Data requests', icon: Database, group: 'Operations', built: true },
   { path: '/admin/security', label: 'Admin security', icon: ShieldCheck, group: 'Operations', built: true },
 ];
@@ -317,6 +318,7 @@ function PageForPath({
   if (normalized === '/admin/reviews') return <ReviewsPage />;
   if (normalized === '/admin/search') return <SearchPage session={session} />;
   if (normalized === '/admin/safety') return <SafetyPage session={session} />;
+  if (normalized === '/admin/settings') return <SettingsPage session={session} />;
   if (normalized === '/admin/ai-usage') return <AiUsagePage />;
   if (normalized === '/admin/knowledge') return <KnowledgePage session={session} />;
   if (normalized === '/admin/announcements') return <AnnouncementsPage session={session} />;

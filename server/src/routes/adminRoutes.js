@@ -29,6 +29,7 @@ const platform = require('../controllers/adminPlatformController');
 const dataRequests = require('../controllers/adminDataRequestController');
 const reviews = require('../controllers/adminReviewController');
 const safetyAdmin = require('../controllers/adminSafetyController');
+const siteSettings = require('../controllers/adminSettingsController');
 
 router.post('/auth/login', login);
 router.get('/auth/session', requireAdminSession, sessionInfo);
@@ -125,5 +126,10 @@ router.put('/safety', requireAdminSession, requireAdminCsrf, safetyAdmin.save);
 router.get('/safety/signals', requireAdminSession, safetyAdmin.signals);
 router.post('/safety/ip-bans', requireAdminSession, requireAdminCsrf, safetyAdmin.addIpBan);
 router.delete('/safety/ip-bans/:ip', requireAdminSession, requireAdminCsrf, safetyAdmin.removeIpBan);
+
+// 9b Settings: site/retention/legal settings, SMTP/Telegram status and backups.
+router.get('/settings', requireAdminSession, siteSettings.state);
+router.put('/settings', requireAdminSession, requireAdminCsrf, siteSettings.save);
+router.post('/settings/backup', requireAdminSession, requireAdminCsrf, siteSettings.backupNow);
 
 module.exports = router;
