@@ -114,6 +114,15 @@ enable TOTP once built, paste the Groq key.
   the per-type multer caps yet.
 - 9d oversight and items 5/6/7 are not started.
 
+### Data requests deployed 2026-10-25
+- Tracked export/delete requests with queue, filters, optional grace period, cancel, JSON
+  export download and audited confirmed deletion; verified end-to-end in production with a
+  temporary account deleted by the request.
+- Remaining 9b: Safety & abuse, Settings (site/SMTP/Telegram/retention/backups), broadcast
+  announcements, Users extras (delete-with-grace, verify email, warn, device/session +
+  login-history data, saved filters/bulk actions/column visibility), Inbox merge-duplicates.
+- 9d oversight and items 5/6/7 are not started.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,

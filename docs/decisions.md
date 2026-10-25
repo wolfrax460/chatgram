@@ -726,3 +726,14 @@ codes. The public GET /api/app/features feeds the clients, which show a maintena
 AI rail when AI is off and the help widget when support is off. Every save is audited. The platform
 upload limit is stored and shown in the UI but the existing per-type multer limits keep enforcing
 the actual file caps.
+
+## D45 - Data requests are tracked, explicit and audited (2026-10-25)
+
+A DataRequest document tracks an export or deletion for one user (pending -> completed/cancelled,
+with an optional grace date for deletions). Exports are built on demand into a JSON artifact (profile,
+contacts, chats, up to 5000 messages, statuses) stored on the request and never returned by list
+endpoints; a completed export can be downloaded once as an attachment. Deletion is never implicit:
+the admin must confirm it, and it removes the profile, sent messages, statuses, contacts and chat
+memberships (chats with remaining participants stay), plus reports involving the user. Every step is
+audited. Scheduled deletions are shown and can be cancelled or executed later; there is no background
+daemon yet.
