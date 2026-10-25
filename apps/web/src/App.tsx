@@ -20,6 +20,7 @@ import { useRealtimeBridge } from './lib/useRealtime';
 import { setDoNotDisturb } from './lib/notify';
 import { useProfilePanel } from './lib/profilePanel';
 import { ChatList } from './components/ChatList';
+import AnnouncementBanner from './components/AnnouncementBanner';
 import { ChatHeader } from './components/ChatHeader';
 import { MessageBubble } from './components/MessageBubble';
 import Composer from './components/Composer';
@@ -945,6 +946,7 @@ function Shell({ features }: { features: AppFeatures | null }) {
           <aside
             className={`${tab === 'ai' || selected ? 'hidden lg:flex' : 'flex'} w-full shrink-0 flex-col border-r border-ink-200 dark:border-white/10 sm:w-[330px]`}
           >
+            <AnnouncementBanner />
             <button
               type="button"
               onClick={() => setTab('ai')}

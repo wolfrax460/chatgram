@@ -320,6 +320,15 @@ module.exports = { app, server, io };
 
 const PORT = Number(process.env.PORT) || 5000;
 
+// Scheduled broadcasts (9b): deliver due announcements once a minute. The
+// interval is unref'd so it never keeps the process alive during shutdown.
+const broadcastTimer = setInterval(() => {
+  require('./controllers/adminBroadcastsController')
+    .runDue()
+    .catch((error) => console.warn('Broadcast scheduler failed:', error.message));
+}, 60_000);
+broadcastTimer.unref();
+
 server.listen(PORT, () => {
   // The verbose LAN banner is a local-development convenience; in production
   // nginx is the only public entry and the output just fills journald.

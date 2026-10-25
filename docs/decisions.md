@@ -810,3 +810,16 @@ server/backups and records the last backup time/size; if mongodump is missing th
 BACKUP_TOOL_MISSING instead of pretending. The chat retention value is policy metadata only - there is no
 purge job yet, and restores are manual (mongorestore --gzip --archive --drop) following the documented
 guide.
+
+## D52 - Announcements are banners or official-account direct messages with preview + confirmation (2026-10-25)
+
+Item 8 is two features behind one admin page. A banner is a dismissible strip at the top of the chat list:
+the admin drafts text/link/window and publishes it; GET /api/app/announcements returns only the active
+sent banner and the web app remembers dismissal per banner id. A message broadcast is delivered as a real
+direct message from the official Chatgram account (support account first, then CHATGRAM_ADMIN_EMAIL, then
+any admin-role account) into a direct chat with each recipient, so it behaves exactly like any other chat
+message. The admin must preview the recipient count/sample and pass confirm:true; segments are everyone,
+active (30 days), new (7 days) or selected ids (tests and individual follow-ups), capped at 5,000. Sends
+are synchronous in batches and the scheduler ticks every 60 s inside the API process; there is no
+per-recipient delivery log beyond sent/failed counters, and sent announcements cannot be deleted (they stay
+in the audit trail).

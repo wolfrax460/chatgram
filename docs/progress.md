@@ -183,6 +183,16 @@ enable TOTP once built, paste the Groq key.
 - Honest limits: chat retention is policy metadata (no purge job yet); restores are manual.
 - 9b left: broadcast announcements, Users extras, Inbox merge-duplicates. 9d left: devices/session model.
 
+### 9b Announcements and broadcasts deployed 2026-10-25
+- In-app banner (title/text/link/window, dismissible per banner) and official-account message broadcasts
+  with preview + confirmation, scheduling, recipient segments and delivered/failed counters.
+- Dashboard Broadcasts page; public /api/app/announcements; app banner component.
+- Tests: integration 22/22, unit 17/17, Playwright; production smoke 16/16 (banner public, selected
+  broadcast delivered to probes, production user saw the banner), probes removed.
+- Honest limits: 5,000-recipient cap and in-process scheduler; sent broadcasts kept, not deletable.
+- 9b left: Users extras (delete-with-grace, verify email, warn, devices/sessions, saved views, bulk
+  actions), Inbox merge-duplicates. 9d left: device/session + login-history model.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,

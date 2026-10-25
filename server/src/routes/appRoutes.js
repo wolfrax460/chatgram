@@ -28,6 +28,9 @@ router.get('/features', async (req, res) => {
     return res.status(500).json({ message: 'Could not load the feature flags.' });
   }
 });
+// Active in-app announcement banner (public: clients show it before signing in).
+router.get('/announcements', require('../controllers/adminBroadcastsController').publicBanner);
+
 // Published Windows/Android/Web releases for the apps and the landing downloads page.
 router.get('/releases', publicReleases);
 

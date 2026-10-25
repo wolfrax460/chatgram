@@ -30,6 +30,7 @@ const dataRequests = require('../controllers/adminDataRequestController');
 const reviews = require('../controllers/adminReviewController');
 const safetyAdmin = require('../controllers/adminSafetyController');
 const siteSettings = require('../controllers/adminSettingsController');
+const broadcasts = require('../controllers/adminBroadcastsController');
 
 router.post('/auth/login', login);
 router.get('/auth/session', requireAdminSession, sessionInfo);
@@ -131,5 +132,23 @@ router.delete('/safety/ip-bans/:ip', requireAdminSession, requireAdminCsrf, safe
 router.get('/settings', requireAdminSession, siteSettings.state);
 router.put('/settings', requireAdminSession, requireAdminCsrf, siteSettings.save);
 router.post('/settings/backup', requireAdminSession, requireAdminCsrf, siteSettings.backupNow);
+
+// 9b Announcements: in-app banner + official-account broadcasts.
+router.get('/broadcasts', requireAdminSession, broadcasts.list);
+router.post('/broadcasts', requireAdminSession, requireAdminCsrf, broadcasts.create);
+router.get('/broadcasts/:id/preview', requireAdminSession, broadcasts.preview);
+router.post('/broadcasts/:id/send', requireAdminSession, requireAdminCsrf, broadcasts.send);
+router.post('/broadcasts/:id/cancel', requireAdminSession, requireAdminCsrf, broadcasts.cancel);
+router.delete('/broadcasts/:id', requireAdminSession, requireAdminCsrf, broadcasts.remove);
+// Operational: deliver any scheduled broadcasts that are due right now (the
+// scheduler also runs this every minute in the API process).
+router.post('/broadcasts/run-due', requireAdminSession, requireAdminCsrf, async (req, res) => {
+  try {
+    const delivered = await broadcasts.runDue();
+    return res.json({ delivered });
+  } catch (error) {
+    return res.status(500).json({ message: 'Could not run the scheduled announcements.' });
+  }
+});
 
 module.exports = router;
