@@ -737,3 +737,17 @@ the admin must confirm it, and it removes the profile, sent messages, statuses, 
 memberships (chats with remaining participants stay), plus reports involving the user. Every step is
 audited. Scheduled deletions are shown and can be cancelled or executed later; there is no background
 daemon yet.
+
+## D46 - Installers are built locally, hosted on the VM, and proxied at /downloads (2026-10-25)
+
+The Electron shell and the Capacitor app both load the hosted web client (single source of truth), so
+their installers only change when the shells do. Windows: electron-builder NSIS, version 1.1.0, built
+from the already-installed Electron via `build.electronDist` (no 115 MB re-download), auto-update feed
+pointing at `https://chatgram-xi.vercel.app/downloads` with a launch-time minimum/forced-version gate
+from `/api/app/releases`. Android: Capacitor 6, `app.chatgram.android`, Gradle 9.3.1 (local cache),
+AGP 8.13.1, JDK 17, compile/target SDK 36, min SDK 24, debug key (sideload only). Binaries live on the
+VM under `/var/www/downloads` (nginx, attachment headers) and are served at the landing domain via a
+`/downloads/(.*)` proxy route; the deploy script fails if `/downloads/latest.yml` is not 200. Releases
+are published through the admin App releases page so the landing Downloads tab and the updater share
+the same source of truth. The installers are unsigned/debug-signed and say so wherever they are
+linked.

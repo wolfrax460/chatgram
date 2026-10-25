@@ -123,6 +123,19 @@ enable TOTP once built, paste the Groq key.
   login-history data, saved filters/bulk actions/column visibility), Inbox merge-duplicates.
 - 9d oversight and items 5/6/7 are not started.
 
+### Items 5 and 6 delivered 2026-10-25
+- Windows: `chatgram-windows-setup.exe` 1.1.0 (unsigned NSIS, 81,823,613 B, SHA-256 `1943d51a…dbae5`),
+  auto-update `latest.yml`, start-on-login, tray badge, minimum-version gate. Build notes:
+  docs/desktop-build.md.
+- Android: `chatgram-android.apk` 1.1.0 debug-signed (4,127,661 B, SHA-256 `a5891a58…e3fc5`),
+  app.chatgram.android, minSdk 24 / targetSdk 36, branded icon + dark splash. Build notes:
+  docs/android-build.md. Not tested on a real phone or emulator.
+- Hosting: files on the VM under /var/www/downloads, proxied at /downloads via the landing domain;
+  releases published (windows/android/web 1.1.0) for the landing page and the updater.
+- Item 7 landing Features/Downloads UI is the remaining piece (files + feed are ready).
+- Remaining 9b: Safety & abuse, Settings, broadcast announcements, Users extras, Inbox merge.
+- 9d oversight not started.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,
