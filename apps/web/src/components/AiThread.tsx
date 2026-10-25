@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Bot, Copy, MessageCircle, RefreshCw, Reply, Share2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Bot, Copy, RefreshCw, Reply, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { usePrefs } from '@chatgram/core';
 import { api } from '../lib/api';
 import { aiThread, useAiThread } from '../lib/aiThread';
@@ -236,17 +235,11 @@ export function AiThread({
   const [replyTo, setReplyTo] = useState<{ id: string; name: string; preview: string } | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [inChatSearch, setInChatSearch] = useState('');
-  const [shareFor, setShareFor] = useState<AiMessage | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const lastUserText = useRef('');
   const abortRef = useRef<AbortController | null>(null);
-  const shareTargets = useQuery({
-    queryKey: ['chats'],
-    queryFn: () => api.chats(),
-    enabled: Boolean(shareFor),
-  });
 
   useEffect(() => {
     aiThread.setViewing(true);
@@ -540,17 +533,6 @@ export function AiThread({
     }
   }
 
-  async function shareTo(chatId: string, title: string) {
-    if (!shareFor) return;
-    try {
-      await api.sendMessage({ chatId, type: 'text', content: `Chatgram AI answer:\n\n${visibleText(shareFor.content)}` });
-      setShareFor(null);
-      setNotice(`Answer shared to ${title}.`);
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Could not share the answer');
-    }
-  }
-
   const visibleMessages = inChatSearch.trim()
     ? messages.filter((message) => message.content.toLowerCase().includes(inChatSearch.trim().toLowerCase()))
     : messages;
@@ -716,14 +698,6 @@ export function AiThread({
                             <button
                               type="button"
                               className="inline-flex items-center gap-1 hover:text-ink-700 dark:hover:text-ink-100"
-                              aria-label="Share answer to another chat"
-                              onClick={() => setShareFor(message)}
-                            >
-                              <Share2 className="h-3 w-3" /> Share
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 hover:text-ink-700 dark:hover:text-ink-100"
                               aria-label="Reply to this message"
                               onClick={() => setReplyTo({ id: message.id, name: 'Chatgram AI', preview: visibleText(message.content).slice(0, 120) })}
                             >
@@ -810,45 +784,6 @@ export function AiThread({
           onDismissNotice={() => setNotice(null)}
         />
       </div>
-
-      {shareFor ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={() => setShareFor(null)}>
-          <div
-            className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-ink-800"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-label="Share Chatgram AI answer"
-          >
-            <h3 className="text-lg font-bold">Share this answer</h3>
-            <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Send it as a message to one of your chats.</p>
-            <ul className="mt-3 max-h-72 overflow-y-auto">
-              {(shareTargets.data ?? []).map((chat) => (
-                <li key={chat.id}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-ink-100 dark:hover:bg-white/5"
-                    onClick={() => void shareTo(chat.id, chat.groupName || 'this chat')}
-                  >
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[10px] font-bold text-white">
-                      {chat.type === 'group' ? <MessageCircle className="h-4 w-4" /> : (chat.groupName || 'Chat').slice(0, 2).toUpperCase()}
-                    </span>
-                    <span className="truncate text-sm">{chat.groupName || 'Direct chat'}</span>
-                  </button>
-                </li>
-              ))}
-              {shareTargets.isLoading ? <li className="p-2 text-sm text-ink-500">Loading chats…</li> : null}
-              {!shareTargets.isLoading && (shareTargets.data ?? []).length === 0 ? (
-                <li className="p-2 text-sm text-ink-500">No other chats yet.</li>
-              ) : null}
-            </ul>
-            <div className="mt-3 flex justify-end">
-              <button type="button" className="btn-ghost" onClick={() => setShareFor(null)}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {historyOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={() => setHistoryOpen(false)}>

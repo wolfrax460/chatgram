@@ -77,10 +77,16 @@ router.post('/inbox/:id/answer', requireAdminCsrf, async (req, res) => {
   try {
     const result = await ai.answerInboxItem(req.params.id, req.body?.answer);
     if (!result) return res.status(404).json({ message: 'Inbox item not found.' });
-    await admin.audit('ai_inbox_answer', req, req.params.id);
-    return res.json({ message: 'Answer saved and added to the knowledge base.', item: { id: req.params.id, status: 'answered' } });
+    await admin.audit('ai_inbox_answer', req, `${req.params.id} delivered=${result.delivered?.delivered ? 'yes' : result.delivered?.alreadyDelivered ? 'already' : 'no'}`);
+    return res.json({
+      message: result.delivered?.alreadyDelivered
+        ? 'This answer was already delivered (idempotent, no duplicate was sent).'
+        : 'Answer saved, added to the knowledge base and sent from the Chatgram Support account.',
+      item: { id: req.params.id, status: 'answered' },
+      delivered: result.delivered || null,
+    });
   } catch (error) {
-    return res.status(400).json({ message: error.message || 'Could not save the answer.' });
+    return res.status(error.status || 400).json({ message: error.message || 'Could not save the answer.', code: error.code || 'ANSWER_INVALID' });
   }
 });
 

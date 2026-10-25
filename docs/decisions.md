@@ -854,3 +854,15 @@ support/AI accounts, applies the same effects as the single-user actions (includ
 suspend/force-logout) and writes one admin_users_bulk audit row with the action, counts and reason. Saved
 filter views and column visibility are per-browser localStorage preferences (not server state), so no new
 user data is stored; CSV export covers the current page or the selection through the same client-side code.
+
+## D56 - System answers are validated, system-sent and delivered once (2026-10-25)
+
+Only the Chatgram Support account (created automatically if a deployment lacks one) may send
+system-originated answers, and only into the explicit direct conversation between that account and the asker
+(never a chat chosen by recency/name, never the signed-in admin's account). Admin answers are trimmed,
+stripped of the legacy "Chatgram AI answer:" label, and rejected when empty or when they contain the AI
+placeholder; rejected answers create no message and no knowledge-base entry. Delivery is idempotent via
+AdminInbox.deliveredAnswerMessageId, updates the chat lastMessage/preview and emits realtime events. The
+AI thread no longer allows sharing an answer into arbitrary chats (that path produced the reported
+"Chatgram AI answer:" messages from the user's own account). Existing bad rows are cleaned by
+scripts/cleanup-bad-system-answers.js with a dry run and a JSON backup.

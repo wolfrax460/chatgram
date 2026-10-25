@@ -17,6 +17,80 @@ const HISTORY_LIMIT = 12;
 const HOURLY_LIMIT = Number(process.env.AI_HOURLY_LIMIT || 30);
 const DAILY_LIMIT = Number(process.env.AI_DAILY_LIMIT || 200);
 
+const FALLBACK_ANSWER_TEXT = "I don't have a confirmed answer on that yet, I've noted it for the team.";
+const AI_ANSWER_LABEL = 'Chatgram AI answer:';
+
+function normalizeAnswerText(value) {
+  return String(value || '').replace(/\r\n/g, '\n').trim();
+}
+
+/** True for the honest placeholder (exact, prefixed, or embedded). */
+function isFallbackAnswer(value) {
+  const t = normalizeAnswerText(value).toLowerCase();
+  if (!t) return false;
+  const fallback = FALLBACK_ANSWER_TEXT.toLowerCase();
+  return t === fallback || t.startsWith(fallback) || t.includes(fallback);
+}
+
+/**
+ * Validate an admin-written answer before it is stored or delivered.
+ * Rejects empty/whitespace text, the AI placeholder and the old
+ * "Chatgram AI answer:" label; returns the clean text to store.
+ */
+function cleanAdminAnswer(raw) {
+  let value = normalizeAnswerText(raw);
+  if (!value) {
+    const error = new Error('Write the answer before saving it.');
+    error.status = 422;
+    error.code = 'ANSWER_REQUIRED';
+    throw error;
+  }
+  if (value.toLowerCase().startsWith(AI_ANSWER_LABEL.toLowerCase())) {
+    value = value.slice(AI_ANSWER_LABEL.length).trim();
+  }
+  if (value.length < 3) {
+    const error = new Error('The answer is too short.');
+    error.status = 422;
+    error.code = 'ANSWER_REQUIRED';
+    throw error;
+  }
+  if (isFallbackAnswer(value)) {
+    const error = new Error('The AI placeholder ("I don\'t have a confirmed answer…") cannot be saved or sent as an answer. Write a real answer first.');
+    error.status = 422;
+    error.code = 'ANSWER_IS_FALLBACK';
+    throw error;
+  }
+  return value.slice(0, 4000);
+}
+
+/**
+ * The system account that owns every system-originated message: the Chatgram
+ * Support account, created here if this deployment does not have one yet. It is
+ * never the signed-in admin's account.
+ */
+async function ensureSystemAccount() {
+  const User = mongoose.models.User || require('../models/User');
+  let user = await User.findOne({ isSupportAccount: true });
+  if (user) return user;
+  const email = String(process.env.SUPPORT_EMAIL || 'support@chatgram.local').toLowerCase();
+  user = await User.findOne({ email });
+  if (user) {
+    user.isSupportAccount = true;
+    await user.save({ validateBeforeSave: false });
+    return user;
+  }
+  user = await User.create({
+    email,
+    displayName: process.env.SUPPORT_NAME || 'Chatgram Support',
+    password: crypto.randomBytes(24).toString('hex'),
+    isSupportAccount: true,
+    verifiedAt: new Date(),
+  });
+  console.log('Created the Chatgram Support system account for system messages.');
+  return user;
+}
+
+
 // Every "all providers failed" event is timestamped; 5 in 10 minutes = degraded.
 const providerFailures = [];
 function recordProviderFailure() {
@@ -75,6 +149,9 @@ const adminInboxSchema = new mongoose.Schema(
     lastSeenAt: { type: Date, default: Date.now },
     deliveredAt: { type: Date, default: null },
     deliveredMessageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
+    // 9b/system answers: one delivered answer message per inbox record.
+    deliveredAnswerMessageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
+    answerDeliveredAt: { type: Date, default: null },
     // 9b Inbox merge: duplicate rows point at the record they were merged into.
     mergedInto: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminInbox', default: null },
   },
@@ -553,49 +630,78 @@ async function inboxUnreadCount() {
 }
 
 async function deliverAnswerToUser(item, answerText) {
-  if (!item?.askerId) return false;
-  try {
-    const User = mongoose.models.User || require('../models/User');
-    const Chat = mongoose.models.Chat || require('../models/Chat');
-    const Message = mongoose.models.Message || require('../models/Message');
-    const asker = await User.findById(item.askerId).select('_id');
-    const support = await User.findOne({ isSupportAccount: true }).select('_id');
-    if (!asker || !support) return false;
-    let chat = await Chat.findOne({ type: 'direct', participants: { $all: [asker._id, support._id] } });
-    if (!chat) chat = await Chat.create({ type: 'direct', participants: [support._id, asker._id] });
-    await Message.create({
-      chatId: chat._id,
-      senderId: support._id,
-      type: 'text',
-      content: String(answerText).slice(0, 4000),
-      sentAt: new Date(),
-      deliveredTo: [],
-      readBy: [],
-    });
-    await Chat.updateOne({ _id: chat._id }, { updatedAt: new Date() });
-    return true;
-  } catch (error) {
-    console.warn('Answer delivery skipped:', error.message);
-    return false;
+  if (!item?.askerId) return { delivered: false, reason: 'no-asker' };
+  const text = cleanAdminAnswer(answerText);
+  const User = mongoose.models.User || require('../models/User');
+  const Chat = mongoose.models.Chat || require('../models/Chat');
+  const Message = mongoose.models.Message || require('../models/Message');
+  const asker = await User.findById(item.askerId).select('_id').lean();
+  if (!asker) return { delivered: false, reason: 'no-asker' };
+  const system = await ensureSystemAccount();
+
+  // The system conversation is the direct chat between the system account and
+  // the asker. It is resolved explicitly, never chosen by recency or name.
+  let chat = await Chat.findOne({ type: 'direct', participants: { $all: [system._id, asker._id] } });
+  if (!chat) chat = await Chat.create({ type: 'direct', participants: [system._id, asker._id] });
+
+  // Idempotent: one delivered answer message per inbox record.
+  if (item.deliveredAnswerMessageId) {
+    const existing = await Message.exists({ _id: item.deliveredAnswerMessageId });
+    if (existing) {
+      return { delivered: false, alreadyDelivered: true, chatId: String(chat._id), messageId: String(item.deliveredAnswerMessageId) };
+    }
   }
+
+  const message = await Message.create({
+    chatId: chat._id,
+    senderId: system._id,
+    type: 'text',
+    content: text,
+    sentAt: new Date(),
+    deliveredTo: [],
+    readBy: [],
+  });
+  await Chat.updateOne({ _id: chat._id }, { $set: { lastMessage: message._id }, $currentDate: { updatedAt: true } });
+  item.deliveredAnswerMessageId = message._id;
+  item.answerDeliveredAt = new Date();
+  await item.save();
+
+  try {
+    const populated = await Message.findById(message._id)
+      .populate('senderId', '_id displayName avatarUrl phone')
+      .lean();
+    const realtime = require('../utils/realtime');
+    realtime.joinUsersToChat(chat._id, [String(system._id), String(asker._id)]);
+    realtime.emitToChat(chat._id, 'message:new', populated);
+    realtime.emitToUser(asker._id, 'chat:updated', { chatId: String(chat._id) });
+  } catch (emitError) {
+    console.warn('Answer delivery emit skipped:', emitError.message);
+  }
+  return { delivered: true, chatId: String(chat._id), messageId: String(message._id) };
 }
 
 async function answerInboxItem(id, answer) {
-  const text = String(answer || '').trim();
-  if (text.length < 3) throw new Error('An answer is required.');
+  const text = cleanAdminAnswer(answer);
   const item = await AdminInbox.findById(id);
   if (!item) return null;
-  item.answer = text.slice(0, 4000);
+
+  // Idempotent: never create a second KB entry or delivery for the same record.
+  if (item.deliveredAnswerMessageId) {
+    const entry = await AiKnowledge.findOne({ inboxId: item._id });
+    const delivered = await deliverAnswerToUser(item, item.answer || text);
+    return { item, entry, delivered, alreadyDelivered: true };
+  }
+
+  item.answer = text;
   item.status = 'answered';
   item.answeredAt = new Date();
   await item.save();
+
   const keywords = Array.from(tokensOf(`${item.question} ${text}`)).slice(0, 12);
-  const entry = await AiKnowledge.create({
-    question: item.question,
-    answer: item.answer,
-    keywords,
-    inboxId: item._id,
-  });
+  let entry = await AiKnowledge.findOne({ inboxId: item._id });
+  if (!entry) {
+    entry = await AiKnowledge.create({ question: item.question, answer: item.answer, keywords, inboxId: item._id });
+  }
   const delivered = await deliverAnswerToUser(item, item.answer);
   return { item, entry, delivered };
 }
@@ -693,6 +799,10 @@ module.exports = {
   listInbox,
   inboxUnreadCount,
   answerInboxItem,
+  cleanAdminAnswer,
+  isFallbackAnswer,
+  ensureSystemAccount,
+  FALLBACK_ANSWER_TEXT,
   aiHealth,
   blockedTopic,
   deliverQueuedInboxToAdmin,

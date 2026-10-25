@@ -1602,3 +1602,11 @@ authenticated AI test, then the Groq key replacement through the admin providers
 ### Session 22 (2026-10-24) — item 4 partial
 - Web deployed chatgram-qzvhilsac (build green, /web/ + /web/admin 200). Hard-coded
   recommendations + quick actions; backend endpoint and admin editor still crossed.
+
+
+### Session 46 (2026-10-25) — bugfix: system answers and AI placeholder
+- Answers validated server-side (empty / fallback / label rejected), delivered once from Chatgram Support into
+  the Support↔asker chat only; AI-answer Share action removed from the AI thread.
+- Cleanup script added (dry run + backup + preview recompute). Production dry run found 1 bad message; after
+  backup \`cleanup-bad-system-answers-20261025-131819.json\` it was deleted and a re-run found 0 (0 bad KB entries).
+- Tests: integration systemAnswers 24/24; Playwright systemAnswers green.
