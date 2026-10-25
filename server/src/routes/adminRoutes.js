@@ -23,6 +23,7 @@ const { systemHealth, auditList } = require('../controllers/adminHealthControlle
 const moderation = require('../controllers/adminModerationController');
 const adminSecurity = require('../controllers/adminSecurityController');
 const groups = require('../controllers/adminGroupsController');
+const media = require('../controllers/adminMediaController');
 
 router.post('/auth/login', login);
 router.get('/auth/session', requireAdminSession, sessionInfo);
@@ -46,6 +47,13 @@ router.get('/overview', requireAdminSession, overview);
 router.post('/users/:id/suspend', requireAdminSession, requireAdminCsrf, moderation.suspend);
 router.post('/users/:id/ban', requireAdminSession, requireAdminCsrf, moderation.ban);
 router.post('/users/:id/unban', requireAdminSession, requireAdminCsrf, moderation.unban);
+// Statuses & media (9b item 5).
+router.get('/statuses', requireAdminSession, media.listStatuses);
+router.delete('/statuses/:id', requireAdminSession, requireAdminCsrf, media.deleteStatusAdmin);
+router.get('/media', requireAdminSession, media.listMedia);
+router.get('/media/storage', requireAdminSession, media.storageStats);
+router.post('/media/remove', requireAdminSession, requireAdminCsrf, media.removeMedia);
+
 router.get('/groups', requireAdminSession, groups.listGroups);
 router.get('/groups/:id', requireAdminSession, groups.groupDetail);
 router.post('/groups/:id/freeze', requireAdminSession, requireAdminCsrf, groups.freezeGroup);

@@ -22,6 +22,7 @@ const KnowledgePage = lazy(() => import('./KnowledgePage'));
 const ReportsPage = lazy(() => import('./ReportsPage'));
 const SupportPage = lazy(() => import('./SupportPage'));
 const GroupsPage = lazy(() => import('./GroupsPage'));
+const StatusesMediaPage = lazy(() => import('./StatusesMediaPage'));
 
 /* ------------------------------------------------------------------- routes */
 
@@ -32,9 +33,9 @@ const NAV: NavEntry[] = [
   { path: '/admin/health', label: 'System health', icon: Gauge, group: 'Monitor', built: true },
   { path: '/admin/audit', label: 'Audit log', icon: ClipboardList, group: 'Monitor', built: true },
   { path: '/admin/users', label: 'Users', icon: Users, group: 'People', built: true },
-  { path: '/admin/reports', label: 'Reports', icon: AlertTriangle, group: 'People' },
-  { path: '/admin/groups', label: 'Groups', icon: Globe, group: 'People' },
-  { path: '/admin/content', label: 'Statuses & media', icon: MessageSquare, group: 'Content' },
+  { path: '/admin/reports', label: 'Reports', icon: AlertTriangle, group: 'People', built: true },
+  { path: '/admin/groups', label: 'Groups', icon: Globe, group: 'People', built: true },
+  { path: '/admin/statuses', label: 'Statuses & media', icon: MessageSquare, group: 'Content', built: true },
   { path: '/admin/support', label: 'Support', icon: LifeBuoy, group: 'Content', built: true },
   { path: '/admin/inbox', label: 'Inbox', icon: Inbox, group: 'Chatgram AI', built: true, badge: 'inbox' },
   { path: '/admin/providers', label: 'Model providers', icon: Workflow, group: 'Chatgram AI', built: true },
@@ -298,6 +299,7 @@ function PageForPath({
   if (normalized === '/admin/reports') return <ReportsPage session={session} />;
   if (normalized === '/admin/support') return <SupportPage session={session} />;
   if (normalized === '/admin/groups') return <GroupsPage session={session} />;
+  if (normalized === '/admin/statuses' || normalized === '/admin/content') return <StatusesMediaPage session={session} />;
   if (normalized === '/admin/health') return <HealthPage />;
   if (normalized === '/admin/audit') return <AuditPage />;
   if (normalized === '/admin/ai-usage') return <AiUsagePage />;
