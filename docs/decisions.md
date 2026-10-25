@@ -642,3 +642,15 @@ audited). No payload returns env values, database URIs, hashes, tokens or API ke
 are paginated and the audit log has no write route. Still crossed in 9b: Reports/moderation,
 Groups, Statuses & media, Support extras, Releases, Feature flags/maintenance, Safety & abuse,
 Settings, Data requests, broadcast announcements, plus security-review conversation access (9d).
+
+## D38 - Account moderation is enforced centrally; reports resolve through audited actions (2026-10-25)
+
+`User.status` (active/suspended/banned) is checked in the auth middleware, at login and at refresh:
+suspended accounts are blocked until `suspendedUntil` (auto-cleared when it passes), banned accounts
+until an admin restores them. Banning also bumps `tokenVersion` so older tokens die. The support and
+Chatgram AI accounts are protected from moderation. Reports (message, user, status, group) are
+resolved only through POST /api/admin/reports/:id/resolve with an explicit action; dismiss marks the
+report reviewed, remove_content soft-deletes the message (or deletes the status), suspend/ban apply
+the account state, and every action writes an audit row. Admins can never send or edit messages.
+Still crossed in 9b: delete-with-grace, email verification, warn action, groups, content, support
+extras, releases, flags, safety, settings, data requests; 9d oversight is not started.

@@ -35,6 +35,17 @@ Owner actions unchanged: rotate both admin passwords (panel password now set to 
 chosen value and stored in the credentials file), delete the credentials file after changing it,
 enable TOTP once built, paste the Groq key.
 
+### Moderation (9b) deployed and verified 2026-10-25
+- Account states: suspend (with expiry), ban (with token revocation), unban — enforced at login,
+  refresh and every authenticated API call; Support/AI accounts protected.
+- Reports & moderation page: queue with status/reason/search, read-only detail (reporter, target,
+  message/status/group), audited dismiss / remove content / suspend / ban.
+- User-side report actions now exist for statuses and groups too.
+- Remaining 9b: Groups, Statuses & media, Support extras, Releases, Feature flags/maintenance,
+  Safety & abuse, Settings, Data requests, broadcast announcements, delete-with-grace, verify email,
+  warn action, saved filters/bulk actions/column visibility, device+sessions data model.
+- 9d oversight, 9a TOTP/IP/legacy guard removal, items 5/6/7: not started.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,
