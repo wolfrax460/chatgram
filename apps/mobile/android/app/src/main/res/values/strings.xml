@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">Chatgram</string>
     <string name="title_activity_main">Chatgram</string>
-    <string name="package_name">com.chatgram.app</string>
-    <string name="custom_url_scheme">com.chatgram.app</string>
+    <string name="package_name">app.chatgram.android</string>
+    <string name="custom_url_scheme">app.chatgram.android</string>
 </resources>

@@ -13,11 +13,34 @@ const fs = require('node:fs');
 
 const APP_URL = process.env.CHATGRAM_URL || 'https://chatgram-xi.vercel.app/web/';
 const OFFLINE_PAGE = path.join(__dirname, 'offline.html');
+const WEB_ORIGIN = 'https://chatgram-xi.vercel.app';
+const RELEASE_FEED = WEB_ORIGIN + '/api/app/releases';
+const DOWNLOAD_PAGE = WEB_ORIGIN + '/docs#downloads';
 
 let mainWindow = null;
 let tray = null;
 let unreadCount = 0;
 let isQuitting = false;
+
+// Small persisted preferences (start-on-login, future desktop options).
+function settingsPath() {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
+function loadSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(settingsPath(), 'utf8')) || {};
+  } catch {
+    return {};
+  }
+}
+function saveSettings(next) {
+  try {
+    fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
+    fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2), 'utf8');
+  } catch (error) {
+    console.warn('Could not save desktop settings', error?.message);
+  }
+}
 
 /* --------------------------------------------------------------- unread */
 
@@ -133,6 +156,16 @@ function createTray() {
         label: 'Check for updates…',
         click: () => checkForUpdates(true),
       },
+      {
+        label: 'Start with Windows',
+        type: 'checkbox',
+        checked: loadSettings().startOnLogin === true,
+        click: (item) => {
+          const next = { ...loadSettings(), startOnLogin: item.checked === true };
+          saveSettings(next);
+          app.setLoginItemSettings({ openAtLogin: next.startOnLogin });
+        },
+      },
       { type: 'separator' },
       {
         label: 'Quit Chatgram',
@@ -153,6 +186,53 @@ function createTray() {
   });
 }
 
+/* ------------------------------------------------------- release gate */
+
+/** Compare dotted numeric versions (1.2.3 > 1.2.0). Returns -1, 0 or 1. */
+function compareVersions(a, b) {
+  const left = String(a || '0').split(/[.-]/).slice(0, 3).map((part) => Number.parseInt(part, 10) || 0);
+  const right = String(b || '0').split(/[.-]/).slice(0, 3).map((part) => Number.parseInt(part, 10) || 0);
+  for (let index = 0; index < 3; index += 1) {
+    if ((left[index] || 0) !== (right[index] || 0)) return (left[index] || 0) > (right[index] || 0) ? 1 : -1;
+  }
+  return 0;
+}
+
+/** Enforce the minimum supported / forced version published in App releases. */
+async function checkMinimumVersion() {
+  try {
+    const response = await fetch(RELEASE_FEED, { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) return;
+    const payload = await response.json();
+    const windows = (payload.releases || []).find((release) => release.platform === 'windows');
+    if (!windows) return;
+    const current = app.getVersion();
+    const minimum = windows.minSupportedVersion || '';
+    const belowMinimum = minimum && compareVersions(current, minimum) < 0;
+    const forced = windows.forceUpdate === true && windows.version && compareVersions(current, windows.version) < 0;
+    if (!belowMinimum && !forced) return;
+    const { dialog } = require('electron');
+    const choice = await dialog.showMessageBox({
+      type: 'warning',
+      title: 'Chatgram update required',
+      message: belowMinimum
+        ? 'This version of Chatgram (' + current + ') is no longer supported.'
+        : 'A required Chatgram update is available.',
+      detail: 'Please install version ' + (windows.version || minimum) + ' from the download page to keep using Chatgram.',
+      buttons: ['Open download page', 'Close'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (choice.response === 0) {
+      shell.openExternal(windows.fileUrl ? new URL(windows.fileUrl, WEB_ORIGIN).toString() : DOWNLOAD_PAGE);
+    }
+    isQuitting = true;
+    app.quit();
+  } catch (error) {
+    console.warn('Version gate check failed', error?.message);
+  }
+}
+
 /* ------------------------------------------------------------- updates */
 
 let updater = null;
@@ -162,6 +242,11 @@ function setupUpdater() {
   } catch {
     console.log('electron-updater not installed — skipping auto-update');
     return;
+  }
+  try {
+    updater.setFeedURL({ provider: 'generic', url: WEB_ORIGIN + '/downloads' });
+  } catch (error) {
+    console.warn('Could not set the update feed', error?.message);
   }
   updater.autoDownload = true;
   updater.on('update-available', (info) => console.log('Update available', info.version));
@@ -218,9 +303,11 @@ if (!gotLock) {
     createTray();
     setupUpdater();
 
-    // Start-on-login (opt-in would need a setting; default off).
-    app.setLoginItemSettings({ openAtLogin: false });
+    // Start-on-login: persisted opt-in (tray menu).
+    const settings = loadSettings();
+    app.setLoginItemSettings({ openAtLogin: settings.startOnLogin === true });
 
+    setTimeout(() => void checkMinimumVersion(), 2500);
     setTimeout(() => checkForUpdates(false), 6000);
   });
 

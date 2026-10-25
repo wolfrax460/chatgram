@@ -69,3 +69,6 @@ backups/
 
 # Operator secrets (never commit)
 .secrets/
+
+# Locally built installers (published via the VM download route, not git)
+/release-artifacts/
