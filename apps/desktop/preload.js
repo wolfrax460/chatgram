@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld('chatgramDesktop', {
   /** Show a native Windows notification. */
   notify: (title, body) => ipcRenderer.invoke('chatgram:notify', { title, body }),
 
+  /** Report call state so the tray/badge can announce an incoming call. */
+  callState: (payload) => ipcRenderer.send('chatgram:call', payload),
+
   /** Ask the shell for its version. */
   appVersion: () => ipcRenderer.invoke('chatgram:appVersion'),
 

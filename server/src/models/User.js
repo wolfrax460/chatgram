@@ -160,6 +160,11 @@ const userSchema = new mongoose.Schema({
   isOnline: {
     type: Boolean,
     default: false
+  },
+  /** Last time the user opened the Calls tab; drives the missed-call badge. */
+  callsSeenAt: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true

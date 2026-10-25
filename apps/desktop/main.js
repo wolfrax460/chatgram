@@ -7,7 +7,7 @@
  * Security: contextIsolation on, nodeIntegration off, sandbox on. The renderer
  * gets a tiny, explicit API from preload.js and nothing else.
  */
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, Notification } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, Notification, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -298,7 +298,36 @@ if (!gotLock) {
     mainWindow.focus();
   });
 
+  /**
+   * Media permissions for calls.
+   *
+   * Electron denies getUserMedia by default. We allow audio, video and screen
+   * capture for the Chatgram origin only, and deny everything else (geolocation,
+   * MIDI, notifications via the page, ...). The OS-level prompt still applies.
+   */
+  function configurePermissions() {
+    const allowedOrigins = new Set([new URL(APP_URL).origin, 'http://localhost:5174', 'http://127.0.0.1:5174']);
+    const media = new Set(['media', 'audioCapture', 'videoCapture', 'display-capture', 'speaker-selection']);
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+      try {
+        const origin = new URL(details?.requestingUrl || webContents.getURL()).origin;
+        callback(media.has(permission) && allowedOrigins.has(origin));
+      } catch {
+        callback(false);
+      }
+    });
+    session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+      try {
+        const origin = new URL(requestingOrigin || webContents.getURL()).origin;
+        return media.has(permission) && allowedOrigins.has(origin);
+      } catch {
+        return false;
+      }
+    });
+  }
+
   app.whenReady().then(() => {
+    configurePermissions();
     createWindow();
     createTray();
     setupUpdater();
@@ -306,6 +335,39 @@ if (!gotLock) {
     // Start-on-login: persisted opt-in (tray menu).
     const settings = loadSettings();
     app.setLoginItemSettings({ openAtLogin: settings.startOnLogin === true });
+
+    // Incoming-call alerts from the renderer: tray balloon, notification and
+    // a flashing taskbar entry so a call is visible while the window is hidden.
+    let incomingNotification = null;
+    ipcMain.on('chatgram:call', (_event, payload = {}) => {
+      const state = String(payload.state || '');
+      const title = String(payload.title || 'Someone');
+      if (state === 'incoming') {
+        if (tray) {
+          tray.setToolTip(`Chatgram — incoming call from ${title}`);
+          tray.displayBalloon?.({ title: 'Incoming call', content: `${title} is calling`, iconType: 'info' });
+        }
+        mainWindow?.flashFrame(true);
+        if (Notification.isSupported()) {
+          incomingNotification = new Notification({ title: 'Incoming call', body: `${title} is calling` });
+          incomingNotification.on('click', () => {
+            mainWindow?.show();
+            mainWindow?.focus();
+          });
+          incomingNotification.show();
+        }
+      } else if (state === 'calling' || state === 'active' || state === 'connecting') {
+        if (tray) tray.setToolTip(`Chatgram — in a call with ${title}`);
+        mainWindow?.flashFrame(false);
+      } else {
+        if (tray) tray.setToolTip(unreadCount > 0 ? `Chatgram — ${unreadCount} unread` : 'Chatgram');
+        mainWindow?.flashFrame(false);
+        if (incomingNotification) {
+          incomingNotification.close();
+          incomingNotification = null;
+        }
+      }
+    });
 
     setTimeout(() => void checkMinimumVersion(), 2500);
     setTimeout(() => checkForUpdates(false), 6000);

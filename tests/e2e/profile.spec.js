@@ -72,7 +72,7 @@ test.describe('profile panel', () => {
     expect(hide.status).toBe(200);
 
     await signIn(page, alice);
-    await openTab(page, 'Contacts');
+    await openContactsPanel(page);
     await page.getByRole('button', { name: `Open ${bob.user.displayName}'s profile` }).first().click();
     const panel = page.getByTestId('profile-panel');
     await expect(panel).toBeVisible();
@@ -136,7 +136,7 @@ test.describe('profile panel', () => {
     await mutualContacts(alice, bob);
 
     await signIn(page, alice);
-    await openTab(page, 'Contacts');
+    await openContactsPanel(page);
     await page.getByRole('button', { name: `Open ${bob.user.displayName}'s profile` }).first().click();
     const panel = page.getByTestId('profile-panel');
     await expect(panel).toBeVisible();

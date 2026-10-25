@@ -15,6 +15,7 @@ const Chat = require('../models/Chat');
 const Message = require('../models/Message');
 const realtime = require('../utils/realtime');
 const callRegistry = require('../utils/callRegistry');
+const { recordCall } = require('../utils/callLog');
 const { blockedBetween } = require('../utils/blocks');
 const groupSystem = require('../utils/groupSystem');
 
@@ -66,6 +67,20 @@ function registerSocketHandlers(io) {
   // Presence sweeper: drop sockets whose heartbeat expired. Disconnecting the
   // socket runs the normal disconnect handler, which updates lastSeen and
   // broadcasts presence:offline when it was the user's last connection.
+  // Ring timeout: a call nobody answers is reported as missed after 45s, logged,
+  // and torn down so it can never ring forever or hold the caller as "busy".
+  const ringSweepMs = Number(process.env.CALL_RING_SWEEP_MS || 2_000);
+  const ringSweeper = setInterval(() => {
+    for (const call of callRegistry.expiredRings()) {
+      callRegistry.markEnded(call.callId);
+      for (const userId of callRegistry.participants(call.callId).map((p) => p.id)) {
+        realtime.emitToUser(userId, 'call:ended', { callId: call.callId, reason: 'missed' });
+      }
+      callRegistry.destroy(call.callId);
+      void recordCall(call, { status: 'missed' });
+    }
+  }, ringSweepMs);
+  if (typeof ringSweeper.unref === 'function') ringSweeper.unref();
   const presenceSweepMs = Number(process.env.PRESENCE_SWEEP_MS || 15_000);
   const presenceSweeper = setInterval(() => {
     for (const { socketId, userId } of realtime.staleSocketIds()) {
@@ -349,6 +364,33 @@ function registerSocketHandlers(io) {
       };
     }
 
+    // Abuse guard: a user may start a limited number of calls per minute.
+    const attemptWindow = new Map(); // userId -> number[]
+    function allowCallAttempt(userId) {
+      const nowMs = Date.now();
+      const recent = (attemptWindow.get(userId) || []).filter((t) => nowMs - t < 60_000);
+      if (recent.length >= 8) {
+        attemptWindow.set(userId, recent);
+        return false;
+      }
+      recent.push(nowMs);
+      attemptWindow.set(userId, recent);
+      return true;
+    }
+
+    /** Persist a call exactly once (completed / missed / declined / cancelled). */
+    async function finalizeCall(call, reason) {
+      if (!call) return;
+      const status = call.answeredAt
+        ? 'completed'
+        : reason === 'declined'
+          ? 'declined'
+          : reason === 'missed'
+            ? 'missed'
+            : 'cancelled';
+      callRegistry.markEnded(call.callId);
+      await recordCall(call, { status });
+    }
     function callPeers(callId, exceptUserId) {
       return callRegistry
         .participants(callId)
@@ -377,11 +419,20 @@ function registerSocketHandlers(io) {
         if (!socket.userId) {
           return socket.emit('call:error', { message: 'Sign in to make calls.', code: 'CALL_UNAUTHENTICATED' });
         }
+        if (!allowCallAttempt(socket.userId)) {
+          return socket.emit('call:error', {
+            message: 'Too many call attempts. Wait a minute and try again.',
+            code: 'CALL_RATE_LIMITED',
+          });
+        }
         const chat = await chatForCaller(data.chatId);
         if (!chat) {
           return socket.emit('call:error', { message: 'You cannot call this chat.', code: 'CALL_FORBIDDEN' });
         }
 
+        const video = data.video === true;
+        // Honest mesh caps: 6 people in video, 12 audio-only.
+        const capacity = callRegistry.capacityFor(video);
         const me = await callerIdentity();
         const others = chat.participants.map(String).filter((id) => id !== String(socket.userId));
         if (others.length === 0) {
@@ -391,12 +442,23 @@ function registerSocketHandlers(io) {
           return socket.emit('call:error', { message: 'You cannot call this person.', code: 'CALL_FORBIDDEN' });
         }
 
+        // Busy handling: anyone already in another call is not rung.
+        const busy = others.filter((id) => callRegistry.findCallForUser(id));
+        if (chat.type === 'direct' && busy.length > 0) {
+          return socket.emit('call:busy', {
+            callId: data.callId,
+            chatId: String(chat._id),
+            message: 'They are on another call.',
+          });
+        }
+        const available = others.filter((id) => !busy.includes(id));
+
         const isGroup = chat.type === 'group';
         const title = isGroup ? chat.groupName || 'Group call' : me.displayName;
         const created = callRegistry.create({
           callId: data.callId,
           chatId: chat._id,
-          video: data.video === true,
+          video,
           isGroup,
           title,
           initiator: me,
@@ -406,17 +468,25 @@ function registerSocketHandlers(io) {
           return socket.emit('call:error', { message: created.error, code: created.code });
         }
 
-        // Ring everyone who is online, capped at the participant limit.
-        const ringable = others
+        // Ring everyone available and online, capped at this call type's limit.
+        const ringable = available
           .filter((id) => realtime.isUserOnline(id))
-          .slice(0, MAX_CALL_PARTICIPANTS - 1);
+          .slice(0, capacity - 1);
 
         if (ringable.length === 0) {
           callRegistry.destroy(created.call.callId);
+          if (busy.length > 0) {
+            return socket.emit('call:busy', {
+              callId: created.call.callId,
+              chatId: String(chat._id),
+              message: 'Everyone is on another call right now.',
+            });
+          }
           return socket.emit('call:unavailable', {
             chatId: String(chat._id),
             callId: created.call.callId,
             isGroup,
+            video,
           });
         }
 
@@ -428,6 +498,7 @@ function registerSocketHandlers(io) {
             isGroup,
             title,
             participantCount: ringable.length + 1,
+            capacity,
             from: me,
           });
         }
@@ -440,6 +511,8 @@ function registerSocketHandlers(io) {
           title,
           participants: callRegistry.participants(created.call.callId),
           ringCount: ringable.length,
+          capacity,
+          busyCount: busy.length,
         });
       } catch (error) {
         console.error('Call start error:', error.message);
@@ -455,7 +528,7 @@ function registerSocketHandlers(io) {
           return socket.emit('call:ended', { callId: data.callId, reason: 'missed' });
         }
         const me = await callerIdentity();
-        const joined = callRegistry.join(call.callId, me);
+        const joined = callRegistry.join(call.callId, me, { audioOnly: data.audioOnly === true });
         if (!joined.ok) {
           return socket.emit('call:error', { message: joined.error, code: joined.code });
         }
@@ -467,6 +540,11 @@ function registerSocketHandlers(io) {
           isGroup: call.isGroup,
           title: call.title,
           participants: joined.existing,
+        });
+        // Other tabs/devices of the same user must stop ringing.
+        const ioRef = realtime.getIo();
+        ioRef?.to(realtime.roomForUser(socket.userId)).except(socket.id).emit('call:answered-elsewhere', {
+          callId: call.callId,
         });
 
         for (const peerId of joined.existing.map((p) => p.id)) {
@@ -493,6 +571,7 @@ function registerSocketHandlers(io) {
             isGroup: call.isGroup,
           });
         }
+        callRegistry.markDeclined(call.callId, socket.userId);
         // A declined 1:1 call is over. Without this the caller stays "busy"
         // and cannot place another call until they hang up manually.
         if (!call.isGroup && call.participants.size <= 1) {
@@ -500,6 +579,7 @@ function registerSocketHandlers(io) {
           if (initiator) {
             realtime.emitToUser(initiator, 'call:ended', { callId: call.callId, reason: 'declined' });
           }
+          void finalizeCall(call, 'declined');
         }
       } catch (error) {
         console.error('Call decline error:', error.message);
@@ -538,7 +618,10 @@ function registerSocketHandlers(io) {
 
         const peers = callPeers(call.callId, socket.userId);
         const reason = data.reason || 'hangup';
-        callRegistry.leave(call.callId, socket.userId);
+        const { destroyed } = callRegistry.leave(call.callId, socket.userId);
+
+        // The last person leaving closes the call: persist it once.
+        if (destroyed) void finalizeCall(call, 'hangup');
 
         for (const peerId of peers) {
           realtime.emitToUser(peerId, 'call:participant-left', {
@@ -546,6 +629,13 @@ function registerSocketHandlers(io) {
             userId: String(socket.userId),
             reason,
           });
+        }
+
+        // A one-to-one call ends as soon as either side leaves; without this the
+        // remaining caller would sit in a zombie call and never be logged.
+        if (!destroyed && !call.isGroup && callRegistry.get(call.callId)?.participants.size <= 1) {
+          callRegistry.destroy(call.callId);
+          void finalizeCall(call, 'hangup');
         }
       } catch (error) {
         console.error('Call end error:', error.message);
@@ -565,7 +655,7 @@ function registerSocketHandlers(io) {
       // Leaving the last device drops them out of any call they were in, so the
       // remaining participants see the tile disappear immediately.
       try {
-        for (const { call } of callRegistry.removeUserFromAll(socket.userId)) {
+        for (const { call, destroyed } of callRegistry.removeUserFromAll(socket.userId)) {
           if (!call) continue;
           for (const peerId of call.participants.keys()) {
             realtime.emitToUser(peerId, 'call:participant-left', {
@@ -574,6 +664,7 @@ function registerSocketHandlers(io) {
               reason: 'disconnected',
             });
           }
+          if (destroyed) void finalizeCall(call, 'hangup');
         }
       } catch (error) {
         console.error('Call cleanup on disconnect failed:', error.message);

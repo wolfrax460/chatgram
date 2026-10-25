@@ -58,6 +58,8 @@ export interface RealtimeHandlers {
   /** The whole call is over (missed, or everybody left). */
   onCallEnded?: (payload: CallEnd) => void;
   onCallUnavailable?: (payload: CallUnavailable) => void;
+  onCallBusy?: (payload: CallBusy) => void;
+  onCallAnsweredElsewhere?: (payload: CallAnsweredElsewhere) => void;
   onCallError?: (payload: { message: string; code?: string }) => void;
   /** A group member list changed (add/remove/leave/promote). */
   onGroupMembers?: (payload: { chatId: string }) => void;
@@ -88,6 +90,8 @@ export interface CallIncoming {
   title: string;
   /** How many people are being rung, including the caller. */
   participantCount: number;
+  /** Participant cap for this call type (6 video / 12 audio). */
+  capacity?: number;
   from: CallParticipantInfo;
 }
 
@@ -100,6 +104,21 @@ export interface CallRinging {
   title: string;
   participants: CallParticipantInfo[];
   ringCount: number;
+  /** Participant cap for this call type (6 video / 12 audio). */
+  capacity?: number;
+  busyCount?: number;
+}
+
+/** The callee was already on another call. */
+export interface CallBusy {
+  callId: string;
+  chatId?: string;
+  message?: string;
+}
+
+/** The callee answered on another tab/device. */
+export interface CallAnsweredElsewhere {
+  callId: string;
 }
 
 /** I accepted and am now in the call; these people are already connected. */
@@ -275,6 +294,8 @@ export class RealtimeClient {
     socket.on('call:ended', (data: CallEnd) => h.onCallEnded?.(data));
     socket.on('call:end', (data: CallEnd) => h.onCallEnded?.(data));
     socket.on('call:unavailable', (data: CallUnavailable) => h.onCallUnavailable?.(data));
+    socket.on('call:busy', (data: CallBusy) => h.onCallBusy?.(data));
+    socket.on('call:answered-elsewhere', (data: CallAnsweredElsewhere) => h.onCallAnsweredElsewhere?.(data));
     socket.on('call:error', (data: { message: string; code?: string }) => h.onCallError?.(data));
     socket.on('message:mention', (data: unknown) => {
       const payload = (data ?? {}) as {

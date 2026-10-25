@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Typed REST client for the Chatgram backend.
  *
  * Responsibilities:
@@ -38,6 +38,23 @@ export interface TokenStorage {
 export interface AuthTokens {
   accessToken: string;
   refreshToken?: string;
+}
+
+/** One entry in the Calls tab. */
+export interface CallHistoryItem {
+  id: string;
+  chatId: string | null;
+  type: 'voice' | 'video';
+  isGroup: boolean;
+  title: string;
+  direction: 'incoming' | 'outgoing';
+  status: 'completed' | 'missed' | 'declined' | 'cancelled';
+  startedAt: string;
+  answeredAt: string | null;
+  endedAt: string | null;
+  durationSeconds: number;
+  caller: { id: string; displayName: string; avatarUrl: string | null } | null;
+  participants: { id: string; displayName: string; avatarUrl: string | null }[];
 }
 
 /** One message in a help-widget conversation. */
@@ -475,9 +492,50 @@ export class ApiClient {
     };
   }
 
-  /** ICE servers (STUN/TURN) for WebRTC calls; TURN credentials stay server-side. */
+  /** ICE servers (STUN/TURN) for WebRTC calls; TURN credentials are ephemeral. */
   iceServers() {
-    return this.request<{ iceServers: RTCIceServer[]; hasTurn: boolean; ttlSeconds: number }>('/api/calls/ice');
+    return this.request<{
+      iceServers: RTCIceServer[];
+      hasTurn: boolean;
+      ttlSeconds: number;
+      expiresAt?: string | null;
+    }>('/api/calls/ice');
+  }
+
+  /** Call history page (newest first). */
+  callHistory(before?: string) {
+    const query = before ? `?before=${encodeURIComponent(before)}` : '';
+    return this.request<{ calls: CallHistoryItem[]; nextBefore: string | null }>(`/api/calls${query}`);
+  }
+
+  callMissedCount() {
+    return this.request<{ count: number }>('/api/calls/missed-count');
+  }
+
+  markCallsSeen() {
+    return this.request<{ ok: boolean }>('/api/calls/seen', { method: 'POST' });
+  }
+
+  deleteCall(callId: string) {
+    return this.request<{ ok: boolean }>(`/api/calls/${encodeURIComponent(callId)}`, { method: 'DELETE' });
+  }
+
+  clearCalls() {
+    return this.request<{ ok: boolean; cleared: number }>('/api/calls', { method: 'DELETE' });
+  }
+
+  /** People the user can call (their contacts, minus the support account). */
+  callContacts() {
+    return this.request<{ contacts: { id: string; displayName: string; avatarUrl: string | null }[] }>(
+      '/api/calls/contacts',
+    );
+  }
+
+  /** Groups the user belongs to, for starting a group call. */
+  callGroups() {
+    return this.request<{ groups: { id: string; title: string; participantCount: number }[] }>(
+      '/api/calls/groups',
+    );
   }
 
   /** Do-not-disturb schedule for desktop notifications and sounds. */

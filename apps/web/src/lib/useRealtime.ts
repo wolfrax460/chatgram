@@ -5,6 +5,8 @@ import { playMessageSound, showNotification } from './notify';
 import { api, realtime, SOCKET_URL } from './api';
 import {
   handleAnswer,
+  handleAnsweredElsewhere,
+  handleBusy,
   handleCallError,
   handleEnded,
   handleIce,
@@ -187,7 +189,9 @@ export function useRealtimeBridge(): void {
         onCallIce: (payload) => void handleIce(payload),
         onCallEnded: (payload) => handleEnded(payload.reason),
         onCallUnavailable: (payload) => handleUnavailable(payload),
-        onCallError: (payload) => handleCallError(payload.message),
+        onCallBusy: (payload) => handleBusy(payload),
+        onCallAnsweredElsewhere: (payload) => handleAnsweredElsewhere(payload),
+        onCallError: (payload) => handleCallError(payload.message, payload.code),
 
         onUserUpdated: (updated) => {
           // The signed-in user may have changed their own profile elsewhere.

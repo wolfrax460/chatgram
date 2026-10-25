@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Moon, Sun, Monitor, MessageCircle, LogOut, Users, BookUser, CircleDashed,
+  Moon, Sun, Monitor, MessageCircle, LogOut, Users, CircleDashed, Phone,
   Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy, Sparkles, BadgeCheck,
   UserPlus, Download, Share2, FolderUp, FileText, Camera,
 } from 'lucide-react';
@@ -25,10 +25,12 @@ import { ChatHeader } from './components/ChatHeader';
 import { MessageBubble } from './components/MessageBubble';
 import Composer from './components/Composer';
 import { CallOverlay } from './components/CallOverlay';
+import { CallAlerts } from './components/CallAlerts';
+import { NewChatPanel } from './components/NewChatPanel';
 import { useIsOnline } from './lib/presence';
 import { getCallState, startCall, subscribeCalls } from './lib/calls';
 import Groups from './pages/Groups';
-import Contacts from './pages/Contacts';
+import Calls from './pages/Calls';
 import Status from './pages/Status';
 import SettingsPage from './pages/Settings';
 import Auth from './pages/Auth';
@@ -40,7 +42,7 @@ import { ProfilePanel } from './components/ProfilePanel';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, formatTime, sameDay, statusOf } from './lib/ui';
 
-type Tab = 'chats' | 'status' | 'groups' | 'contacts' | 'settings' | 'ai';
+type Tab = 'chats' | 'calls' | 'status' | 'groups' | 'settings' | 'ai';
 
 /** Item 4: one empty-screen recommendation from GET /api/app/recommendations. */
 type AppRecommendation = {
@@ -388,7 +390,7 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
   }
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       <ChatHeader
         chat={chat}
         meId={meId}
@@ -511,7 +513,7 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
         </div>
       ) : null}
 
-      <div ref={scrollRef} onScroll={onScroll} className="no-scrollbar relative flex-1 overflow-y-auto">
+      <div ref={scrollRef} onScroll={onScroll} className="no-scrollbar relative min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[1400px] flex-col px-4 py-4">
           {messages.isLoading ? <p className="text-sm text-ink-600 dark:text-ink-300">Loading messages…</p> : null}
           {filtered.length === 0 && !messages.isLoading ? (
@@ -591,7 +593,7 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
         ) : null}
       </div>
 
-      <div className="mx-auto w-full max-w-[1400px]">
+      <div className="composer-safe mx-auto w-full max-w-[1400px]">
         <Composer
           chatId={chat.id}
           draft={draft}
@@ -732,9 +734,9 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
 
 const NAV: { key: Tab; label: string; Icon: typeof MessageCircle }[] = [
   { key: 'chats', label: 'Chats', Icon: MessageCircle },
+  { key: 'calls', label: 'Calls', Icon: Phone },
   { key: 'status', label: 'Status', Icon: CircleDashed },
   { key: 'groups', label: 'Groups', Icon: Users },
-  { key: 'contacts', label: 'Contacts', Icon: BookUser },
   { key: 'settings', label: 'Settings', Icon: SettingsIcon },
 ];
 
@@ -751,6 +753,21 @@ function Shell({ features }: { features: AppFeatures | null }) {
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [profileTarget, setProfileTarget] = useState<{ userId: string; chatId?: string } | null>(null);
   const callState = useSyncExternalStore(subscribeCalls, getCallState);
+  const [newChatOpen, setNewChatOpen] = useState(false);
+  const missedCalls = useQuery({
+    queryKey: ['call-missed-count'],
+    queryFn: () => api.callMissedCount(),
+    refetchInterval: 30_000,
+    retry: false,
+  });
+
+  // Old /web/contacts links open the New chat panel instead of a dead page.
+  useEffect(() => {
+    if (!/\/contacts\/?$/.test(window.location.pathname)) return;
+    window.history.replaceState(null, '', '/web/');
+    setTab('chats');
+    setNewChatOpen(true);
+  }, []);
 
   // Chatgram AI thread state (pinned row preview, unread badge).
   const aiUnread = useAiThread((s) => s.unread);
@@ -870,26 +887,41 @@ function Shell({ features }: { features: AppFeatures | null }) {
 
   return (
     <ProfilePanelContext.Provider value={profileApi}>
-    <div className="flex h-full">
+    <div className="app-viewport flex overflow-hidden">
       <CallOverlay call={callState} />
+      <CallAlerts />
+      <CallAlerts />
       <nav className="hidden w-[76px] shrink-0 flex-col items-center gap-1 border-r border-ink-200 py-4 dark:border-white/10 sm:flex">
-        {NAV.map(({ key, label, Icon }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setTab(key)}
-            title={label}
-            aria-label={label}
-            className={`flex w-14 flex-col items-center gap-1 rounded-xl py-2 text-[11.5px] font-semibold transition ${
-              tab === key
-                ? 'bg-brand-600/10 text-brand-700 dark:text-brand-300'
-                : 'text-ink-600 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-white/5'
-            }`}
-          >
-            <Icon className="h-5 w-5" />
-            {label}
-          </button>
-        ))}
+        {NAV.map(({ key, label, Icon }) => {
+          const badge = key === 'calls' ? missedCalls.data?.count ?? 0 : 0;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              title={label}
+              aria-label={badge > 0 ? `${label}, ${badge} missed call${badge === 1 ? '' : 's'}` : label}
+              className={`flex w-14 flex-col items-center gap-1 rounded-xl py-2 text-[11.5px] font-semibold transition ${
+                tab === key
+                  ? 'bg-brand-600/10 text-brand-700 dark:text-brand-300'
+                  : 'text-ink-600 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-white/5'
+              }`}
+            >
+              <span className="relative">
+                <Icon className="h-5 w-5" />
+                {badge > 0 ? (
+                  <span
+                    className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white"
+                    data-testid="calls-missed-badge"
+                  >
+                    {badge > 9 ? '9+' : badge}
+                  </span>
+                ) : null}
+              </span>
+              {label}
+            </button>
+          );
+        })}
         <span className="my-1 h-px w-9 bg-ink-200 dark:bg-white/10" aria-hidden="true" />
         <button
           type="button"
@@ -944,14 +976,28 @@ function Shell({ features }: { features: AppFeatures | null }) {
       {tab === 'chats' || tab === 'ai' ? (
         <>
           <aside
-            className={`${tab === 'ai' || selected ? 'hidden lg:flex' : 'flex'} w-full shrink-0 flex-col border-r border-ink-200 dark:border-white/10 sm:w-[330px]`}
+            className={`${tab === 'ai' || selected ? 'hidden lg:flex' : 'flex'} min-h-0 w-full shrink-0 flex-col overflow-hidden border-r border-ink-200 dark:border-white/10 sm:w-[330px]`}
           >
+            {newChatOpen ? (
+              <NewChatPanel
+                onClose={() => setNewChatOpen(false)}
+                onOpenChat={(chatId) => {
+                  setNewChatOpen(false);
+                  openChat(chatId);
+                }}
+                onNewGroup={() => {
+                  setNewChatOpen(false);
+                  setTab('groups');
+                }}
+              />
+            ) : (
+              <>
             <AnnouncementBanner />
             <button
               type="button"
               onClick={() => setTab('ai')}
               aria-current={tab === 'ai' ? 'page' : undefined}
-              className={`flex w-full items-center gap-3 border-b border-ink-200 px-3 py-2.5 text-left dark:border-white/10 ${
+              className={`flex w-full shrink-0 items-center gap-3 border-b border-ink-200 px-3 py-2.5 text-left dark:border-white/10 ${
                 tab === 'ai' ? 'bg-ink-100/80 dark:bg-white/[.06]' : 'hover:bg-ink-100/70 dark:hover:bg-white/[.04]'
               }`}
               data-testid="ai-pinned-entry"
@@ -993,9 +1039,11 @@ function Shell({ features }: { features: AppFeatures | null }) {
               typingByChat={typing}
               timeFormat={timeFormat}
               onSelect={setSelectedId}
-              onNewChat={() => setTab('contacts')}
+              onNewChat={() => setNewChatOpen(true)}
               onOpenProfile={(userId, chatId) => profileApi.openProfile(userId, chatId)}
             />
+              </>
+            )}
           </aside>
 
           {tab === 'ai' ? (
@@ -1007,7 +1055,7 @@ function Shell({ features }: { features: AppFeatures | null }) {
           ) : selected ? (
             <ChatWindow chat={selected} meId={meId} onBack={() => setSelectedId(null)} />
           ) : (
-            <section className="hidden flex-1 place-items-center overflow-y-auto px-6 py-6 text-center sm:grid">
+            <section className="hidden min-h-0 flex-1 place-items-center overflow-y-auto px-6 py-6 text-center sm:grid">
               <div className="w-full max-w-md">
                 <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-brand-600 text-white shadow-lg">
                   <MessageCircle className="h-8 w-8" />
@@ -1052,7 +1100,7 @@ function Shell({ features }: { features: AppFeatures | null }) {
                 <div className="mt-4 grid grid-cols-5 gap-1.5" data-testid="empty-quick-actions">
                   {[
                     { label: 'Send document', icon: FileText, action: () => emptyDocRef.current?.click() },
-                    { label: 'Add contact', icon: UserPlus, action: () => setTab('contacts') },
+                    { label: 'Add contact', icon: UserPlus, action: () => { setTab('chats'); setNewChatOpen(true); } },
                     { label: 'Invite a friend', icon: Share2, action: shareInvite },
                     { label: 'New group', icon: FolderUp, action: () => setTab('groups') },
                     { label: 'Chatgram AI', icon: Sparkles, action: () => setTab('ai') },
@@ -1089,14 +1137,18 @@ function Shell({ features }: { features: AppFeatures | null }) {
             </section>
           )}
         </>
-      ) : tab === 'status' ? (
-        <Status />
-      ) : tab === 'groups' ? (
-        <Groups onOpenChat={openChat} />
-      ) : tab === 'contacts' ? (
-        <Contacts onOpenChat={openChat} />
       ) : (
-        <SettingsPage onOpenSupport={openChat} />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {tab === 'status' ? (
+            <Status />
+          ) : tab === 'groups' ? (
+            <Groups onOpenChat={openChat} />
+          ) : tab === 'calls' ? (
+            <Calls onOpenChat={openChat} />
+          ) : (
+            <SettingsPage onOpenSupport={openChat} />
+          )}
+        </div>
       )}
 
       {confirmLogout ? (
