@@ -63,6 +63,15 @@ enable TOTP once built, paste the Groq key.
   now require the admin session at /api/admin/support/*; legacy /admin/legacy
   dashboard deleted. Removals listed in docs/decisions.md D40.
 
+### Support desk page deployed 2026-10-25
+- Ticket KPIs, channel/AI status, status filters + search, master-detail queue with
+  transcript/replies, official Support-account reply box (CSRF, contact-only guarded).
+- Remaining 9b: Groups, Statuses & media, App releases, Feature flags/maintenance,
+  Safety & abuse, Settings, Data requests, broadcast announcements, plus delete-with-grace,
+  verify email, warn, device/session + login-history data, saved filters/bulk actions,
+  Inbox merge-duplicates.
+- 9d oversight and items 5/6/7 are not started.
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,
