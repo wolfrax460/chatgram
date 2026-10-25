@@ -26,6 +26,7 @@ const groups = require('../controllers/adminGroupsController');
 const media = require('../controllers/adminMediaController');
 const releases = require('../controllers/appReleasesController');
 const platform = require('../controllers/adminPlatformController');
+const dataRequests = require('../controllers/adminDataRequestController');
 
 router.post('/auth/login', login);
 router.get('/auth/session', requireAdminSession, sessionInfo);
@@ -50,6 +51,13 @@ router.post('/users/:id/suspend', requireAdminSession, requireAdminCsrf, moderat
 router.post('/users/:id/ban', requireAdminSession, requireAdminCsrf, moderation.ban);
 router.post('/users/:id/unban', requireAdminSession, requireAdminCsrf, moderation.unban);
 // Statuses & media (9b item 5).
+// Data requests (9b item 15): tracked export / delete of one user's data.
+router.get('/data-requests', requireAdminSession, dataRequests.listRequests);
+router.post('/data-requests', requireAdminSession, requireAdminCsrf, dataRequests.createRequest);
+router.post('/data-requests/:id/process', requireAdminSession, requireAdminCsrf, dataRequests.processRequest);
+router.post('/data-requests/:id/cancel', requireAdminSession, requireAdminCsrf, dataRequests.cancelRequest);
+router.get('/data-requests/:id/download', requireAdminSession, dataRequests.downloadExport);
+
 router.get('/platform-settings', requireAdminSession, platform.getSettings);
 router.put('/platform-settings', requireAdminSession, requireAdminCsrf, platform.saveSettings);
 
