@@ -1,5 +1,5 @@
 {
-  "appId": "com.chatgram.app",
+  "appId": "app.chatgram.android",
   "appName": "Chatgram",
   "webDir": "../web/dist",
   "bundledWebRuntime": false,
@@ -7,6 +7,12 @@
     "allowMixedContent": false
   },
   "server": {
-    "androidScheme": "https"
+    "url": "https://chatgram-xi.vercel.app/web/",
+    "androidScheme": "https",
+    "cleartext": false,
+    "allowNavigation": [
+      "chatgram-xi.vercel.app",
+      "chatgram.duckdns.org"
+    ]
   }
 }

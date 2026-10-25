@@ -33,6 +33,7 @@ $config = @'
   "version": 3,
   "routes": [
     { "src": "/api/(.*)", "dest": "https://chatgram.duckdns.org/api/$1" },
+    { "src": "/downloads/(.*)", "dest": "https://chatgram.duckdns.org/downloads/$1" },
     { "handle": "filesystem" },
     { "src": "/web(/.*)?", "dest": "/web/index.html" },
     { "src": "/docs(/.*)?", "dest": "/docs/index.html" },
@@ -109,6 +110,15 @@ try {
 }
 if (-not $health.ok) { throw "API proxy returned an unhealthy status: $($health | ConvertTo-Json -Compress)" }
 Write-Host '  GET  /api/status/health  ok' -ForegroundColor Green
+
+# The desktop auto-updater and the landing downloads read through this route.
+try {
+  $latest = Invoke-WebRequest -Uri "$base/downloads/latest.yml" -UseBasicParsing -TimeoutSec 60
+  if ($latest.StatusCode -ne 200) { throw "latest.yml returned $($latest.StatusCode)" }
+} catch {
+  throw "downloads proxy failed: $($_.Exception.Message)"
+}
+Write-Host '  GET  /downloads/latest.yml  ok' -ForegroundColor Green
 
 $postStatus = 0
 try {
