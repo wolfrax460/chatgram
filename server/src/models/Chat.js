@@ -26,6 +26,12 @@ const chatSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  // Read-only group (9b moderation): when true, nobody can post until an admin
+  // unfreezes it. Enforced in the REST + socket message paths.
+  groupFrozen: {
+    type: Boolean,
+    default: false
+  },
   // Group description shown in the info panel (additive).
   groupDescription: {
     type: String,

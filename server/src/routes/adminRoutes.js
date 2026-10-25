@@ -22,6 +22,7 @@ const {
 const { systemHealth, auditList } = require('../controllers/adminHealthController');
 const moderation = require('../controllers/adminModerationController');
 const adminSecurity = require('../controllers/adminSecurityController');
+const groups = require('../controllers/adminGroupsController');
 
 router.post('/auth/login', login);
 router.get('/auth/session', requireAdminSession, sessionInfo);
@@ -45,6 +46,13 @@ router.get('/overview', requireAdminSession, overview);
 router.post('/users/:id/suspend', requireAdminSession, requireAdminCsrf, moderation.suspend);
 router.post('/users/:id/ban', requireAdminSession, requireAdminCsrf, moderation.ban);
 router.post('/users/:id/unban', requireAdminSession, requireAdminCsrf, moderation.unban);
+router.get('/groups', requireAdminSession, groups.listGroups);
+router.get('/groups/:id', requireAdminSession, groups.groupDetail);
+router.post('/groups/:id/freeze', requireAdminSession, requireAdminCsrf, groups.freezeGroup);
+router.post('/groups/:id/owner', requireAdminSession, requireAdminCsrf, groups.changeOwner);
+router.post('/groups/:id/members/:userId/remove', requireAdminSession, requireAdminCsrf, groups.removeMember);
+router.delete('/groups/:id', requireAdminSession, requireAdminCsrf, groups.deleteGroup);
+
 router.get('/reports', requireAdminSession, moderation.listReports);
 router.get('/reports/:id', requireAdminSession, moderation.reportDetail);
 router.post('/reports/:id/resolve', requireAdminSession, requireAdminCsrf, moderation.resolveReport);

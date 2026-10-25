@@ -21,6 +21,7 @@ const AiUsagePage = lazy(() => import('./AiUsagePage'));
 const KnowledgePage = lazy(() => import('./KnowledgePage'));
 const ReportsPage = lazy(() => import('./ReportsPage'));
 const SupportPage = lazy(() => import('./SupportPage'));
+const GroupsPage = lazy(() => import('./GroupsPage'));
 
 /* ------------------------------------------------------------------- routes */
 
@@ -296,6 +297,7 @@ function PageForPath({
   if (normalized === '/admin/security') return <SecurityPage session={session} onSignOut={onSignOut} />;
   if (normalized === '/admin/reports') return <ReportsPage session={session} />;
   if (normalized === '/admin/support') return <SupportPage session={session} />;
+  if (normalized === '/admin/groups') return <GroupsPage session={session} />;
   if (normalized === '/admin/health') return <HealthPage />;
   if (normalized === '/admin/audit') return <AuditPage />;
   if (normalized === '/admin/ai-usage') return <AiUsagePage />;

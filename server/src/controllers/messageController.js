@@ -55,6 +55,14 @@ const sendMessage = async (req, res) => {
       }
     }
 
+    // A frozen group is read-only for everyone until an admin unfreezes it.
+    if (chat.type === 'group' && chat.groupFrozen) {
+      return res.status(403).json({
+        message: 'This group is read-only while an administrator reviews it.',
+        code: 'GROUP_FROZEN',
+      });
+    }
+
     // Group setting: "only admins can send messages".
     if (!groupSystem.canSendMessages(chat, req.user._id)) {
       return res.status(403).json({

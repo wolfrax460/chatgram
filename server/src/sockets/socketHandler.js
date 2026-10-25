@@ -188,6 +188,16 @@ function registerSocketHandlers(io) {
           return;
         }
 
+        // Frozen groups are read-only for everyone (9b moderation).
+        if (chat.type === 'group' && chat.groupFrozen) {
+          socket.emit('message:error', {
+            message: 'This group is read-only while an administrator reviews it.',
+            clientId,
+            code: 'GROUP_FROZEN',
+          });
+          return;
+        }
+
         // Group setting: "only admins can send messages".
         if (!groupSystem.canSendMessages(chat, socket.userId)) {
           socket.emit('message:error', {
