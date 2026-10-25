@@ -46,6 +46,14 @@ enable TOTP once built, paste the Groq key.
   warn action, saved filters/bulk actions/column visibility, device+sessions data model.
 - 9d oversight, 9a TOTP/IP/legacy guard removal, items 5/6/7: not started.
 
+### Admin TOTP deployed and verified 2026-10-25
+- Optional TOTP second factor for /web/admin: QR enrolment, recovery codes (10, single use),
+  disable with panel password + code, regenerate codes, audited actions.
+- Production stays off until the owner enables it; verified enrolment/status/page render, then
+  reset to off and pending secret removed.
+- 9a left: optional IP allowlist with a lockout safety check, removing the legacy role-based
+  support-admin guard (sign-out-all already exists).
+
 ### Still to build (crossed in the report)
 1. **9b remaining pages**: Reports/moderation, Groups, Statuses & media, Support extras, Knowledge
    base editor, AI usage, Announcements (incl. item-4 recommendations editor), App releases,

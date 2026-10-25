@@ -654,3 +654,14 @@ report reviewed, remove_content soft-deletes the message (or deletes the status)
 the account state, and every action writes an audit row. Admins can never send or edit messages.
 Still crossed in 9b: delete-with-grace, email verification, warn action, groups, content, support
 extras, releases, flags, safety, settings, data requests; 9d oversight is not started.
+
+## D39 - Admin TOTP reuses the user 2FA primitives and is optional (2026-10-25)
+
+The admin panel's second factor stores its secret in an AdminSecurity singleton, encrypted
+with the same AES-256-GCM helper used for user TOTP (TOTP_ENCRYPTION_KEY / JWT_SECRET), and
+recovery codes are hashed and consumed once. The panel password remains the first factor; TOTP
+is off until enabled from Admin security, so production deployments keep working until the
+owner enrols. Enrolment returns the secret, otpauth URL and QR data URL once; the status
+endpoint never returns secret material. Wrong panel codes and wrong TOTP codes both count
+toward the existing per-IP lockout, and every mutation is audited. Still to do in 9a: optional
+IP allowlist and removing the legacy role-based support-admin guard.
