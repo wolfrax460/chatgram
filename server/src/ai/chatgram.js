@@ -6,6 +6,7 @@
  * Not implemented yet: streaming and the web sidebar UI (documented as gaps).
  */
 const crypto = require('crypto');
+const reports = require('./reports');
 const mongoose = require('mongoose');
 const { service } = require('./service');
 const { redact } = require('./redact');
@@ -140,7 +141,7 @@ const adminInboxSchema = new mongoose.Schema(
     askerHash: { type: String, default: '' },
     askerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     count: { type: Number, default: 1 },
-    status: { type: String, enum: ['new', 'answered', 'ignored'], default: 'new' },
+    status: { type: String, enum: ['new', 'in_progress', 'answered', 'fixed', 'ignored'], default: 'new' },
     providerKey: { type: String, default: null },
     errorReason: { type: String, default: null },
     answer: { type: String, default: '' },
@@ -154,6 +155,15 @@ const adminInboxSchema = new mongoose.Schema(
     answerDeliveredAt: { type: Date, default: null },
     // 9b Inbox merge: duplicate rows point at the record they were merged into.
     mergedInto: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminInbox', default: null },
+    // 1A: real AI reports (server-executed actions).
+    title: { type: String, default: '' },
+    summary: { type: String, default: '' },
+    userText: { type: String, default: '' },
+    source: { type: String, default: '' },
+    askerName: { type: String, default: '' },
+    ref: { type: String, default: '' },
+    fixPrompt: { type: String, default: '' },
+    transcript: { type: String, default: '' },
   },
   { timestamps: false },
 );
@@ -174,6 +184,16 @@ const AiConversation = mongoose.models.AiConversation || mongoose.model('AiConve
 const AiMessage = mongoose.models.AiMessage || mongoose.model('AiMessage', aiMessageSchema);
 const AdminInbox = mongoose.models.AdminInbox || mongoose.model('AdminInbox', adminInboxSchema);
 const AiKnowledge = mongoose.models.AiKnowledge || mongoose.model('AiKnowledge', aiKnowledgeSchema);
+
+const REPORT_INSTRUCTIONS = [
+  'REPORTS (server-executed): when the user asks you to report/send/tell something to the Chatgram admin, developers or support, or describes a Chatgram bug, a feature request, a complaint or abuse, include EXACTLY this hidden block somewhere in your reply (valid JSON, nothing else inside):',
+  '[[CHATGRAM_REPORT]]',
+  '{"type":"bug_report|feature_request|support_request|complaint|abuse_report","title":"short title","summary":"2-3 lines","includeConversation":false}',
+  '[[/CHATGRAM_REPORT]]',
+  'The server creates the record and adds the confirmation. Never say you forwarded, sent, notified, reported or escalated anything yourself.',
+  'When asked what happens to reports or why you contact the admin, answer truthfully: when you cannot answer a Chatgram question or the user asks you to report something, the server shares it with the Chatgram team (the user name is hidden unless they asked to report); the reply only says it was sent when the action succeeded.',
+  'You cannot see other chats or earlier context you were not given; never invent them.',
+].join('\n');
 
 const SYSTEM_PROMPT = `You are Chatgram AI, a helpful general-purpose assistant inside the Chatgram messenger.
 Answer ANY question: explain, write, translate (English, Kinyarwanda, French, Swahili), summarise, code, advice, general knowledge.
@@ -394,7 +414,7 @@ async function sendMessage({ userId, conversationId, text }) {
   try {
     const result = await service.chat({
       feature: 'chatgramAI',
-      system: `${SYSTEM_PROMPT}${await knowledgePrompt()}`,
+      system: `${SYSTEM_PROMPT}${await knowledgePrompt()}\n${REPORT_INSTRUCTIONS}`,
       messages,
       maxTokens: 700,
       allowContact: false,
@@ -411,7 +431,9 @@ async function sendMessage({ userId, conversationId, text }) {
   }
 
   const { text: cleanText, unknownQuestion } = stripMarker(answer.text);
-  const finalText = cleanText || "I don't have a confirmed answer on that yet, I've noted it for the team.";
+  let finalText = cleanText || "I don't have a confirmed answer on that yet, I've noted it for the team.";
+  const reported = await reports.handleModelReport({ text: finalText, context: { userText: body, source: 'AI chat', askerId: userId } });
+  if (reported.text) finalText = reported.text;
   let unknown = false;
   if (unknownQuestion) {
     unknown = true;
@@ -493,7 +515,7 @@ async function streamMessage({ userId, conversationId, text, onDelta }) {
   try {
     for await (const chunk of service.streamForFeature({
       feature: 'chatgramAI',
-      system: `${SYSTEM_PROMPT}${await knowledgePrompt()}`,
+      system: `${SYSTEM_PROMPT}${await knowledgePrompt()}\n${REPORT_INSTRUCTIONS}`,
       messages,
       maxTokens: 700,
     })) {
@@ -518,7 +540,9 @@ async function streamMessage({ userId, conversationId, text, onDelta }) {
   }
 
   const { text: cleanText, unknownQuestion } = stripMarker(full);
-  const finalText = cleanText || "I don't have a confirmed answer on that yet, I've noted it for the team.";
+  let finalText = cleanText || "I don't have a confirmed answer on that yet, I've noted it for the team.";
+  const reported = await reports.handleModelReport({ text: finalText, context: { userText: body, source: 'AI chat', askerId: userId } });
+  if (reported.text) finalText = reported.text;
   let unknown = false;
   if (unknownQuestion) {
     unknown = true;

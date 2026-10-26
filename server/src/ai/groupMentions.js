@@ -37,6 +37,7 @@ const alerts = require('./alerts');
 const realtime = require('../utils/realtime');
 const aiAccount = require('../utils/aiAccount');
 const { redact } = require('./redact');
+const reports = require('./reports');
 
 /* --------------------------------------------------------------- mention aliases */
 
@@ -247,6 +248,13 @@ function buildSystemPrompt(groupName, askerName, beginner, quoted) {
       ? '- The member says they are a beginner / know nothing: explain step by step from the very basics with ONE small worked example and a compact table, then offer to continue with the next step.'
       : '- If they ask for a basic explanation, teach step by step with one small worked example and a compact table.',
     quoted ? '- The member is replying to the quoted message; answer that thread and ignore unrelated group chatter.' : null,
+    '- If the member explicitly asks you to report/send/tell something to the admin, developers or support, or describes a Chatgram bug, a feature request, a complaint or abuse, start your reply with EXACTLY this hidden block (valid JSON, no extra text inside):',
+    '[[CHATGRAM_REPORT]]',
+    '{"type":"bug_report|feature_request|support_request|complaint|abuse_report","title":"short title","summary":"2-3 line summary","includeConversation":false}',
+    '[[/CHATGRAM_REPORT]]',
+    'The server creates the report and adds the confirmation sentence. Never say you forwarded, sent, notified, reported or escalated anything yourself; the server does that.',
+    '- When asked why you contact the admin or what happens to reports, answer truthfully: when you cannot answer a Chatgram question or the member asks you to report something, the server shares it with the Chatgram team; questions are shared without their name unless they asked you to report.',
+    '- You cannot see earlier group messages. Never invent what the group is discussing; if asked what the group is chatting about, say you only see the messages sent to you (or the quoted message), and explain that you can answer a specific question.',
     '- If you cannot help, say so in one sentence and suggest Chatgram Support.',
     'Only the reply text is needed: no preamble, no "here is my answer".',
   ]
@@ -475,6 +483,17 @@ async function answerItem(context, policy) {
   }
 
   let answer = cleanModelAnswer(result.text);
+  const reportResult = await reports.handleModelReport({
+    text: answer,
+    context: {
+      userText: context.question || '',
+      source: context.groupName ? `Group: ${context.groupName}` : 'Group chat',
+      askerId: context.askerId,
+      askerName: context.askerName,
+      transcript: context.quoted ? `Quoted: ${context.quoted}\nMention: ${context.question}` : (context.question || ''),
+    },
+  });
+  answer = reportResult.text;
   const truncated = result.finishReason === 'length' || detectUnfinished(answer);
   if (truncated) answer = trimUnfinishedTail(answer);
   if (!answer) answer = "I couldn't put an answer together — please try again in a moment.";
@@ -486,7 +505,8 @@ async function answerItem(context, policy) {
   const name = askerPrefix(context.askerName);
   const contents = parts.map((part, index) => {
     const label = parts.length > 1 ? `(${index + 1}/${parts.length}) ` : '';
-    return `${name}${label}${part}`.trim();
+    const body = reports.stripDuplicatePrefix(part, context.askerName);
+    return `${name}${label}${body}`.trim();
   });
   await deliverMessages(context, contents);
   await noteEvent('answered', null, context, { providerKey: result.providerKey });
