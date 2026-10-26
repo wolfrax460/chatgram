@@ -103,7 +103,7 @@ export function ChatHeader({
         menu.onClearChat ? { label: 'Clear chat', Icon: Trash2, run: menu.onClearChat } : null,
       ] as (MenuItem | null)[]).filter((item): item is MenuItem => Boolean(item))
     : ([
-        menu.onContactInfo ? { label: 'Contact info', Icon: User, run: menu.onContactInfo } : null,
+        menu.onContactInfo ? { label: chat?.type === 'group' ? 'Group info' : 'Contact info', Icon: User, run: menu.onContactInfo } : null,
         menu.onMute ? { label: 'Mute notifications', Icon: BellOff, run: menu.onMute } : null,
         menu.onClearChat ? { label: 'Clear chat', Icon: Trash2, run: menu.onClearChat } : null,
         menu.onBlock ? { label: 'Block contact', Icon: Ban, run: menu.onBlock, danger: true } : null,
@@ -144,8 +144,8 @@ export function ChatHeader({
           onClick={onOpenProfile}
           disabled={!onOpenProfile}
           className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-default"
-          aria-label={onOpenProfile ? `Open ${title}'s profile` : undefined}
-          title={onOpenProfile ? 'Open profile' : undefined}
+          aria-label={onOpenProfile ? (chat?.type === 'group' ? 'Open group info' : `Open ${title}'s profile`) : undefined}
+          title={onOpenProfile ? (chat?.type === 'group' ? 'Open group info' : 'Open profile') : undefined}
         >
           <div
             className={`grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br ${avatarGradient(

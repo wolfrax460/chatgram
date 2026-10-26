@@ -4,3 +4,11 @@
 - Cause: a production deployment created outside `scripts/deploy-web.ps1` shipped without the Build Output API `/api` route; GET fell back to the SPA HTML and POST returned 405.
 - Fix: redeployed with the documented prebuilt script (`chatgram-8wzp927as`) and verified JSON health + POST login forwarding + real admin login (200 with CSRF).
 - Hardening: `client/landing/vercel.json` now also rewrites `/api/*` and `/downloads/*` to the VM, so a plain source deploy keeps the proxy.
+
+
+### Session 49 (2026-10-26) — group info, add contact, call screens
+- Group header root cause: it opened `profilePanel.openProfile(partner.id)` where `partner = chatPartner(chat, meId)` — for a group that is just the first other member. Added a global group-info controller: chat header, menu and Groups tab now open the same GroupInfo component; member rows still open the person profile, with a Back control.
+- GroupInfo now shows created date/by, member count, owner-first sorted searchable members with Owner/Admin/You badges and about, admin member actions (message/make admin/remove), edit/add members/settings (incl. @Chatgram AI), media/links, mute, exit and report group.
+- Add to contacts (editable name alias) updates the panel label, member Contact chip, non-contact banner and contacts/news-chat lists without reload; Remove contact in the three-dot menu; 1:1 non-contact banner with Add/Block/Report.
+- CallOverlay rebuilt: sentence-case status + timer, avatar/ringback stage, device menus (mic/camera/speaker + flip), screen share bar, video-upgrade request/accept, audio-only, speaker/gallery, full screen/PiP, draggable mirrored self view, speaking ring, participant list, remote mute/camera/screen signals, low-bandwidth auto/manual, latency/loss popover, shortcuts M/V/S/Esc; no encryption claims. Add-participant is visible but disabled (no in-call join server API yet).
+- Verified: tsc + build green; verify-calls 7/7; temporary staging check 27/27; production smoke 7/7 with temporary accounts deleted afterwards. Web deployed `chatgram-g47v467uy`.

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Ban, BellOff, Bell, Check, Copy, Flag, Mail, MessageCircle,
-  Phone, ShieldAlert, UserX, Video, X, FileText, Music, Film,
+  ArrowLeft, Ban, BellOff, Bell, Check, Copy, Flag, Mail, MessageCircle, MoreVertical,
+  Phone, ShieldAlert, UserX, UserPlus, Video, X, FileText, Music, Film,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useSession } from '@chatgram/core';
@@ -30,11 +30,17 @@ export function ProfilePanel({
   chatId,
   onClose,
   onOpenChat,
+  onBack,
+  openReport = false,
 }: {
   userId: string;
   chatId?: string;
   onClose: () => void;
   onOpenChat: (chatId: string) => void;
+  /** Show a back button returning to the group info panel behind this one. */
+  onBack?: () => void;
+  /** Open the report dialog immediately. */
+  openReport?: boolean;
 }) {
   const me = useSession((s) => s.user);
   const queryClient = useQueryClient();
@@ -49,6 +55,31 @@ export function ProfilePanel({
   const [reportReason, setReportReason] = useState('spam');
   const [reportDetails, setReportDetails] = useState('');
   const [copied, setCopied] = useState('');
+  const [contactOpen, setContactOpen] = useState(false);
+  const [contactName, setContactName] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [alias, setAlias] = useState('');
+
+  const ALIAS_KEY = 'chatgram.contactAliases';
+  function readAlias(id: string): string {
+    try {
+      const raw = localStorage.getItem(ALIAS_KEY);
+      return raw ? (JSON.parse(raw) as Record<string, string>)[id] || '' : '';
+    } catch {
+      return '';
+    }
+  }
+  function writeAlias(id: string, name: string): void {
+    try {
+      const raw = localStorage.getItem(ALIAS_KEY);
+      const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+      if (name.trim()) map[id] = name.trim();
+      else delete map[id];
+      localStorage.setItem(ALIAS_KEY, JSON.stringify(map));
+    } catch {
+      /* aliases are a convenience, never required */
+    }
+  }
 
   const profileQuery = useQuery({
     queryKey: ['profile', userId],
@@ -65,6 +96,17 @@ export function ProfilePanel({
   }, []);
 
   useEffect(() => {
+    if (openReport) setReportOpen(true);
+  }, [openReport]);
+
+  useEffect(() => {
+    setAlias(readAlias(userId));
+    setContactName('');
+    setContactOpen(false);
+    setMenuOpen(false);
+  }, [userId]);
+
+  useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         if (lightbox) setLightbox(null);
@@ -75,7 +117,7 @@ export function ProfilePanel({
     return () => window.removeEventListener('keydown', onKey);
   }, [lightbox, onClose]);
 
-  const title = profile?.displayName ?? 'Contact info';
+  const title = alias || profile?.displayName || 'Contact info';
 
   // Live socket presence wins over the REST snapshot in profile.
   const isOnline = useIsOnline(profile?.id, profile?.isOnline);
@@ -106,6 +148,48 @@ export function ProfilePanel({
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not open the chat');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function addToContacts() {
+    setBusy('contact');
+    setError('');
+    try {
+      const name = contactName.trim();
+      await api.addContact(userId);
+      if (name && name !== (profile?.displayName ?? '')) writeAlias(userId, name);
+      setAlias(readAlias(userId));
+      setContactOpen(false);
+      setContactName('');
+      setNotice(`${name || profile?.displayName || 'This person'} added to your contacts.`);
+      void queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      void queryClient.invalidateQueries({ queryKey: ['chats'] });
+      void queryClient.invalidateQueries({ queryKey: ['group-member-contacts'] });
+      await profileQuery.refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add this contact');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function removeFromContacts() {
+    setBusy('contact');
+    setError('');
+    setMenuOpen(false);
+    try {
+      await api.removeContact(userId);
+      writeAlias(userId, '');
+      setAlias('');
+      setNotice('Contact removed.');
+      void queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      void queryClient.invalidateQueries({ queryKey: ['chats'] });
+      void queryClient.invalidateQueries({ queryKey: ['group-member-contacts'] });
+      await profileQuery.refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove this contact');
     } finally {
       setBusy('');
     }
@@ -186,7 +270,36 @@ export function ProfilePanel({
         onClick={(event) => event.stopPropagation()}
       >
         <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-ink-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-white/10 dark:bg-ink-800/95">
+          {onBack ? (
+            <button type="button" className="btn-ghost !px-1.5" onClick={onBack} aria-label="Back to group info">
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+          ) : null}
           <h2 className="flex-1 truncate font-bold">Contact info</h2>
+          {!isSelf && data?.isContact ? (
+            <div className="relative">
+              <button
+                type="button"
+                className="btn-ghost !px-2"
+                aria-label="Contact options"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((open) => !open)}
+              >
+                <MoreVertical className="h-5 w-5" />
+              </button>
+              {menuOpen ? (
+                <div className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-xl border border-ink-200 bg-white py-1 text-sm shadow-xl dark:border-white/10 dark:bg-ink-800">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/10"
+                    onClick={() => void removeFromContacts()}
+                  >
+                    <UserX className="h-4 w-4" /> Remove contact
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <button ref={closeRef} type="button" className="btn-ghost !px-2" onClick={onClose} aria-label="Close profile">
             <X className="h-5 w-5" />
           </button>
@@ -248,6 +361,54 @@ export function ProfilePanel({
                 <p className="mt-2 flex items-center gap-1 text-[12px] text-ink-500 dark:text-ink-400">
                   <ShieldAlert className="h-3.5 w-3.5" /> This person cannot message you.
                 </p>
+              ) : null}
+
+              {!isSelf && data ? (
+                <div className="mt-3 w-full" data-testid="profile-contact-state">
+                  {data.isContact ? (
+                    <p className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[12px] font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                      <Check className="h-3.5 w-3.5" /> In your contacts
+                    </p>
+                  ) : (
+                    <p className="text-[12px] text-ink-500 dark:text-ink-400">Not in your contacts</p>
+                  )}
+                  {!data.isContact ? (
+                    contactOpen ? (
+                      <div className="mt-2 rounded-xl border border-ink-200 p-3 text-left dark:border-white/10">
+                        <label className="label" htmlFor="new-contact-name">Name for this contact</label>
+                        <input
+                          id="new-contact-name"
+                          className="field mt-1"
+                          value={contactName}
+                          maxLength={80}
+                          placeholder={profile.displayName}
+                          onChange={(event) => setContactName(event.target.value)}
+                          onKeyDown={(event) => { if (event.key === 'Enter') void addToContacts(); }}
+                        />
+                        <p className="mt-1 text-[11px] text-ink-500 dark:text-ink-400">
+                          Shown on this device; their Chatgram name is unchanged for everyone else.
+                        </p>
+                        <div className="mt-2 flex gap-2">
+                          <button type="button" className="btn-primary !px-3 !py-1.5 text-[12px]" disabled={busy === 'contact'} onClick={() => void addToContacts()}>
+                            <UserPlus className="h-3.5 w-3.5" /> {busy === 'contact' ? 'Adding…' : 'Add contact'}
+                          </button>
+                          <button type="button" className="btn-ghost !py-1.5 text-[12px]" onClick={() => setContactOpen(false)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-brand-600/40 px-3 py-1.5 text-[12px] font-semibold text-brand-700 hover:bg-brand-600/10 dark:border-brand-400/40 dark:text-brand-300"
+                        data-testid="add-to-contacts"
+                        onClick={() => { setContactName(profile.displayName ?? ''); setContactOpen(true); }}
+                      >
+                        <UserPlus className="h-3.5 w-3.5" /> Add to contacts
+                      </button>
+                    )
+                  ) : null}
+                </div>
               ) : null}
             </div>
 

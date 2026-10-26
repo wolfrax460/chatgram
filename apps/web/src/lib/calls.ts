@@ -29,6 +29,17 @@ export interface CallParticipant {
   displayName?: string;
   avatarUrl?: string | null;
   audioOnly?: boolean;
+  /** Signalled in-call state (best effort, via the existing call:ice relay). */
+  muted?: boolean;
+  cameraOn?: boolean;
+  screenSharing?: boolean;
+}
+
+export interface CallSignal {
+  kind: 'muted' | 'camera' | 'screen' | 'video-request' | 'video-accepted' | 'video-declined';
+  muted?: boolean;
+  cameraOn?: boolean;
+  screenSharing?: boolean;
 }
 
 export type CallQuality = 'unknown' | 'good' | 'fair' | 'poor';
@@ -61,6 +72,16 @@ export interface CallState {
   devices: { audioInput: CallDevice[]; audioOutput: CallDevice[]; videoInput: CallDevice[] };
   /** Selected output device (speaker), where the browser supports setSinkId. */
   sinkId: string;
+  /** The other person asked to switch this audio call to video. */
+  videoRequest: CallParticipant | null;
+  /** I asked the other person to switch to video and am waiting. */
+  videoUpgradePending: boolean;
+  /** My screen is being shared right now. */
+  screenSharing: boolean;
+  /** Low-bandwidth mode: incoming video is hidden until the user turns it back on. */
+  lowBandwidth: boolean;
+  /** Connection indicator detail (from getStats). */
+  stats: { latencyMs: number | null; packetLoss: number | null };
 }
 
 /** Honest mesh caps, mirrored from the server. */
@@ -87,6 +108,11 @@ const IDLE: CallState = {
   streamTick: 0,
   quality: 'unknown',
   minimised: false,
+  videoRequest: null,
+  videoUpgradePending: false,
+  screenSharing: false,
+  lowBandwidth: false,
+  stats: { latencyMs: null, packetLoss: null },
   audioOnly: false,
   devices: { audioInput: [], audioOutput: [], videoInput: [] },
   sinkId: '',
@@ -353,7 +379,34 @@ async function measureQuality(): Promise<void> {
       /* ignore a peer that just closed */
     }
   }
-  setState({ quality: worst });
+  let latencyMs: number | null = null;
+  let packetLoss: number | null = null;
+  for (const handle of handles) {
+    try {
+      const reports = await handle.pc.getStats();
+      reports.forEach((report) => {
+        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+          latencyMs = Math.max(latencyMs ?? 0, Math.round((report.currentRoundTripTime || 0) * 1000));
+        }
+        if (report.type === 'inbound-rtp' && report.kind === 'video') {
+          const received = report.packetsReceived || 0;
+          const lost = report.packetsLost || 0;
+          if (received + lost > 20) {
+            packetLoss = Math.max(packetLoss ?? 0, Math.round((lost / (received + lost)) * 1000) / 10);
+          }
+        }
+      });
+    } catch {
+      /* peer just closed */
+    }
+  }
+  setState({ quality: worst, stats: { latencyMs, packetLoss } });
+  if (worst === 'poor' && state.video && !state.lowBandwidth) {
+    setState({
+      lowBandwidth: true,
+      notice: 'Low bandwidth: incoming video was turned off automatically. You can turn it back on from the connection menu.',
+    });
+  }
 }
 
 /* -------------------------------------------------------------- peer setup */
@@ -825,6 +878,33 @@ export async function handleOffer(payload: {
   }
 }
 
+function applySignal(signal: CallSignal, from: CallParticipant): void {
+  if (!current) return;
+  const participant = state.participants.find((p) => p.id === from.id) ?? from;
+  if (!state.participants.some((p) => p.id === from.id)) addParticipant(from);
+  const patchParticipant = (patch: Partial<CallParticipant>) =>
+    setState({
+      participants: state.participants.map((p) => (p.id === from.id ? { ...p, ...patch } : p)),
+    });
+  if (signal.kind === 'muted') {
+    patchParticipant({ muted: Boolean(signal.muted) });
+    if (signal.muted) setState({ notice: `${participant.displayName || 'The other person'} is muted.` });
+  } else if (signal.kind === 'camera') {
+    patchParticipant({ cameraOn: Boolean(signal.cameraOn) });
+    if (!signal.cameraOn) setState({ notice: `${participant.displayName || 'The other person'} turned their camera off.` });
+  } else if (signal.kind === 'screen') {
+    patchParticipant({ screenSharing: Boolean(signal.screenSharing) });
+    if (signal.screenSharing) setState({ notice: `${participant.displayName || 'The other person'} is sharing their screen.` });
+  } else if (signal.kind === 'video-request') {
+    setState({ videoRequest: { ...participant } });
+  } else if (signal.kind === 'video-accepted') {
+    setState({ notice: 'The other person accepted video.' });
+    if (state.videoUpgradePending) void becomeVideo();
+  } else if (signal.kind === 'video-declined') {
+    setState({ videoUpgradePending: false, notice: 'The other person declined video.' });
+  }
+}
+
 export async function handleAnswer(payload: {
   callId: string;
   from: CallParticipant;
@@ -846,8 +926,14 @@ export async function handleIce(payload: {
   callId: string;
   from?: CallParticipant;
   candidate: unknown;
+  signal?: CallSignal;
 }): Promise<void> {
-  if (!current || current.callId !== payload.callId || !payload.candidate) return;
+  if (!current || current.callId !== payload.callId) return;
+  if (payload.signal && payload.from?.id) {
+    applySignal(payload.signal, payload.from);
+    return;
+  }
+  if (!payload.candidate) return;
   const handle = payload.from?.id ? peers.get(payload.from.id) : undefined;
   if (!handle) return;
   const candidate = payload.candidate as RTCIceCandidateInit;
@@ -892,6 +978,119 @@ export function handleCallError(message: string, code?: string): void {
   finish(message);
 }
 
+/* --------------------------------------------------- in-call state signals */
+/**
+ * The server relays call:ice only between participants of the same call, so a
+ * signal rides along with an empty candidate (handled separately from ICE).
+ */
+function emitSignal(payload: CallSignal): void {
+  if (!current) return;
+  for (const peerId of peers.keys()) {
+    realtime.emit('call:ice', { callId: current.callId, toUserId: peerId, signal: payload });
+  }
+}
+
+export function toggleLowBandwidth(): void {
+  setState({
+    lowBandwidth: !state.lowBandwidth,
+    notice: state.lowBandwidth ? 'Incoming video is back on.' : 'Low-bandwidth mode: incoming video hidden.',
+  });
+}
+
+export function isScreenSharingSupported(): boolean {
+  return typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getDisplayMedia);
+}
+
+/** Ask the other person to switch this audio call to video. */
+export function requestVideoUpgrade(): void {
+  if (!current || state.video) return;
+  setState({ videoUpgradePending: true, notice: 'Waiting for the other person to accept video.' });
+  emitSignal({ kind: 'video-request' });
+}
+
+/** Accept or decline a switch-to-video request from the other person. */
+export async function respondVideoUpgrade(accept: boolean): Promise<void> {
+  if (!state.videoRequest) return;
+  setState({ videoRequest: null });
+  if (!accept) {
+    emitSignal({ kind: 'video-declined' });
+    return;
+  }
+  await becomeVideo();
+  emitSignal({ kind: 'video-accepted' });
+}
+
+async function becomeVideo(): Promise<void> {
+  if (!current || state.video) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: mediaConstraints(true).video });
+    const track = stream.getVideoTracks()[0];
+    if (!track) return;
+    await replaceLocalTrack('video', track);
+    setState({ video: true, cameraOn: true, audioOnly: false, videoUpgradePending: false, notice: 'Video is on.' });
+    void refreshDevices();
+    for (const handle of peers.values()) void sendOffer(handle);
+  } catch {
+    setState({ videoUpgradePending: false, notice: 'Could not turn the camera on.' });
+  }
+}
+
+/** Switch a video call to audio only (stops sending camera). */
+export async function switchToAudioOnly(): Promise<void> {
+  if (!state.video) return;
+  await replaceLocalTrack('video', null);
+  await stopScreenShareInternal();
+  setState({ audioOnly: true, cameraOn: false, video: false, notice: 'You switched to audio only.' });
+  emitSignal({ kind: 'screen', screenSharing: false });
+}
+
+export async function toggleScreenShare(): Promise<void> {
+  if (!current) return;
+  if (state.screenSharing) {
+    await stopScreenShareInternal();
+    return;
+  }
+  try {
+    const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    const track = display.getVideoTracks()[0];
+    if (!track) return;
+    await replaceLocalTrack('video', track);
+    track.onended = () => void stopScreenShareInternal();
+    setState({ screenSharing: true, video: true, cameraOn: true, audioOnly: false, notice: 'You are sharing your screen.' });
+    emitSignal({ kind: 'screen', screenSharing: true });
+  } catch {
+    setState({ notice: 'Screen sharing was cancelled.' });
+  }
+}
+
+async function stopScreenShareInternal(): Promise<void> {
+  if (!state.screenSharing) return;
+  setState({ screenSharing: false });
+  emitSignal({ kind: 'screen', screenSharing: false });
+  try {
+    const camera = await navigator.mediaDevices.getUserMedia({ video: mediaConstraints(true).video });
+    const track = camera.getVideoTracks()[0];
+    if (track) await replaceLocalTrack('video', track);
+  } catch {
+    await replaceLocalTrack('video', null);
+    setState({ cameraOn: false });
+  }
+}
+
+/** Flip between front and back cameras on phones (cycles video inputs). */
+export async function flipCamera(): Promise<void> {
+  const devices = state.devices.videoInput;
+  if (!devices.length) {
+    setState({ notice: 'No other camera found.' });
+    return;
+  }
+  const currentTrack = localStream?.getVideoTracks()[0];
+  const currentDevice = currentTrack?.getSettings().deviceId;
+  const index = devices.findIndex((device) => device.deviceId === currentDevice);
+  const next = devices[(index + 1) % devices.length];
+  if (next) await switchDevice('video', next.deviceId);
+}
+
 /* ------------------------------------------------------------------ controls */
 
 export async function toggleMute(): Promise<void> {
@@ -901,6 +1100,7 @@ export async function toggleMute(): Promise<void> {
     // Stopping the track (not just disabling it) releases the microphone.
     await replaceLocalTrack('audio', null);
     setState({ muted: true });
+    emitSignal({ kind: 'muted', muted: true });
     return;
   }
   try {
@@ -908,6 +1108,7 @@ export async function toggleMute(): Promise<void> {
     const fresh = stream.getAudioTracks()[0];
     if (fresh) await replaceLocalTrack('audio', fresh);
     setState({ muted: false });
+    emitSignal({ kind: 'muted', muted: false });
   } catch {
     setState({ notice: 'Could not turn the microphone back on.' });
   }
@@ -918,6 +1119,7 @@ export async function toggleCamera(): Promise<void> {
   if (state.cameraOn) {
     await replaceLocalTrack('video', null);
     setState({ cameraOn: false });
+    emitSignal({ kind: 'camera', cameraOn: false });
     return;
   }
   try {
@@ -925,6 +1127,7 @@ export async function toggleCamera(): Promise<void> {
     const fresh = stream.getVideoTracks()[0];
     if (fresh) await replaceLocalTrack('video', fresh);
     setState({ cameraOn: true });
+    emitSignal({ kind: 'camera', cameraOn: true });
   } catch {
     setState({ notice: 'Could not turn the camera back on.' });
   }

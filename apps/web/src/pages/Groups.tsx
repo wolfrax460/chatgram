@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check, Copy, Loader2, Link as LinkIcon, Pencil, Plus, Search, Settings2, Shield, ShieldOff,
-  Trash2, Users, X, BellOff, Bell, LogOut, FileText, Film, Music, RefreshCw,
+  Trash2, Users, X, BellOff, Bell, LogOut, FileText, Film, Music, RefreshCw, MessageCircle, Flag,
 } from 'lucide-react';
 import { chatTitle, useSession, type Chat, type User } from '@chatgram/core';
 import { api } from '../lib/api';
 import { useProfilePanel } from '../lib/profilePanel';
+import { useGroupInfo } from '../lib/groupInfo';
 import { onlineNow, usePresenceView } from '../lib/presence';
 
 /* ------------------------------------------------------------ create modal */
@@ -180,7 +181,7 @@ function AddMembersModal({ chat, onClose }: { chat: Chat; onClose: () => void })
 
 type GroupTab = 'members' | 'media' | 'settings';
 
-function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose: () => void }) {
+export function GroupInfo({ chat, meId, onClose, onOpenChat }: { chat: Chat; meId: string; onClose: () => void; onOpenChat?: (chatId: string) => void }) {
   const queryClient = useQueryClient();
   const presenceView = usePresenceView();
   const profilePanel = useProfilePanel();
@@ -194,6 +195,10 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
   const [description, setDescription] = useState(chat.description ?? '');
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('abuse');
+  const [reportDetails, setReportDetails] = useState('');
+  const contactsQuery = useQuery({ queryKey: ['contacts'], queryFn: () => api.contacts(), retry: false });
   const photoRef = useRef<HTMLInputElement>(null);
 
   const changePhoto = useMutation({
@@ -252,6 +257,24 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
     }));
   const iAmAdmin = members.find((m) => m.isYou)?.isAdmin ?? (chat.admins ?? []).includes(meId);
   const group = membersQuery.data?.group;
+  const ownerId = String(
+    (group as { createdBy?: { _id?: string; id?: string } })?.createdBy?._id ||
+      (group as { createdBy?: { _id?: string; id?: string } })?.createdBy?.id ||
+      (chat as { groupCreatedBy?: string }).groupCreatedBy ||
+      '',
+  );
+  const contactIds = useMemo(
+    () => new Set((contactsQuery.data ?? []).map((person: User) => person.id)),
+    [contactsQuery.data],
+  );
+  const sortedMembers = useMemo(() => {
+    return [...members].sort((a, b) => {
+      const rank = (m: Member) => (String(m._id) === ownerId ? 0 : m.isAdmin ? 1 : 2);
+      const byRank = rank(a) - rank(b);
+      if (byRank !== 0) return byRank;
+      return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' });
+    });
+  }, [members, ownerId]);
   const settings = group?.settings ?? chat.settings ?? {
     whoCanEditInfo: 'all',
     whoCanSendMessages: 'all',
@@ -353,7 +376,7 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
     onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not change the mute setting'),
   });
 
-  const visibleMembers = members.filter((m) =>
+  const visibleMembers = sortedMembers.filter((m) =>
     m.displayName.toLowerCase().includes(search.trim().toLowerCase()),
   );
 
@@ -371,7 +394,7 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
   }
 
   return (
-    <aside className="flex w-full shrink-0 flex-col border-l border-ink-200 dark:border-white/10 sm:w-[340px]" data-testid="group-info">
+    <aside className="flex h-full w-full shrink-0 flex-col border-l border-ink-200 bg-white shadow-2xl dark:border-white/10 dark:bg-ink-800 sm:w-[340px]" data-testid="group-info">
       <header className="flex items-center justify-between border-b border-ink-200 px-4 py-3 dark:border-white/10">
         <h3 className="font-bold">Group info</h3>
         <button type="button" className="btn-ghost !px-2" onClick={onClose} aria-label="Close group info">
@@ -422,6 +445,7 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
         <p className="text-[12px] text-ink-500 dark:text-ink-400">
           {members.length} member{members.length === 1 ? '' : 's'}
           {group?.createdBy ? ` · created by ${group.createdBy.displayName}` : ''}
+          {group?.createdAt ? ` · ${new Date(group.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
         </p>
         {group?.description ? (
           <p className="mt-2 whitespace-pre-wrap text-sm text-ink-600 dark:text-ink-300">{group.description}</p>
@@ -544,18 +568,43 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">
-                        {person.displayName}
-                        {isMe ? ' (you)' : ''}
+                      <p className="flex min-w-0 items-center gap-1.5 truncate text-sm font-semibold">
+                        <span className="truncate">{person.displayName}</span>
+                        {isMe ? <span className="shrink-0 text-[10.5px] font-medium text-ink-500 dark:text-ink-400">You</span> : null}
+                        {String(person._id) === ownerId ? (
+                          <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[9.5px] font-bold uppercase text-amber-700 dark:text-amber-300" data-testid="owner-badge">Owner</span>
+                        ) : personIsAdmin ? (
+                          <span className="shrink-0 rounded bg-brand-600/10 px-1.5 py-0.5 text-[9.5px] font-bold uppercase text-brand-700 dark:text-brand-300">Admin</span>
+                        ) : null}
+                        {contactIds.has(String(person._id)) && !isMe ? (
+                          <span className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-700 dark:text-emerald-300" data-testid="member-is-contact">Contact</span>
+                        ) : null}
                       </p>
-                      <p className="text-[11px] text-ink-500 dark:text-ink-400">
-                        {personIsAdmin ? 'Admin' : 'Member'}
-                        {onlineNow(presenceView, person._id, person.isOnline) ? ' - online' : ''}
+                      <p className="truncate text-[11px] text-ink-500 dark:text-ink-400">
+                        {person.about?.trim() || (personIsAdmin ? 'Admin' : 'Member')}
+                        {onlineNow(presenceView, person._id, person.isOnline) ? ' · online' : ''}
                       </p>
                     </div>
                   </button>
                   {iAmAdmin && !isMe ? (
                     <>
+                      <button
+                        type="button"
+                        className="btn-ghost !px-1.5"
+                        title="Message"
+                        aria-label={`Message ${person.displayName}`}
+                        onClick={async () => {
+                          try {
+                            const direct = await api.createDirect(person._id);
+                            onOpenChat?.(direct.id);
+                            onClose();
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : 'Could not open a chat');
+                          }
+                        }}
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                      </button>
                       <button
                         type="button"
                         className="btn-ghost !px-1.5"
@@ -751,6 +800,44 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
       </div>
 
       <footer className="border-t border-ink-200 p-3 dark:border-white/10">
+        {reportOpen ? (
+          <div className="mb-3 rounded-xl border border-rose-300/60 bg-rose-50 p-3 text-left dark:border-rose-500/30 dark:bg-rose-500/10">
+            <p className="text-[12.5px] font-semibold text-rose-700 dark:text-rose-300">Report this group to the Chatgram team?</p>
+            <select className="field mt-2" value={reportReason} onChange={(event) => setReportReason(event.target.value)} aria-label="Report reason">
+              <option value="spam">Spam</option>
+              <option value="abuse">Abusive content</option>
+              <option value="harassment">Harassment</option>
+              <option value="impersonation">Impersonation</option>
+              <option value="scam">Scam or fraud</option>
+              <option value="other">Something else</option>
+            </select>
+            <textarea className="field mt-2 resize-none" rows={2} maxLength={500} placeholder="Anything else we should know? (optional)" value={reportDetails} onChange={(event) => setReportDetails(event.target.value)} />
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                className="btn-primary !bg-rose-600 !py-1.5 text-[12px]"
+                onClick={async () => {
+                  try {
+                    const result = await api.reportChat(chat.id, reportReason, reportDetails.trim() || undefined);
+                    setNotice(`Report sent (${result.reportId}). Our team will review it.`);
+                    setReportOpen(false);
+                    setReportDetails('');
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Could not send the report');
+                  }
+                }}
+              >
+                Send report
+              </button>
+              <button type="button" className="btn-ghost !py-1.5 text-[12px]" onClick={() => setReportOpen(false)}>Cancel</button>
+            </div>
+          </div>
+        ) : null}
+        <div className="mb-2 flex gap-2">
+          <button type="button" className="btn-ghost !py-1.5 text-[12px]" onClick={() => setReportOpen(true)} data-testid="report-group">
+            <Flag className="h-4 w-4" /> Report group
+          </button>
+        </div>
         {confirmLeave ? (
           <div className="space-y-2">
             <p className="text-[12.5px] font-semibold text-rose-600 dark:text-rose-400">
@@ -776,7 +863,7 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
             onClick={() => setConfirmLeave(true)}
             className="btn-ghost h-9 w-full text-[13px] font-semibold text-rose-600"
           >
-            <LogOut className="h-4 w-4" /> Leave group
+            <LogOut className="h-4 w-4" /> Exit group
           </button>
         )}
       </footer>
@@ -788,19 +875,14 @@ function GroupInfo({ chat, meId, onClose }: { chat: Chat; meId: string; onClose:
 
 /* ------------------------------------------------------------------ groups */
 
-export default function Groups({ onOpenChat }: { onOpenChat: (chatId: string) => void }) {
+export default function Groups({ onOpenChat: _onOpenChat }: { onOpenChat: (chatId: string) => void }) {
   const me = useSession((s) => s.user);
   const [creating, setCreating] = useState(false);
-  const [infoFor, setInfoFor] = useState<Chat | null>(null);
+  const groupInfo = useGroupInfo();
   const [query, setQuery] = useState('');
 
   const groups = useQuery({ queryKey: ['groups'], queryFn: () => api.groups() });
   const meId = me?.id ?? '';
-
-  const liveInfo = useMemo(
-    () => (infoFor ? groups.data?.find((g) => g.id === infoFor.id) ?? infoFor : null),
-    [infoFor, groups.data],
-  );
 
   const visible = (groups.data ?? []).filter((chat) =>
     chatTitle(chat, meId).toLowerCase().includes(query.trim().toLowerCase()),
@@ -846,7 +928,7 @@ export default function Groups({ onOpenChat }: { onOpenChat: (chatId: string) =>
                   chatTitle(chat, meId).slice(0, 2).toUpperCase()
                 )}
               </div>
-              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onOpenChat(chat.id)}>
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => groupInfo.openGroupInfo(chat.id)}>
                 <p className="truncate font-semibold">{chatTitle(chat, meId)}</p>
                 <p className="truncate text-xs text-ink-500 dark:text-ink-400">
                   {chat.participants.length} members · {chat.lastMessage?.content ?? 'No messages yet'}
@@ -855,7 +937,7 @@ export default function Groups({ onOpenChat }: { onOpenChat: (chatId: string) =>
               <button
                 type="button"
                 className="btn-ghost text-xs"
-                onClick={() => setInfoFor(chat)}
+                onClick={() => groupInfo.openGroupInfo(chat.id)}
               >
                 Info
               </button>
@@ -863,10 +945,6 @@ export default function Groups({ onOpenChat }: { onOpenChat: (chatId: string) =>
           ))}
         </div>
       </section>
-
-      {liveInfo ? (
-        <GroupInfo chat={liveInfo} meId={meId} onClose={() => setInfoFor(null)} />
-      ) : null}
 
       {creating ? <CreateGroupModal onClose={() => setCreating(false)} /> : null}
     </div>

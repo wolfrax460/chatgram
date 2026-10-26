@@ -621,6 +621,14 @@ export class ApiClient {
     );
   }
 
+  /** Report a group conversation to the moderation team. */
+  reportChat(chatId: string, reason: string, details?: string) {
+    return this.request<{ message: string; reportId: string; reason: string }>(
+      `/api/chats/${chatId}/report`,
+      { method: 'POST', body: { reason, details } },
+    );
+  }
+
   muteChat(chatId: string, untilMs?: number) {
     return this.request<{ message: string; chatId: string; muted: boolean; until: string | null }>(
       `/api/users/me/muted/${chatId}`,

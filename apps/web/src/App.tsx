@@ -19,6 +19,7 @@ import { api, realtime } from './lib/api';
 import { useRealtimeBridge } from './lib/useRealtime';
 import { setDoNotDisturb } from './lib/notify';
 import { useProfilePanel } from './lib/profilePanel';
+import { GroupInfoContext, useGroupInfo, type GroupInfoApi } from './lib/groupInfo';
 import { ChatList } from './components/ChatList';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import { ChatHeader } from './components/ChatHeader';
@@ -29,7 +30,7 @@ import { CallAlerts } from './components/CallAlerts';
 import { NewChatPanel } from './components/NewChatPanel';
 import { useIsOnline } from './lib/presence';
 import { getCallState, startCall, subscribeCalls } from './lib/calls';
-import Groups from './pages/Groups';
+import Groups, { GroupInfo } from './pages/Groups';
 import Calls from './pages/Calls';
 import Status from './pages/Status';
 import SettingsPage from './pages/Settings';
@@ -105,6 +106,7 @@ function setUnreadFavicon(count: number): void {
 function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: () => void }) {
   const queryClient = useQueryClient();
   const profilePanel = useProfilePanel();
+  const groupInfo = useGroupInfo();
   const timeFormat = usePrefs((s) => s.timeFormat);
   const typingByChat = useRealtime((s) => s.typing);
   const connected = useRealtime((s) => s.connected);
@@ -183,6 +185,8 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
 
   const list = messages.data ?? [];
   const partner = chatPartner(chat, meId);
+  const contactsQuery = useQuery({ queryKey: ['contacts'], queryFn: () => api.contacts(), staleTime: 60_000, retry: false });
+  const partnerIsContact = !partner || (contactsQuery.data ?? []).some((person) => person.id === partner.id);
   const participantIds = chat.participants.map((p) => p.id);
   const typing = Boolean(typingByChat[chat.id]);
   // Presence comes from live sockets (never a stale REST snapshot).
@@ -404,7 +408,13 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
           setSearchOpen((v) => !v);
           setInChatSearch('');
         }}
-        onOpenProfile={partner ? () => profilePanel.openProfile(partner.id, chat.id) : undefined}
+        onOpenProfile={
+          chat.type === 'group'
+            ? () => groupInfo.openGroupInfo(chat.id)
+            : partner
+              ? () => profilePanel.openProfile(partner.id, chat.id)
+              : undefined
+        }
         onCall={() => {
           if (chat.participants.length < 2) {
             setNotice('There is nobody else in this chat to call.');
@@ -434,7 +444,12 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
           );
         }}
         menu={{
-          onContactInfo: () => (partner ? profilePanel.openProfile(partner.id, chat.id) : undefined),
+          onContactInfo: () =>
+            chat.type === 'group'
+              ? groupInfo.openGroupInfo(chat.id)
+              : partner
+                ? profilePanel.openProfile(partner.id, chat.id)
+                : undefined,
           onMute: async () => {
             try {
               await api.muteChat(chat.id);
@@ -458,6 +473,47 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
         }}
         onBack={onBack}
       />
+
+      {chat.type !== 'group' && partner && contactsQuery.data && !partnerIsContact ? (
+        <div
+          className="flex flex-wrap items-center gap-2 border-b border-amber-300/50 bg-amber-50 px-4 py-2 text-[12.5px] text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200"
+          data-testid="non-contact-banner"
+        >
+          <span className="min-w-0 flex-1">
+            Not in your contacts: <strong className="font-semibold">{partner.displayName}</strong>
+          </span>
+          <button
+            type="button"
+            className="rounded-full border border-amber-500/60 px-2.5 py-1 text-[11.5px] font-semibold hover:bg-amber-100 dark:hover:bg-amber-500/20"
+            onClick={() => profilePanel.openProfile(partner.id, chat.id)}
+          >
+            Add
+          </button>
+          <button
+            type="button"
+            className="rounded-full border border-amber-500/60 px-2.5 py-1 text-[11.5px] font-semibold hover:bg-amber-100 dark:hover:bg-amber-500/20"
+            onClick={async () => {
+              try {
+                await api.blockUser(partner.id);
+                void queryClient.invalidateQueries({ queryKey: ['chats'] });
+                void queryClient.invalidateQueries({ queryKey: ['profile', partner.id] });
+                setNotice(`${partner.displayName} is blocked.`);
+              } catch (err) {
+                setNotice(err instanceof Error ? err.message : 'Could not block this person');
+              }
+            }}
+          >
+            Block
+          </button>
+          <button
+            type="button"
+            className="rounded-full border border-rose-500/60 px-2.5 py-1 text-[11.5px] font-semibold text-rose-700 hover:bg-rose-100 dark:text-rose-300 dark:hover:bg-rose-500/20"
+            onClick={() => profilePanel.openProfile(partner.id, chat.id, { report: true })}
+          >
+            Report
+          </button>
+        </div>
+      ) : null}
 
       {chat.type === 'group' && chat.pinnedMessageId ? (
         <div className="flex items-center gap-2 border-b border-ink-200 bg-brand-600/5 px-4 py-2 dark:border-white/10 dark:bg-brand-600/10">
@@ -751,7 +807,8 @@ function Shell({ features }: { features: AppFeatures | null }) {
   const [tab, setTab] = useState<Tab>('chats');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
-  const [profileTarget, setProfileTarget] = useState<{ userId: string; chatId?: string } | null>(null);
+  const [profileTarget, setProfileTarget] = useState<{ userId: string; chatId?: string; report?: boolean } | null>(null);
+  const [groupInfoId, setGroupInfoId] = useState<string | null>(null);
   const callState = useSyncExternalStore(subscribeCalls, getCallState);
   const [newChatOpen, setNewChatOpen] = useState(false);
   const missedCalls = useQuery({
@@ -824,9 +881,23 @@ function Shell({ features }: { features: AppFeatures | null }) {
   }, []);
 
   const closeProfile = useCallback(() => setProfileTarget(null), []);
+  const closeGroupInfo = useCallback(() => setGroupInfoId(null), []);
+  const groupInfoApi = useMemo<GroupInfoApi>(
+    () => ({
+      openGroupInfo: (chatId: string) => setGroupInfoId(chatId),
+      closeGroupInfo,
+      activeGroupId: groupInfoId,
+    }),
+    [closeGroupInfo, groupInfoId],
+  );
+  const groupInfoChat = useMemo(
+    () => (chats.data ?? []).find((chat) => chat.id === groupInfoId) ?? null,
+    [chats.data, groupInfoId],
+  );
   const profileApi = useMemo<ProfilePanelApi>(
     () => ({
-      openProfile: (userId: string, chatId?: string) => setProfileTarget({ userId, chatId }),
+      openProfile: (userId: string, chatId?: string, options?: { report?: boolean }) =>
+        setProfileTarget({ userId, chatId, report: Boolean(options?.report) }),
       closeProfile,
       activeUserId: profileTarget?.userId ?? null,
     }),
@@ -887,6 +958,7 @@ function Shell({ features }: { features: AppFeatures | null }) {
 
   return (
     <ProfilePanelContext.Provider value={profileApi}>
+    <GroupInfoContext.Provider value={groupInfoApi}>
     <div className="app-viewport flex overflow-hidden">
       <CallOverlay call={callState} />
       <CallAlerts />
@@ -1178,15 +1250,24 @@ function Shell({ features }: { features: AppFeatures | null }) {
         </div>
       ) : null}
 
+      {groupInfoChat ? (
+        <div className="fixed inset-y-0 right-0 z-40 flex max-w-full shadow-2xl" data-testid="group-info-host">
+          <GroupInfo chat={groupInfoChat} meId={meId} onClose={closeGroupInfo} onOpenChat={openChat} />
+        </div>
+      ) : null}
+
       {profileTarget ? (
         <ProfilePanel
           userId={profileTarget.userId}
           chatId={profileTarget.chatId}
+          openReport={profileTarget.report}
           onClose={closeProfile}
           onOpenChat={openChat}
+          onBack={groupInfoId ? closeProfile : undefined}
         />
       ) : null}
     </div>
+    </GroupInfoContext.Provider>
     </ProfilePanelContext.Provider>
   );
 }
