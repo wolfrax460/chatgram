@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Moon, Sun, Monitor, MessageCircle, LogOut, Users, CircleDashed, Phone,
   Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy, Sparkles, BadgeCheck,
-  UserRoundPlus, Download, Share2, FolderUp, FileText, Camera,
+  UserRoundPlus, Plus, Download, Share2, FolderUp, FileText, Camera,
 } from 'lucide-react';
 import {
   chatPartner,
@@ -487,7 +487,7 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
             className="rounded-full border border-amber-500/60 px-2.5 py-1 text-[11.5px] font-semibold hover:bg-amber-100 dark:hover:bg-amber-500/20"
             onClick={() => profilePanel.openProfile(partner.id, chat.id)}
           >
-            Add
+            <Plus className="mr-1 inline h-3.5 w-3.5" /> Add
           </button>
           <button
             type="button"

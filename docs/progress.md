@@ -17,6 +17,6 @@
 ### Session 50 (2026-10-26) - group avatar, read ticks, add-contact icon + installers
 - Group avatar bug: ChatList/ChatHeader used `chatPartner(chat).avatarUrl` for groups, so a freshly created group showed the creator's profile photo; they now use `groupAvatarUrl`/initials only and the group avatar opens the chat (not a member profile).
 - Read ticks bug: `last.readBy.length > 0` counted the sender; both delivered and read checks now look only at other participants. Verified on staging: unread shows grey, mark-read by the recipient turns blue.
-- Add-contact icon is now the person-with-plus icon in Contact info and the empty-screen quick action.
+- Add-contact icon: the person-with-plus glyph looked almost identical to the old icon, so Contact info now uses a plain plus icon, the non-contact banner Add action has a plus, and New chat > New contact uses the person-with-plus icon (empty-screen quick action unchanged). Deployed again.
 - Rebuilt installers and republished to /downloads: Windows `chatgram-windows-setup.exe` 81,824,358 B SHA-256 `c9882047...53ab3`, `latest.yml` refreshed; Android `chatgram-android.apk` 4,127,661 B SHA-256 `1dfe75cb...eb0da`.
 - Web deployed `chatgram-o3pzt7gic`.

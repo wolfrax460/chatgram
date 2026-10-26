@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, Ban, ChevronRight, FolderPlus, MoreVertical, Phone, Search, Trash2, UserPlus, Video,
+  ArrowLeft, Ban, ChevronRight, FolderPlus, MoreVertical, Phone, Search, Trash2, UserRoundPlus, Video,
 } from 'lucide-react';
 import { useSession } from '@chatgram/core';
 import { api } from '../lib/api';
@@ -232,7 +232,7 @@ export function NewChatPanel({
               className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-ink-100/70 dark:hover:bg-white/[.04]"
             >
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-600 text-white">
-                <UserPlus className="h-5 w-5" />
+                <UserRoundPlus className="h-5 w-5" />
               </span>
               <span className="font-medium">New contact</span>
             </button>
