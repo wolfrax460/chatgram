@@ -890,3 +890,36 @@ architecture, so it is deliberately *not* built yet. It would need:
 - a fallback path so existing mesh calls keep working during rollout.
 
 Until then the caps are the contract: 6 video / 12 audio, enforced on the server, with clear UI.
+
+## D58 - Admin VM diagnostics are allowlisted server-side checks, never a web shell (2026-10-26)
+
+The admin "System health" page can now run a small set of read-only diagnostics on the Oracle VM
+and show MongoDB storage usage. The obvious tempting design — a box where the admin types a shell
+command — was rejected deliberately.
+
+**Why not a web shell:** the admin panel is reachable from the public internet. A command box is a
+remote code execution endpoint by design: one stolen session cookie, CSRF slip, or admin-password
+reuse turns into full ownership of the VM that holds the database credentials, the JWT secret and
+the SSH-accessible machine. It also defeats the audit model, because "what ran" becomes unbounded.
+
+**What we built instead:**
+- Diagnostics execute **inside the API process**, which already runs on the VM under PM2 — no SSH
+  key or remote shell credential is stored or transmitted anywhere.
+- A request can only select an **id** from a fixed allowlist in `server/src/utils/hostDiagnostics.js`.
+  Each entry is a constant binary + argv; `execFile` is used with `shell: false`, so arguments are
+  never shell-interpreted.
+- Hard limits: 10 s timeout, 256 KB process buffer, 32 KB response, 30 runs/min/IP, and output lines
+  matching credential patterns (connection strings, tokens, `*_SECRET`, `PASSWORD=`, JWTs, API keys)
+  are redacted before leaving the server.
+- Every attempt is audited (`system_diagnostic`, `system_diagnostic_rejected`), so the trail shows
+  both what ran and who tried something outside the list.
+- Adding a check means editing the allowlist and redeploying — there is no runtime way to introduce
+  a new command from the browser.
+
+**If arbitrary commands are ever genuinely needed**, the answer is SSH (documented in
+`docs/deploy-next-session.md`) with the key held by a human — that keeps the blast radius, the
+second factor and the audit trail in the operating system, not in a web session.
+
+**Storage reporting:** `/api/admin/system/storage` reads `dbStats`/`collStats` and compares
+`storageSize + indexSize` against `MONGO_STORAGE_LIMIT_MB` (default 512 MB, the Atlas M0 ceiling) or
+the volume size MongoDB reports. It is read-only and returns no connection string or credentials.

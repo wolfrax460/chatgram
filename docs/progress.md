@@ -1,3 +1,56 @@
+## Admin System health: database storage + VM diagnostics (deployed 2026-10-26)
+
+The admin "System health" page now answers two everyday questions without SSH:
+**how full is MongoDB, and what is the VM doing?**
+
+### Database storage — `GET /api/admin/system/storage`
+- `dbStats` + `collStats`: data size, storage size, index size, documents, collections.
+- **Used vs the plan limit, with the remaining bytes and percent used.** The limit is
+  `MONGO_STORAGE_LIMIT_MB` (default 512 MB = Atlas M0) or MongoDB's own volume size
+  (`fsTotalSize`) when that is larger; the payload says which source it used.
+- The 15 largest collections with documents/data/index/on-disk bytes; an 85% warning banner.
+- Production numbers at deploy time: `chatgram` db, 31 collections, 1,035 documents,
+  data 0.41 MB, storage 1.25 MB, index 2.30 MB → **3.55 MB of 512 MB (0.7%), 508.45 MB free**.
+
+### VM diagnostics — `GET /api/admin/system/diagnostics`, `POST .../run`
+- Runs **on the API host itself** (it already runs on the Oracle VM under PM2). There is no
+  SSH key, no stored credential and no remote shell anywhere in the app.
+- 10 fixed, read-only checks: disk, space used by the app, memory, load/uptime, system services
+  (nginx, coturn), listening ports, PM2 status, API log tail, nginx error tail, backup archives.
+- A request can only choose an **id from the allowlist**; `execFile` runs a constant argv
+  (never a shell), 10 s timeout, 256 KB buffer / 32 KB response, credential-like lines redacted,
+  30 runs/min/IP, and every run is audited (`system_diagnostic`; bad ids are audited as
+  `system_diagnostic_rejected`).
+- Verified on the deployed VM: disk, memory, load, services, pm2, ports and backups all exited 0;
+  `{ checkId: "rm -rf /" }` → 400 and `{ checkId: "not_a_check" }` → 404, with no output returned.
+- UI: two new cards on `/web/admin/health` (storage meters + collection table; diagnostic picker
+  with copyable output and exit-code/timing chips).
+
+### Tests
+- `server/test/integration/adminSystem.test.js` — **32/32**: auth gates, storage shape
+  (used ≤ limit, remaining = limit − used, percent 0–100), no connection string or password in
+  any response, shell commands / unknown ids / non-string ids / missing ids rejected, audit rows
+  written for both allowed and rejected attempts. Registered in `npm run test:integration`.
+- Browser check (local staging): **8/8** — page renders, both cards, storage limit source and
+  percent, a diagnostic runs through the UI, output + exit chip, no console/page errors.
+
+### Deployed
+- Backend: DB backup `~/chatgram-backups/20261026-132207.tgz` (92 KB), source backup
+  `src.bak-20261026-132207`; new endpoints answer 401 unauthenticated (live, auth-gated).
+- Web: Vercel deployment `chatgram-a4kwzcglx`; `/web/admin/health` serves the new
+  `HealthPage` chunk (contains "Database storage" and "Server diagnostics").
+
+### Incident during this deploy (fixed, worth remembering)
+Deploying `server/src/routes/adminRoutes.js` from HEAD **crash-looped the API**: the file
+referenced `siteSettings.telegramTest`, but that controller function exists only as
+**uncommitted working-tree changes** in the other session — so production's controller did not
+have it (`TypeError: argument handler must be a function`).
+Fix: restored the routes file from the pre-deploy backup and re-applied only this round's block;
+the API was healthy again 4 s after restart. The commit was then rebuilt against the committed
+base (`7e500b5`) so it no longer carries the foreign WIP line.
+**Rule to avoid a repeat:** a route and its controller function must be committed together, and
+never deploy a file that mixes your change with someone else's uncommitted work.
+
 ## NEXT SESSION STARTS HERE (2026-10-26, after Chunk 1 partial)
 
 ### Done this session (Chunk 1, 1A server core)
