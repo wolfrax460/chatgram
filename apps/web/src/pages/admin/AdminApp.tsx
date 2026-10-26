@@ -315,7 +315,7 @@ function PageForPath({
   if (normalized === '/admin/releases') return <ReleasesPage session={session} />;
   if (normalized === '/admin/flags') return <FeatureFlagsPage session={session} />;
   if (normalized === '/admin/data-requests') return <DataRequestsPage session={session} />;
-  if (normalized === '/admin/health') return <HealthPage />;
+  if (normalized === '/admin/health') return <HealthPage session={session} />;
   if (normalized === '/admin/audit') return <AuditPage />;
   if (normalized === '/admin/reviews') return <ReviewsPage />;
   if (normalized === '/admin/search') return <SearchPage session={session} />;

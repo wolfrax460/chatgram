@@ -1,6 +1,7 @@
 // Admin panel API. Every route except login requires an admin session cookie;
 // state-changing routes also require the per-session CSRF header.
 const express = require('express');
+const expressRateLimit = require('express-rate-limit');
 const router = express.Router();
 const { requireAdminSession, requireAdminCsrf } = require('../middleware/adminAuth');
 const {
@@ -28,6 +29,7 @@ const {
   bulkUsers,
 } = require('../controllers/adminOverviewController');
 const { systemHealth, auditList } = require('../controllers/adminHealthController');
+const systemAdmin = require('../controllers/adminSystemController');
 const moderation = require('../controllers/adminModerationController');
 const adminSecurity = require('../controllers/adminSecurityController');
 const groups = require('../controllers/adminGroupsController');
@@ -94,6 +96,21 @@ router.get('/reports/:id', requireAdminSession, moderation.reportDetail);
 router.post('/reports/:id/resolve', requireAdminSession, requireAdminCsrf, moderation.resolveReport);
 router.get('/health', requireAdminSession, systemHealth);
 router.get('/audit', requireAdminSession, auditList);
+
+// System health extras: MongoDB storage usage and allowlisted host diagnostics.
+// Storage is read-only; diagnostics run a fixed command from the server-side
+// allowlist (never a user-supplied command line) and every run is audited.
+const diagnosticLimiter = expressRateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test' || process.env.AUTH_RATE_LIMIT_DISABLED === 'true',
+  message: { message: 'Too many diagnostics — wait a minute and try again.' },
+});
+router.get('/system/storage', requireAdminSession, systemAdmin.storage);
+router.get('/system/diagnostics', requireAdminSession, systemAdmin.diagnostics);
+router.post('/system/diagnostics/run', requireAdminSession, requireAdminCsrf, diagnosticLimiter, systemAdmin.runDiagnostic);
 router.get('/users', requireAdminSession, listUsers);
 router.get('/users/:id', requireAdminSession, userDetail);
 router.post('/users/bulk', requireAdminSession, requireAdminCsrf, bulkUsers);
