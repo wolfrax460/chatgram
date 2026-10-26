@@ -1,3 +1,15 @@
+## CHUNK 3 COMPLETE (code + local APK 1.1.1, NOT published) — 2026-10-26
+
+The Android app lives in `apps/mobile` (Capacitor); `client/android/` is a dead Flutter scaffold.
+
+**Why the 1.1.0 APK did not work (proven on an API-34 emulator via adb logcat, commit `d65db1e`):** (1) fatal launcher mismatch — manifest launched `app.chatgram.android.MainActivity` but the dex only had `com.chatgram.app.MainActivity` (ClassNotFoundException on every start); (2) fatal stale `cap copy` — the APK carried the 2026-10-20 config without `server.url`, so it loaded bundled assets instead of the hosted client; (3) fatal bundled index.html requested `/web/static/*` while files were at `/static/*` → 404 white screen. Also fixed: no `adjustResize` (keyboard covered composer), white window flash, no offline `server.errorPath` (new local error page with retry), targetSdk 36 edge-to-edge breakage (now 34), versionCode stuck at 1, no R8, unused storage permissions.
+
+**Decisions (docs/decisions.md D59/D60):** keep the thin hosted wrapper (bundling would need web base/basename changes; CORS for `https://localhost` already prepared) and ship an R8 + shrinkResources release-style build signed with the pinned `~/.android/debug.keystore` (build FAILS if the keystore is missing instead of silently generating a new key).
+
+**Build:** `release-artifacts/chatgram-android.apk` — v1.1.1 (versionCode 2), **1,116,723 B** (was 4,127,661), SHA-256 `defe6b4eb18dc3994e2cbcdd31860efa2113b1268797b4314d5cdf678e2c1149`, appId `app.chatgram.android`, minSdk 24 / target 34, same debug cert → installs as an in-place update (verified on the emulator). Emulator: new APK launches, logcat `Capacitor: Loading app at https://chatgram-xi.vercel.app/web/`, sign-in screen rendered, offline error page works, cold start 2.26 s warm-cache. Emulator host (12 GB, software GPU) was too slow for interactive flows; no phone connected, so authenticated flows are NOT verified. docs/android-build.md rewritten: diagnosis, build, keystore backup, phone/Wi-Fi adb, 12 GB AVD/CLI path.
+
+**Not done / owner steps:** the APK is NOT uploaded to `/downloads` and the landing/release feed still shows 1.1.0 on purpose (uploading without updating `client/landing/content/site.mjs`, `guides.mjs` and `scripts/validate.mjs` hard-coded size/version and the AppRelease feed would display the wrong SHA — do them together next session). Owner: back up `C:\Users\mugis\.android\debug.keystore` (password/alias in android-build.md; without it Android refuses updates), install the APK once by hand and test sign-in/chat/voice note/1:1 call+permissions/group join/AI. No system notifications in the WebView app yet (CHUNK 7 work), no bundled offline app, no real mid-range-device cold start.
+
 ## CHUNK 2 COMPLETE (2026-10-26, deployed) — group call rooms + call fixes
 
 **2A root cause (verified live):** the mesh join path and "ring every online member" already worked; the room had NO queryable/replayable state — no persisted call card, no `call:room` snapshot, no `GET /api/calls/state` (404), no `call:join`. The callId existed only in the one-shot `call:incoming` ring payload, which the client auto-declines/forgets after 45 s, so an offline/late/missed-ring member could never obtain it or a Join affordance (a reconnecting member received 0 events).
@@ -45,7 +57,7 @@
 - Rollback for this deploy: `src.bak-20261026-140604` + DB backup `20261026-140604`, previous web deployment `chatgram-a4kwzcglx`.
 
 ### Next chunks in order
-CHUNK 3 Android diagnosis/optimisation/testing; CHUNK 7 version tracker + auto-update; CHUNK 4 WhatsApp-style UI + disappearing/auto-reply/suggested replies + /guide; CHUNK 5 maintenance server-side 503/localized settings/socket gate; CHUNK 6 landing accuracy/SEO polish. (CHUNK 2 is complete and deployed — see the CHUNK 2 block above.)
+CHUNK 7 version tracker + auto-update; CHUNK 4 WhatsApp-style UI + disappearing/auto-reply/suggested replies + /guide; CHUNK 5 maintenance server-side 503/localized settings/socket gate; CHUNK 6 landing accuracy/SEO polish. (CHUNK 2 and CHUNK 3 are done — Android 1.1.1 APK is built locally but not yet published; see the CHUNK 3 block above.)
 
 ---
 
@@ -122,7 +134,7 @@ never deploy a file that mixes your change with someone else's uncommitted work.
 - 1B group mention fixes from this round's chat (duplicate address fixed; no-context and admin-contact honesty instructions added) were mostly implemented in the previous session and verified; this session added the report/prefix/honesty prompt pieces only.
 
 ### Next chunks in order
-CHUNK 3 Android diagnosis/optimisation/testing; CHUNK 7 version tracker + auto-update; CHUNK 4 WhatsApp-style UI + disappearing/auto-reply/suggested replies + /guide; CHUNK 5 maintenance server-side 503/localized settings/socket gate; CHUNK 6 landing accuracy/SEO polish. (CHUNK 2 is complete and deployed — see the CHUNK 2 block above.)
+CHUNK 7 version tracker + auto-update; CHUNK 4 WhatsApp-style UI + disappearing/auto-reply/suggested replies + /guide; CHUNK 5 maintenance server-side 503/localized settings/socket gate; CHUNK 6 landing accuracy/SEO polish. (CHUNK 2 and CHUNK 3 are done — Android 1.1.1 APK is built locally but not yet published; see the CHUNK 3 block above.)
 
 ### Gotchas
 - reports.js gets AdminInbox lazily via require('./chatgram') to avoid a circular require; do not move that to a top-level require.
