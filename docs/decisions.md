@@ -923,3 +923,61 @@ second factor and the audit trail in the operating system, not in a web session.
 **Storage reporting:** `/api/admin/system/storage` reads `dbStats`/`collStats` and compares
 `storageSize + indexSize` against `MONGO_STORAGE_LIMIT_MB` (default 512 MB, the Atlas M0 ceiling) or
 the volume size MongoDB reports. It is read-only and returns no connection string or credentials.
+
+## D59 - Android keeps the thin hosted wrapper; the 1.1.0 APK was broken by a class mismatch and a stale cap copy (2026-10-26)
+
+**Diagnosis (evidence, not guesses).** The 4.1 MB APK `release-artifacts/chatgram-android.apk`
+(versionCode 1, 1.1.0) could never show the app. Three independent fatal faults, in launch order:
+1. The manifest launches `app.chatgram.android.MainActivity`, but the dex only contains
+   `com.chatgram.app.MainActivity` (`apkanalyzer dex packages` on the APK). The applicationId and
+   namespace were renamed to `app.chatgram.android` while the Java file stayed in the old package,
+   so every launch died with `ClassNotFoundException` before drawing a pixel.
+2. `cap copy` was never re-run after `capacitor.config.json` was edited on 2026-10-25: the packaged
+   `assets/capacitor.config.json` (mtime 2026-10-20) still had `appId: com.chatgram.app` and **no
+   `server.url`**, so Capacitor loaded the bundled local assets instead of the hosted web client.
+3. Those bundled assets were a 2026-10-20 web build whose `index.html` requests
+   `/web/static/index-Cu7qs22L.js` while the files sit at `/static/`. Under `https://localhost` both
+   the script and the stylesheet 404, so the local path was a permanent white screen anyway.
+Secondary faults fixed at the same time: no `windowSoftInputMode` (keyboard covered the composer),
+white window background behind the WebView (white flash), no `server.errorPath` (blank screen when
+offline), `targetSdk 36` (Android 15+ forces edge-to-edge, which breaks the layout and the keyboard
+resize because the web client does not use `env(safe-area-inset-*)` yet), `versionCode` never
+incremented (Android refuses the update), and no R8.
+
+**Decision: keep the thin wrapper (hosted `server.url`), do NOT bundle the web client into the APK.**
+- The three failures above were packaging faults, not a consequence of the hosted-URL design: the
+  hosted client `https://chatgram-xi.vercel.app/web/` loads fine over HTTPS in a WebView.
+- Bundling is not actually possible without web-layer changes: `apps/web` builds with Vite
+  `base: '/web/'` and `BrowserRouter basename='/web'`, so a bundle served from `https://localhost/`
+  would render no route (blank) until the web team ships a relative base + root basename.
+- Keeping the wrapper preserves the "web deploy reaches every phone" model that CHUNK 7 relies on,
+  and keeps the APK ~3 MB for 2G/3G installs in Rwanda.
+- It is still true that bundling would remove the network dependency at cold start; the CORS half is
+  already ready (the server allows `https://localhost` and `capacitor://localhost` for exactly
+  this), so bundling stays a documented future option instead of a rejected one.
+- What we added instead so a broken connection is never a blank screen: `server.errorPath` with a
+  local, network-free `error.html` (auto-retry + Try again) and a safety-net `index.html`.
+
+**Cost to reverse:** low - `capacitor.config.json` decides; but bundling additionally needs
+`vite.config.ts` base `./`, `basename` `/`, a web rebuild and a CORS check.
+
+## D60 - Android releases are R8-shrunk release builds signed with the pinned debug keystore, targetSdk 34 (2026-10-26)
+
+**Decision:** ship `assembleRelease` with `minifyEnabled true`, `shrinkResources true`,
+`signingConfig signingConfigs.debug`, and `targetSdkVersion 34` (compileSdk 36).
+
+**Why:** R8 + resource shrinking answer "the APK is only 3.9 MB" by making it smaller still, and the
+release variant drops debug aids (`debuggable`, logging). The debug keystore is deliberate: this is a
+direct-download sideload build with no Play Store listing and no release keystore may be created.
+The existing 1.1.0 APK is signed with exactly this key (certificate SHA-256
+`8a67642f91beb7183f1a3b2b5ed48e8278bfb1da1cfc7fa4594855068bc0152f`), so 1.1.1 installs as an
+in-place update. The build script fails if `~/.android/debug.keystore` is missing instead of letting
+Gradle generate a new key, because that would silently make every future update "App not installed".
+
+**targetSdk 34, not 36:** Android 15/16 force edge-to-edge for targetSdk 35+, which puts the header
+under the status bar, the composer under the gesture bar and breaks adjustResize keyboard handling.
+The web client has no safe-area CSS yet. Bump targetSdk only together with safe-area work in
+`apps/web` and a retest on an API 35/36 device.
+
+**Cost to reverse:** a one-line targetSdk change; R8 can be disabled per build type; the keystore
+decision is irreversible in practice (changing it breaks installed users' updates).

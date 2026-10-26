@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chatgram — connecting…</title>
+    <meta name="theme-color" content="#0b141a" />
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: #0b141a;
+        color: #e9edef;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        padding-bottom: calc(24px + env(safe-area-inset-bottom));
+      }
+      .card { max-width: 420px; text-align: center; }
+      .mark {
+        width: 72px; height: 72px; margin: 0 auto 20px; border-radius: 20px;
+        background: #111b21; display: flex; align-items: center; justify-content: center;
+      }
+      h1 { font-size: 20px; line-height: 1.3; margin: 0 0 10px; font-weight: 600; }
+      p { margin: 0 0 20px; color: #8696a0; font-size: 15px; line-height: 1.5; }
+      .spinner {
+        width: 22px; height: 22px; margin: 0 auto 18px; border-radius: 50%;
+        border: 2.5px solid #1f2c33; border-top-color: #00a884;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      button, a.btn {
+        display: inline-block; min-height: 44px; padding: 12px 22px; border-radius: 999px;
+        border: 0; background: #00a884; color: #0b141a; font-size: 16px; font-weight: 600;
+        text-decoration: none; cursor: pointer;
+      }
+      button:active, a.btn:active { background: #029e7b; }
+      .hint { margin-top: 18px; font-size: 13px; color: #667781; }
+      @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="mark" aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8A2.5 2.5 0 0 1 17.5 16H9l-5 4V5.5Z"
+                fill="#00a884"/>
+        </svg>
+      </div>
+      <div class="spinner" aria-hidden="true"></div>
+      <h1>Opening Chatgram…</h1>
+      <p>Loading the Chatgram app from the server.</p>
+      <p class="hint">If nothing happens, use the button below.</p>
+      <button type="button" onclick="openApp()">Open Chatgram</button>
+    </div>
+    <script>
+      // This file is only a safety net: with `server.url` set in
+      // capacitor.config.json the app loads the hosted web client directly and
+      // never shows this page. If a broken config ever made Capacitor load the
+      // bundled asset instead, the user still reaches the real app.
+      function openApp() {
+        var target = 'https://chatgram-xi.vercel.app/web/';
+        try {
+          window.location.replace(target);
+        } catch (e) {
+          window.location.href = target;
+        }
+      }
+      // Give the WebView a moment, then send the user to the real app.
+      setTimeout(openApp, 1200);
+    </script>
+  </body>
+</html>

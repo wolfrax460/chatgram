@@ -1,0 +1,42 @@
+package app.chatgram.android;
+
+import android.os.Bundle;
+import android.webkit.WebSettings;
+
+import com.getcapacitor.BridgeActivity;
+
+/**
+ * Chatgram for Android — Capacitor shell.
+ *
+ * <p>The web client itself is served from https://chatgram-xi.vercel.app/web/
+ * (see {@code capacitor.config.json}, {@code server.url}), so this activity only
+ * configures the WebView. It must NOT try to load local assets: with a
+ * {@code server.url} configured Capacitor ignores them, and the older APK that
+ * shipped without {@code server.url} loaded a stale local copy whose scripts
+ * 404'd (blank white screen).
+ *
+ * <p>The class package matters. {@code AndroidManifest.xml} declares the
+ * activity as {@code .MainActivity}, which resolves against the Gradle
+ * {@code namespace} ({@code app.chatgram.android}). The 1.1.0 APK declared
+ * {@code app.chatgram.android.MainActivity} in the manifest but only contained
+ * {@code com.chatgram.app.MainActivity} in the dex, so every launch died with
+ * {@code ClassNotFoundException "Unable to instantiate activity"} before a
+ * single pixel was drawn. Keep this package and the namespace in sync.
+ */
+public class MainActivity extends BridgeActivity {
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        WebSettings settings = getBridge().getWebView().getSettings();
+
+        // Voice notes and call audio must be allowed to play without a fresh tap.
+        settings.setMediaPlaybackRequiresUserGesture(false);
+        // Keep the normal HTTP cache: a cold start of the shell reuses the
+        // already-downloaded web client instead of re-fetching every chunk.
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        // The app talks HTTPS only; never let a page downgrade to HTTP.
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+    }
+}

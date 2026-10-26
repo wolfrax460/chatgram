@@ -1,21 +1,26 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
+# Chatgram Android (Capacitor shell) - R8 rules
 #
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# The release build enables R8 (minifyEnabled true) + resource shrinking.
+# Capacitor reaches the Java side from JavaScript through annotated classes and
+# @JavascriptInterface methods, which R8 would otherwise rename or strip.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# The whole Capacitor runtime, its plugins and annotations.
+-keep class com.getcapacitor.** { *; }
+-keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
+-keep class * extends com.getcapacitor.Plugin { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Anything the WebView calls back into (bridge message handlers).
+-keepattributes *Annotation*
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Cordova compatibility layer (present but unused by Chatgram) and its providers.
+-keep class org.apache.cordova.** { *; }
+
+# Keep the launcher activity name for readable crash reports.
+-keepnames class app.chatgram.android.MainActivity
+
+# AndroidX WebKit / Cordova optional dependencies that are not on the classpath.
+-dontwarn androidx.webkit.**
+-dontwarn org.apache.cordova.**

@@ -13,6 +13,11 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- Keep the branded dark colour behind the WebView before the first
+             frame is painted. Without this the window background is white, so a
+             slow load (or a network error) flashed a white screen before the
+             dark app appeared. -->
+        <item name="android:windowBackground">@color/splash_background</item>
     </style>
 
 

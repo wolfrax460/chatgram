@@ -4,12 +4,17 @@
   "webDir": "../web/dist",
   "bundledWebRuntime": false,
   "android": {
-    "allowMixedContent": false
+    "allowMixedContent": false,
+    "backgroundColor": "#0B141A",
+    "webContentsDebuggingEnabled": false,
+    "loggingBehavior": "production",
+    "captureInput": true
   },
   "server": {
     "url": "https://chatgram-xi.vercel.app/web/",
     "androidScheme": "https",
     "cleartext": false,
+    "errorPath": "error.html",
     "allowNavigation": [
       "chatgram-xi.vercel.app",
       "chatgram.duckdns.org"

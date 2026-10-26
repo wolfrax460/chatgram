@@ -1,7 +1,16 @@
 ext {
     minSdkVersion = 24
     compileSdkVersion = 36
-    targetSdkVersion = 36
+    // targetSdk is deliberately 34, not 36:
+    //  * Android 15+ (API 35+) forces edge-to-edge drawing for apps targeting
+    //    35+; the web client does not use env(safe-area-inset-*) yet, so the
+    //    header would sit under the status bar and the composer under the
+    //    navigation bar.
+    //  * forced edge-to-edge also breaks the adjustResize keyboard behaviour,
+    //    so the composer would be hidden by the keyboard on Android 15/16.
+    // Android 14 (API 34) behaviour is the well-tested, WhatsApp-like layout.
+    // Bump this only together with safe-area CSS in apps/web and a retest.
+    targetSdkVersion = 34
     androidxActivityVersion = '1.8.0'
     androidxAppCompatVersion = '1.6.1'
     androidxCoordinatorLayoutVersion = '1.2.0'

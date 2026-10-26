@@ -1,5 +1,24 @@
 apply plugin: 'com.android.application'
 
+// ---------------------------------------------------------------------------
+// The sideloaded APK must always be signed with the SAME key. Android refuses
+// an update whose signature differs ("App not installed"), so this build uses
+// the machine's standard debug keystore (~/.android/debug.keystore), the key the
+// existing 1.1.0 APK was signed with. Gradle silently CREATES a new debug
+// keystore when the file is missing, which would change the certificate and
+// break every future update - so fail loudly instead.
+// Backup instructions: docs/android-build.md ("Debug keystore").
+// ---------------------------------------------------------------------------
+def debugKeystoreFile = new File(System.getProperty('user.home'), '.android/debug.keystore')
+if (!debugKeystoreFile.exists()) {
+    throw new GradleException(
+        "Missing debug keystore: ${debugKeystoreFile}\n" +
+        "Restore the backup of the original file. Do NOT continue with a freshly " +
+        "generated keystore: already-installed Chatgram apps would refuse the update " +
+        "(signature mismatch). See docs/android-build.md."
+    )
+}
+
 android {
     namespace "app.chatgram.android"
     compileSdk rootProject.ext.compileSdkVersion
@@ -7,8 +26,8 @@ android {
         applicationId "app.chatgram.android"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.1.0"
+        versionCode 2
+        versionName "1.1.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -17,10 +36,25 @@ android {
         }
     }
     buildTypes {
-        release {
+        debug {
+            // Fast, unminified build for `gradlew assembleDebug` while debugging.
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+        release {
+            // Direct-download build: R8 + resource shrinking keep the APK small,
+            // and it is signed with the debug key on purpose (no release
+            // keystore, not published on the Play Store).
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.debug
+        }
+    }
+    // Release lint walks the whole app and can fail a sideload build for
+    // warnings that do not affect behaviour; keep the build deterministic.
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
     }
 }
 
