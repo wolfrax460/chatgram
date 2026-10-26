@@ -12,3 +12,11 @@
 - Add to contacts (editable name alias) updates the panel label, member Contact chip, non-contact banner and contacts/news-chat lists without reload; Remove contact in the three-dot menu; 1:1 non-contact banner with Add/Block/Report.
 - CallOverlay rebuilt: sentence-case status + timer, avatar/ringback stage, device menus (mic/camera/speaker + flip), screen share bar, video-upgrade request/accept, audio-only, speaker/gallery, full screen/PiP, draggable mirrored self view, speaking ring, participant list, remote mute/camera/screen signals, low-bandwidth auto/manual, latency/loss popover, shortcuts M/V/S/Esc; no encryption claims. Add-participant is visible but disabled (no in-call join server API yet).
 - Verified: tsc + build green; verify-calls 7/7; temporary staging check 27/27; production smoke 7/7 with temporary accounts deleted afterwards. Web deployed `chatgram-g47v467uy`.
+
+
+### Session 50 (2026-10-26) - group avatar, read ticks, add-contact icon + installers
+- Group avatar bug: ChatList/ChatHeader used `chatPartner(chat).avatarUrl` for groups, so a freshly created group showed the creator's profile photo; they now use `groupAvatarUrl`/initials only and the group avatar opens the chat (not a member profile).
+- Read ticks bug: `last.readBy.length > 0` counted the sender; both delivered and read checks now look only at other participants. Verified on staging: unread shows grey, mark-read by the recipient turns blue.
+- Add-contact icon is now the person-with-plus icon in Contact info and the empty-screen quick action.
+- Rebuilt installers and republished to /downloads: Windows `chatgram-windows-setup.exe` 81,824,358 B SHA-256 `c9882047...53ab3`, `latest.yml` refreshed; Android `chatgram-android.apk` 4,127,661 B SHA-256 `1dfe75cb...eb0da`.
+- Web deployed `chatgram-o3pzt7gic`.

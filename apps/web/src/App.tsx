@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Moon, Sun, Monitor, MessageCircle, LogOut, Users, CircleDashed, Phone,
   Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy, Sparkles, BadgeCheck,
-  UserPlus, Download, Share2, FolderUp, FileText, Camera,
+  UserRoundPlus, Download, Share2, FolderUp, FileText, Camera,
 } from 'lucide-react';
 import {
   chatPartner,
@@ -1172,7 +1172,7 @@ function Shell({ features }: { features: AppFeatures | null }) {
                 <div className="mt-4 grid grid-cols-5 gap-1.5" data-testid="empty-quick-actions">
                   {[
                     { label: 'Send document', icon: FileText, action: () => emptyDocRef.current?.click() },
-                    { label: 'Add contact', icon: UserPlus, action: () => { setTab('chats'); setNewChatOpen(true); } },
+                    { label: 'Add contact', icon: UserRoundPlus, action: () => { setTab('chats'); setNewChatOpen(true); } },
                     { label: 'Invite a friend', icon: Share2, action: shareInvite },
                     { label: 'New group', icon: FolderUp, action: () => setTab('groups') },
                     { label: 'Chatgram AI', icon: Sparkles, action: () => setTab('ai') },

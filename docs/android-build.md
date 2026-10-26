@@ -64,10 +64,10 @@ Output: `apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk`
 
 | | |
 | --- | --- |
-| Version | 1.1.0 (versionCode 1) |
+| Version | 1.1.0 (versionCode 1, rebuilt 2026-10-26) |
 | File | `chatgram-android.apk` (from `app-debug.apk`) |
-| Size | 4,127,661 bytes (≈ 3.94 MB) |
-| SHA-256 | `a5891a584dd2035d6653b29e8b45ae561ae52c2bc505a2eda42f2870182e3fc5` |
+| Size | 4,127,661 bytes |
+| SHA-256 | `1dfe75cb8ac6475fcc29d81a667114a41fe9cc2f1b95379cb92ce693662eb0da` |
 | applicationId | `app.chatgram.android` |
 | minSdk / targetSdk | 24 / 36 |
 | Signing | Gradle **debug** key (sideloading only; Play Store signing is not configured) |

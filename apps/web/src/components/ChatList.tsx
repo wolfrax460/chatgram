@@ -91,14 +91,18 @@ export function ChatList({
 
         {visible.map((chat) => {
           const partner = chatPartner(chat, meId);
-          const partnerOnline = onlineNow(presenceView, partner?.id, partner?.isOnline);
+          const isGroup = chat.type === 'group';
+          const avatarUrl = isGroup ? chat.groupAvatarUrl : partner?.avatarUrl;
+          const partnerOnline = !isGroup && onlineNow(presenceView, partner?.id, partner?.isOnline);
           const unread = chat.unreadCount ?? 0;
           const typing = Boolean(typingByChat[chat.id]);
           const last = chat.lastMessage;
           const mine = last ? last.senderId === meId : false;
           const preview = typing ? 'typing…' : previewText(last, meId);
-          const delivered = last ? last.deliveredTo.length > 0 : false;
-          const read = last ? last.readBy.length > 0 : false;
+          // readBy/deliveredTo include the sender, so only OTHER participants count.
+          const others = chat.participants.filter((participant) => participant.id !== meId).map((participant) => participant.id);
+          const delivered = last ? last.deliveredTo.some((id) => others.includes(id)) : false;
+          const read = last ? last.readBy.some((id) => others.includes(id)) : false;
 
           return (
             <div
@@ -112,22 +116,22 @@ export function ChatList({
               <button
                 type="button"
                 onClick={() =>
-                  partner && onOpenProfile ? onOpenProfile(partner.id, chat.id) : onSelect(chat.id)
+                  !isGroup && partner && onOpenProfile ? onOpenProfile(partner.id, chat.id) : onSelect(chat.id)
                 }
                 className="relative shrink-0 rounded-full"
-                title={partner ? `Open ${partner.displayName}'s profile` : 'Open chat'}
-                aria-label={partner ? `Open ${partner.displayName}'s profile` : undefined}
+                title={!isGroup && partner ? `Open ${partner.displayName}'s profile` : 'Open chat'}
+                aria-label={!isGroup && partner ? `Open ${partner.displayName}'s profile` : undefined}
                 data-testid="chat-list-avatar"
               >
                 <div
                   className={`grid h-11 w-11 place-items-center overflow-hidden rounded-full bg-gradient-to-br ${avatarGradient(
-                    partner?.id ?? chat.id,
+                    isGroup ? chat.id : partner?.id ?? chat.id,
                   )} text-xs font-bold text-white`}
                 >
-                  {partner?.avatarUrl ? (
-                    <img src={partner.avatarUrl} alt="" className="h-full w-full object-cover" />
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
                   ) : (
-                    initialsFor(chat.type === 'group' ? chat.groupName : chatTitle(chat, meId))
+                    initialsFor(isGroup ? chat.groupName : chatTitle(chat, meId))
                   )}
                 </div>
                 {partnerOnline ? (

@@ -51,12 +51,12 @@ the in-app updater.
 
 | | |
 | --- | --- |
-| Version | 1.1.0 |
+| Version | 1.1.0 (rebuilt 2026-10-26) |
 | File | `chatgram-windows-setup.exe` |
-| Size | 81,823,613 bytes (≈ 78.0 MB) |
-| SHA-256 | `1943d51ae5c7ec7d48a10da38c1694dae9622f4ad0d9d90caa5b430456fdbae5` |
-| Signed | **No** — the installer is unsigned. Windows SmartScreen may show "Windows protected your PC". |
-| Updater metadata | `latest.yml` (version 1.1.0, SHA-512 of the installer) next to the file |
+| Size | 81,824,358 bytes |
+| SHA-256 | `c98820472d69447a61d3fc0f0d51c29d79d5bbd1a4fca4365a31b77f69853ab3` |
+| Signed | **No** - the installer is unsigned. Windows SmartScreen may show "Windows protected your PC". |
+| Updater metadata | `latest.yml` refreshed with the new SHA-512 and size. |
 
 ### SmartScreen / install steps
 

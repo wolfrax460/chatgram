@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Ban, BellOff, Bell, Check, Copy, Flag, Mail, MessageCircle, MoreVertical,
-  Phone, ShieldAlert, UserX, UserPlus, Video, X, FileText, Music, Film,
+  Phone, ShieldAlert, UserX, UserRoundPlus, Video, X, FileText, Music, Film,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useSession } from '@chatgram/core';
@@ -390,7 +390,7 @@ export function ProfilePanel({
                         </p>
                         <div className="mt-2 flex gap-2">
                           <button type="button" className="btn-primary !px-3 !py-1.5 text-[12px]" disabled={busy === 'contact'} onClick={() => void addToContacts()}>
-                            <UserPlus className="h-3.5 w-3.5" /> {busy === 'contact' ? 'Adding…' : 'Add contact'}
+                            <UserRoundPlus className="h-3.5 w-3.5" /> {busy === 'contact' ? 'Adding…' : 'Add contact'}
                           </button>
                           <button type="button" className="btn-ghost !py-1.5 text-[12px]" onClick={() => setContactOpen(false)}>
                             Cancel
@@ -404,7 +404,7 @@ export function ProfilePanel({
                         data-testid="add-to-contacts"
                         onClick={() => { setContactName(profile.displayName ?? ''); setContactOpen(true); }}
                       >
-                        <UserPlus className="h-3.5 w-3.5" /> Add to contacts
+                        <UserRoundPlus className="h-3.5 w-3.5" /> Add to contacts
                       </button>
                     )
                   ) : null}
