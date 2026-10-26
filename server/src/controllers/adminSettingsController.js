@@ -26,6 +26,8 @@ const SETTINGS_KEYS = [
   'termsUrl',
   'dataRetentionDays',
   'reviewLogRetentionDays',
+  // 1A: "Send reports to Telegram" (default ON, stored on the singleton).
+  'reportTelegramEnabled',
 ];
 
 function configured(value) {
@@ -149,4 +151,41 @@ async function backupNow(req, res) {
   }
 }
 
-module.exports = { state, save, backupNow };
+/**
+ * POST /settings/telegram-test — the Admin Settings "Send test message" button.
+ * Sends one short Telegram message through the same bot the AI reports use.
+ * When Telegram is not configured the endpoint answers with a clear 400 (never
+ * a throw); a rejected send is reported as 502. Audited like every other admin
+ * mutation; tokens and chat ids are never echoed.
+ */
+async function telegramTest(req, res) {
+  // Loaded lazily so the settings screen still works if the notifier module has
+  // a problem at boot.
+  const reportTelegram = require('../support/reportTelegram');
+  try {
+    const result = await reportTelegram.sendTest();
+    if (!result || result.ok !== true) {
+      await admin.audit('settings_telegram_test', req, `failed: ${String(result?.error || 'unknown error').slice(0, 160)}`);
+      const unconfigured = result?.code === 'TELEGRAM_NOT_CONFIGURED';
+      return res.status(unconfigured ? 400 : 502).json({
+        ok: false,
+        code: result?.code || (unconfigured ? 'TELEGRAM_NOT_CONFIGURED' : 'TELEGRAM_TEST_FAILED'),
+        message: unconfigured
+          ? String(result.error || 'Telegram is not configured on this server.')
+          : `The test message could not be sent: ${String(result?.error || 'Telegram rejected it.').slice(0, 200)}`,
+      });
+    }
+    await admin.audit('settings_telegram_test', req, 'ok');
+    return res.json({
+      ok: true,
+      messageId: result.messageId || null,
+      message: 'Test message sent to the owner’s Telegram.',
+    });
+  } catch (error) {
+    await admin.audit('settings_telegram_test', req, `failed: ${String(error.message).slice(0, 160)}`);
+    console.error('Telegram test failed:', error.message);
+    return res.status(502).json({ ok: false, code: 'TELEGRAM_TEST_FAILED', message: 'The test message could not be sent.' });
+  }
+}
+
+module.exports = { state, save, backupNow, telegramTest };

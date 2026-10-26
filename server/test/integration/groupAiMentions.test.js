@@ -16,6 +16,8 @@
  */
 const http = require('http');
 const mongoose = require('mongoose');
+const reportsModule = require('../../src/ai/reports');
+const reportTelegramModule = require('../../src/support/reportTelegram');
 
 const API = process.env.E2E_API_URL || 'http://127.0.0.1:5000';
 const ADMIN_PASSWORD = 'staging-admin-password-123'; // local staging only
@@ -67,8 +69,39 @@ function answerFor(question) {
   if (/SPLIT_TABLE/i.test(question)) return { text: longTable(), finish: 'stop' };
   if (/TRUNCATE/i.test(question)) return { text: cutTable(), finish: 'length' };
   if (/elite|omniscient/i.test(question)) return { text: 'I can help with that. What is your first question?', finish: 'stop' };
+  // 1A report integration: the model emits the hidden report action the server
+  // executes. The title carries the run id so duplicates merge into one row.
+  if (/REPORT_BUG/i.test(question)) {
+    const directive = JSON.stringify({
+      type: 'bug_report',
+      title: `E2E report bug ${run}`,
+      summary: 'Group calls end by themselves after about 10 seconds. The reporter tried twice.',
+      includeConversation: false,
+    });
+    return { text: `Okay, I'll pass that on.\n\n[[CHATGRAM_REPORT]]\n${directive}\n[[/CHATGRAM_REPORT]]`, finish: 'stop' };
+  }
+  // A claim with NO action block: the server must rewrite it honestly.
+  if (/CLAIM_ONLY/i.test(question)) return { text: "I've forwarded your request to the development team.", finish: 'stop' };
   return { text: `Echo: ${question}`, finish: 'stop' };
 }
+
+// The fix-prompt generator's second admin-side AI call (server/src/ai/fixPrompt.js)
+// gets a structured JSON answer from this mock, so the report stores promptSource='ai'.
+const FIX_PROMPT_MOCK = JSON.stringify({
+  goal: 'Make the group call reporting flow work end to end',
+  featureArea: 'Chatgram AI reports, mentions and the admin Inbox',
+  observed: 'The report flow lost the reference in the reply.',
+  expected: 'Every explicit report creates one Inbox row and the reply carries its reference.',
+  steps: [
+    'Mention @Chatgram AI in a group with an explicit report request.',
+    'Check the Admin Inbox row and the reply reference.',
+  ],
+  likelyFiles: ['server/src/ai/reports.js', 'server/src/ai/fixPrompt.js'],
+  acceptanceCriteria: ['One AdminInbox row is created and the reply contains its RPT reference.'],
+  needsClarification: [],
+  confidence: 0.86,
+});
+
 
 function startMock() {
   return new Promise((resolve, reject) => {
@@ -102,6 +135,13 @@ function startMock() {
         if (!path.includes('/chat/completions')) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'not found' }));
+          return;
+        }
+        // Fix-prompt generator call (non-stream, JSON answer expected).
+        if (/fix prompts for a coding assistant/i.test(system)) {
+          providerRequests.push({ at: Date.now(), path: '/v1-fixprompt', users, system });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: FIX_PROMPT_MOCK }, finish_reason: 'stop' }] }));
           return;
         }
         providerRequests.push({ at: Date.now(), path: '/v1', users, system });
@@ -278,7 +318,11 @@ async function main() {
     process.exit(1);
   }
 
-  const created = { chats: [], users: [] };
+  const created = { chats: [], users: [], reports: [] };
+  // Snapshot the Telegram module functions: some notifier assertions run in this
+  // process (the staging API has no bot token, so its real send is skipped and
+  // not observable from here), and they are restored in the finally block.
+  const savedTelegram = { sendReport: reportTelegramModule.sendReport, isEnabled: reportTelegramModule.isEnabled };
   let admin;
   try {
     admin = await adminHeaders();
@@ -482,9 +526,174 @@ async function main() {
     await mute(2500);
     const afterOff = await countAi(alice.accessToken, g12);
     check('turning the toggle off stops new replies', turnedOff.status === 201 && afterOff === beforeOff, { beforeOff, afterOff });
+    // ---- 16. 1A real reports: one record, reference in the reply, duplicates ----
+    const reportGroup = await createGroup(owner.accessToken, `E2E REPORT ${run}`, alice.user.id);
+    created.chats.push(reportGroup);
+    const reportTitle = `E2E report bug ${run}`;
+    const reportMention = await sendMention(alice, reportGroup, '@chatgramai REPORT_BUG the group call keeps ending, please tell the admin');
+    check('the explicit report mention is accepted', reportMention.status === 201, reportMention.status);
+    const firstReportReplies = await waitForAi(
+      alice.accessToken,
+      reportGroup,
+      (rows) => rows.some((row) => /RPT-[A-Z0-9]{4}/.test(textOf(row))),
+      { timeoutMs: 20000 },
+    );
+    const firstReportReply = firstReportReplies.find((row) => /RPT-[A-Z0-9]{4}/.test(textOf(row)));
+    let reportRows = await db.collection('admininboxes').find({ title: reportTitle }).toArray();
+    const reportRecord = reportRows[0] || {};
+    if (reportRecord._id) created.reports.push(reportRecord._id);
+    check('an explicit report creates exactly ONE AdminInbox record', reportRows.length === 1, reportRows.length);
+    check(
+      'the report record carries type, source, asker, exact words and a reference',
+      reportRecord.type === 'bug_report' &&
+        String(reportRecord.source || '').includes(`E2E REPORT ${run}`) &&
+        String(reportRecord.askerName || '').includes('alice') &&
+        /REPORT_BUG/i.test(String(reportRecord.userText || '')) &&
+        /^RPT-[A-Z0-9]{4}$/.test(String(reportRecord.ref || '')),
+      { type: reportRecord.type, source: reportRecord.source, askerName: reportRecord.askerName },
+    );
+    check(
+      'the user-visible reply contains the record reference',
+      Boolean(firstReportReply) && textOf(firstReportReply).includes(reportRecord.ref),
+      textOf(firstReportReply || {}).slice(0, 160),
+    );
+    check(
+      'the report reply never keeps a false forwarding/notified claim',
+      !/forwarded|notified/i.test(textOf(firstReportReply || {})),
+      textOf(firstReportReply || {}).slice(0, 160),
+    );
+    check(
+      'the stored fix prompt has every required section',
+      ['Goal:', 'Context:', 'Observed behaviour', 'Expected behaviour:', 'Steps to reproduce:', 'Likely files or modules', 'Acceptance criteria:', 'Constraints:'].every((section) =>
+        String(reportRecord.fixPrompt || '').includes(section),
+      ),
+      Object.keys(reportRecord).length,
+    );
+    check('the fix prompt was written by the admin AI call', reportRecord.fixPromptSource === 'ai', reportRecord.fixPromptSource);
+    check(
+      'the fix prompt is specific and grounded (files + steps, no old filler)',
+      /server\/src\/ai\/reports\.js/.test(String(reportRecord.fixPrompt || '')) &&
+        /Mention @Chatgram AI in a group/i.test(String(reportRecord.fixPrompt || '')) &&
+        !/Open Chatgram and reproduce the reported flow/i.test(String(reportRecord.fixPrompt || '')),
+      String(reportRecord.fixPrompt || '').slice(0, 120),
+    );
+
+    // A duplicate explicit report merges and increments the same row.
+    await sendMention(alice, reportGroup, '@chatgramai REPORT_BUG the group call keeps ending again');
+    await waitForAi(alice.accessToken, reportGroup, (rows) => rows.some((row) => /existing Chatgram team report/.test(textOf(row))), { timeoutMs: 20000 });
+    reportRows = await db.collection('admininboxes').find({ title: reportTitle }).toArray();
+    check(
+      'a duplicate report increments the same record instead of creating another',
+      reportRows.length === 1 && Number(reportRows[0].count) === 2,
+      { rows: reportRows.length, count: reportRows[0]?.count },
+    );
+    const mergeReply = (await aiMessages(alice.accessToken, reportGroup)).find((row) => /existing Chatgram team report/.test(textOf(row)));
+    check(
+      'the duplicate reply still carries the reference',
+      Boolean(mergeReply) && textOf(mergeReply).includes(reportRecord.ref),
+      textOf(mergeReply || {}).slice(0, 160),
+    );
+
+    // A claim without a hidden action is rewritten honestly and creates no record.
+    const claimBefore = await countAi(alice.accessToken, reportGroup);
+    await sendMention(alice, reportGroup, '@chatgramai CLAIM_ONLY this should not be reported');
+    const claimReplies = await waitForAi(alice.accessToken, reportGroup, (rows) => rows.length > claimBefore, { timeoutMs: 15000 });
+    const claimReply = claimReplies[claimReplies.length - 1] || {};
+    check(
+      'a claim with no action is rewritten honestly (no AdminInbox record either)',
+      !/forwarded/i.test(textOf(claimReply)) && /can't send that to the Chatgram team|email/i.test(textOf(claimReply)),
+      textOf(claimReply).slice(0, 160),
+    );
+    const claimRows = await db.collection('admininboxes').find({ title: new RegExp(run), createdAt: { $gte: testStartedAt } }).toArray();
+    check('the claim-only answer created no extra report row', claimRows.length === 1, claimRows.length);
+
+    // ---- Telegram notifier: invoked once, honest on failure --------------------
+    reportTelegramModule.isEnabled = async () => true;
+    let notifierCalls = 0;
+    reportTelegramModule.sendReport = async () => {
+      notifierCalls += 1;
+      return { ok: true, messageId: 4242 };
+    };
+    const notifiedReport = await reportsModule.handleModelReport({
+      text: `[[CHATGRAM_REPORT]]${JSON.stringify({ type: 'bug_report', title: `E2E notifier ${run}`, summary: 'The notifier should be called exactly once.' })}[[/CHATGRAM_REPORT]]`,
+      context: {
+        userText: 'please report this notifier test',
+        source: 'AI chat',
+        askerId: alice.user.id,
+        askerName: alice.user.displayName,
+        fixPromptChat: async () => ({ text: FIX_PROMPT_MOCK }),
+      },
+    });
+    if (notifiedReport.report?._id) created.reports.push(notifiedReport.report._id);
+    check('the Telegram notifier is invoked exactly once per report', notifierCalls === 1 && notifiedReport.notified === true, { notifierCalls });
+    check('a delivered report says it was sent', /I've sent this to the Chatgram team/i.test(notifiedReport.text || ''), notifiedReport.text);
+
+    reportTelegramModule.sendReport = async () => {
+      notifierCalls += 1;
+      return { ok: false, skipped: false, error: 'telegram unreachable' };
+    };
+    const failedReport = await reportsModule.handleModelReport({
+      text: `[[CHATGRAM_REPORT]]${JSON.stringify({ type: 'bug_report', title: `E2E notifier fail ${run}`, summary: 'The notifier should fail.' })}[[/CHATGRAM_REPORT]]`,
+      context: {
+        userText: 'please report this failing notifier test',
+        source: 'AI chat',
+        askerId: alice.user.id,
+        askerName: alice.user.displayName,
+        fixPromptChat: async () => ({ text: FIX_PROMPT_MOCK }),
+      },
+    });
+    if (failedReport.report?._id) created.reports.push(failedReport.report._id);
+    check('a notification failure still keeps the record', failedReport.created === true && Boolean(failedReport.ref));
+    check(
+      'a notification failure never claims it was sent',
+      /RPT-[A-Z0-9]{4}/.test(failedReport.text || '') &&
+        !/I've sent this to the Chatgram team/i.test(failedReport.text || '') &&
+        /couldn't send the alert|couldn’t send/i.test(failedReport.text || ''),
+      failedReport.text,
+    );
+
+    // ---- Unknown question: the asker's thread is stored, redacted --------------
+    reportTelegramModule.sendReport = async () => ({ ok: false, skipped: true });
+    const unknownTitle = `E2E unknown ${run}`;
+    const unknownThread = [
+      'User: how do I move my chat history to a new phone?',
+      'AI: I could not confirm that from the Chatgram knowledge.',
+      'User: my email is thread-test@example.com and my number is 0788123456',
+    ].join('\n');
+    const unknownReport = await reportsModule.handleModelReport({
+      text: `[[CHATGRAM_REPORT]]${JSON.stringify({ type: 'unknown_question', title: unknownTitle, summary: 'Unknown Chatgram question', includeConversation: true })}[[/CHATGRAM_REPORT]]`,
+      context: {
+        userText: 'how do I move my chat history to a new phone?',
+        source: 'Group: E2E REPORT',
+        askerId: alice.user.id,
+        askerName: alice.user.displayName,
+        transcript: unknownThread,
+        fixPromptChat: async () => ({ text: FIX_PROMPT_MOCK }),
+      },
+    });
+    if (unknownReport.report?._id) created.reports.push(unknownReport.report._id);
+    const unknownRows = await db.collection('admininboxes').find({ title: unknownTitle }).toArray();
+    check('an unknown question creates exactly one AdminInbox record', unknownRows.length === 1, unknownRows.length);
+    const storedTranscript = String(unknownReport.report?.transcript || '');
+    check(
+      'the unknown question stores the asker thread transcript',
+      /move my chat history/i.test(storedTranscript) && /could not confirm/i.test(storedTranscript),
+      storedTranscript.slice(0, 100),
+    );
+    check(
+      'the stored thread is redacted (email/phone)',
+      !/thread-test@example\.com|0788123456/.test(storedTranscript) && /redacted-(?:email|phone)/.test(storedTranscript),
+      storedTranscript.slice(0, 140),
+    );
+    check('an unknown question does not get a code fix prompt', !unknownReport.report?.fixPrompt);
+
+    reportTelegramModule.sendReport = savedTelegram.sendReport;
+    reportTelegramModule.isEnabled = savedTelegram.isEnabled;
   } finally {
     // Cleanup: exact ids created by this run only. The Chatgram AI account is a
     // shared system account and is kept.
+    reportTelegramModule.sendReport = savedTelegram.sendReport;
+    reportTelegramModule.isEnabled = savedTelegram.isEnabled;
     if (admin) {
       await routeFeature(admin, 'e2e-group-ai').catch(() => {});
       for (const key of ['e2e-group-ai', 'e2e-group-ai-fail']) {
@@ -504,6 +713,11 @@ async function main() {
     await db.collection('chats').deleteMany({ _id: { $in: chatIds } });
     await db.collection('groupaievents').deleteMany({ $or: [{ chatId: { $in: chatIds } }, { askerId: { $in: userIds } }] });
     await db.collection('admininboxes').deleteMany({ type: 'group_ai_failure', createdAt: { $gte: testStartedAt } });
+    if (created.reports.length) {
+      await db.collection('admininboxes').deleteMany({ _id: { $in: created.reports } }).catch(() => {});
+    }
+    // Belt and braces: every report this run created carries the run token.
+    await db.collection('admininboxes').deleteMany({ title: new RegExp(run) }).catch(() => {});
     await db.collection('users').deleteMany({ _id: { $in: userIds } });
     await mongoose.disconnect();
     await new Promise((resolve) => mock.close(resolve));

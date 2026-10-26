@@ -159,7 +159,12 @@ async function chat(options = {}) {
     if (featureChain && featureChain.length > 0) chain = featureChain;
   }
   if (chain.length === 0) chain = resolveChain(settings);
-  if (!settings.enabled || chain.length === 0) {
+  // An explicit per-feature route normally still obeys the legacy single-provider
+  // toggle: a deployment with SUPPORT_AI_ENABLED=false must not silently turn an
+  // assistant on just because a route exists. Internal admin-side calls (the
+  // fix-prompt generator) opt out explicitly with ignoreLegacyToggle.
+  const toggleBypassed = options.ignoreLegacyToggle === true;
+  if ((!settings.enabled && !toggleBypassed) || chain.length === 0) {
     if (kbFallback) {
       return {
         text: await kbFallback(),

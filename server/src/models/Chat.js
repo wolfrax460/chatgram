@@ -55,7 +55,16 @@ const chatSchema = new mongoose.Schema({
     requireApproval: { type: Boolean, default: false },
     // Off by default: when enabled an admin lets members ask the AI by writing
     // "@Chatgram AI ..." in the group. Only those messages reach the provider.
-    aiMentions: { type: Boolean, default: false }
+    aiMentions: { type: Boolean, default: false },
+    // Who can see the AI's answers to group mentions (chunk 1C):
+    //  - 'asker'    (default) only the person who asked, stored on
+    //               Message.visibleTo and filtered on the server for everyone else
+    //  - 'everyone' the question and answer are public in the group, as before
+    aiReplyVisibility: {
+      type: String,
+      enum: ['asker', 'everyone'],
+      default: 'asker'
+    }
   },
   // Pending join requests; approved by an admin, then the user becomes a member.
   joinRequests: [{

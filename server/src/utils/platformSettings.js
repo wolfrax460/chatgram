@@ -35,6 +35,9 @@ const DEFAULTS = {
   termsUrl: '/docs/#terms',
   dataRetentionDays: 365,
   reviewLogRetentionDays: 730,
+  // 1A: "Send reports to Telegram" (default ON). AI_REPORT_TELEGRAM=false in
+  // the environment still forces report Telegram alerts off.
+  reportTelegramEnabled: true,
   lastBackupAt: null,
   lastBackupSizeBytes: 0,
   lastBackupPath: '',

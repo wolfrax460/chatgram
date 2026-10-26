@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check, Copy, Loader2, Link as LinkIcon, Pencil, Plus, Search, Settings2, Shield, ShieldOff,
   Trash2, Users, X, BellOff, Bell, LogOut, FileText, Film, Music, RefreshCw, MessageCircle, Flag,
+  BadgeCheck,
 } from 'lucide-react';
 import { chatTitle, useSession, type Chat, type User } from '@chatgram/core';
 import { api } from '../lib/api';
@@ -181,7 +182,7 @@ function AddMembersModal({ chat, onClose }: { chat: Chat; onClose: () => void })
 
 type GroupTab = 'members' | 'media' | 'settings';
 
-export function GroupInfo({ chat, meId, onClose, onOpenChat }: { chat: Chat; meId: string; onClose: () => void; onOpenChat?: (chatId: string) => void }) {
+export function GroupInfo({ chat, meId, onClose, onOpenChat, onAskAi }: { chat: Chat; meId: string; onClose: () => void; onOpenChat?: (chatId: string) => void; onAskAi?: () => void }) {
   const queryClient = useQueryClient();
   const presenceView = usePresenceView();
   const profilePanel = useProfilePanel();
@@ -246,8 +247,9 @@ export function GroupInfo({ chat, meId, onClose, onOpenChat }: { chat: Chat; meI
     isYou: boolean;
     isOnline?: boolean;
     about?: string;
+    isAiAccount?: boolean;
   };
-  const members: Member[] =
+  const allMembers: Member[] =
     membersQuery.data?.members ??
     (chat.participants ?? []).map((p) => ({
       _id: p.id,
@@ -255,6 +257,8 @@ export function GroupInfo({ chat, meId, onClose, onOpenChat }: { chat: Chat; meI
       isAdmin: (chat.admins ?? []).includes(p.id),
       isYou: p.id === meId,
     }));
+  // The built-in Chatgram AI account gets its own assistant row, not a person row.
+  const members: Member[] = allMembers.filter((member) => member.isAiAccount !== true);
   const iAmAdmin = members.find((m) => m.isYou)?.isAdmin ?? (chat.admins ?? []).includes(meId);
   const group = membersQuery.data?.group;
   const ownerId = String(
@@ -281,6 +285,7 @@ export function GroupInfo({ chat, meId, onClose, onOpenChat }: { chat: Chat; meI
     whoCanAddMembers: 'admins',
     requireApproval: false,
     aiMentions: false,
+    aiReplyVisibility: 'asker',
   };
   const muted = (mutedQuery.data ?? []).some((entry) => entry.chatId === chat.id);
 
@@ -544,6 +549,35 @@ export function GroupInfo({ chat, meId, onClose, onOpenChat }: { chat: Chat; meI
                 </button>
               </div>
             ) : null}
+            {settings.aiMentions ? (
+              <div
+                className="mx-3 mt-3 flex items-center gap-2 rounded-xl border border-brand-200/70 bg-brand-50/70 p-2 dark:border-brand-500/25 dark:bg-brand-500/10"
+                data-testid="ai-member-row"
+              >
+                <span className="relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-brand-600 text-white">
+                  <img src="/web/assistant-avatar.svg" alt="" className="h-full w-full object-cover" />
+                  <BadgeCheck className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-white text-brand-600 dark:bg-ink-800 dark:text-brand-300" aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-semibold">
+                    Chatgram AI <span className="font-medium text-ink-500 dark:text-ink-400">(assistant)</span>
+                  </p>
+                  <p className="truncate text-[11px] text-ink-500 dark:text-ink-400">
+                    {settings.aiReplyVisibility === 'everyone' ? 'Replies are visible to everyone' : 'Replies are only visible to the person who asked'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-ghost shrink-0 !px-2 !py-1 text-[11.5px]"
+                  onClick={() => onAskAi?.()}
+                  aria-label="Ask Chatgram AI privately"
+                  title="Ask Chatgram AI privately in your own chat"
+                  data-testid="ask-ai-privately"
+                >
+                  Ask privately
+                </button>
+              </div>
+            ) : null}
             <div className="relative px-3 py-2">
               <Search className="pointer-events-none absolute left-6 top-4 h-4 w-4 text-ink-400" />
               <input className="field pl-9" placeholder="Search members" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -763,6 +797,39 @@ export function GroupInfo({ chat, meId, onClose, onOpenChat }: { chat: Chat; meI
                     />
                   </button>
                 </div>
+
+                {settings.aiMentions ? (
+                  <div className="mb-3 rounded-xl border border-ink-200 px-3 py-2 dark:border-white/10">
+                    <p className="text-[12px] font-semibold" id="ai-reply-visibility-label">
+                      AI replies are visible to
+                    </p>
+                    <div className="mt-1.5 flex gap-1" role="radiogroup" aria-labelledby="ai-reply-visibility-label">
+                      {([
+                        ['asker', 'Only the person who asked'],
+                        ['everyone', 'Everyone'],
+                      ] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          role="radio"
+                          aria-checked={(settings.aiReplyVisibility ?? 'asker') === value}
+                          disabled={saveSettings.isPending}
+                          onClick={() => saveSettings.mutate({ aiReplyVisibility: value })}
+                          className={`flex-1 rounded-lg border px-2 py-1.5 text-left text-[11.5px] font-semibold ${
+                            (settings.aiReplyVisibility ?? 'asker') === value
+                              ? 'border-brand-600 bg-brand-600/10 text-brand-700 dark:text-brand-300'
+                              : 'border-ink-200 text-ink-600 dark:border-white/10 dark:text-ink-300'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-[11px] text-ink-500 dark:text-ink-400">
+                      Private replies are only sent to the person who asked; they can choose to share an answer with the group.
+                    </p>
+                  </div>
+                ) : null}
 
                 <div className="mt-4 border-t border-ink-200 pt-3 dark:border-white/10">
                   <p className="mb-1 flex items-center gap-1 text-[12px] font-semibold">

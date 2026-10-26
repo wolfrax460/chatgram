@@ -78,6 +78,33 @@ const queues = new Map();
 const noticeAt = new Map();
 const counters = { answered: 0, queued: 0, rejected: 0, failed: 0, rejectedByReason: {} };
 
+/* ------------------------------------------------- private replies (chunk 1C) */
+
+/** True when this group hides AI questions/answers from everyone but the asker. */
+function askerOnlyReplies(chat) {
+  if (!chat || chat.type !== 'group') return false;
+  if (chat.groupSettings?.aiMentions !== true) return false;
+  return chat.groupSettings.aiReplyVisibility !== 'everyone';
+}
+
+/**
+ * Who may see a freshly sent mention message. [] means public (everyone mode,
+ * feature off, or not a mention); a non-empty list is the asker-only allow-list.
+ * Called BEFORE the message is created/broadcast so the question can never leak
+ * to another member's socket even for a moment.
+ */
+function privateMentionVisibleTo(chat, content, senderId) {
+  if (!senderId || !askerOnlyReplies(chat)) return [];
+  if (!parseMention(content)) return [];
+  return [String(senderId)];
+}
+
+/** "private" flag for message JSON: true when only listed users may read it. */
+function isPrivateMessage(message) {
+  return Array.isArray(message?.visibleTo) && message.visibleTo.length > 0;
+}
+
+
 function stateFor(chatId) {
   const key = String(chatId);
   let state = queues.get(key);
@@ -254,6 +281,7 @@ function buildSystemPrompt(groupName, askerName, beginner, quoted) {
     '[[/CHATGRAM_REPORT]]',
     'The server creates the report and adds the confirmation sentence. Never say you forwarded, sent, notified, reported or escalated anything yourself; the server does that.',
     '- When asked why you contact the admin or what happens to reports, answer truthfully: when you cannot answer a Chatgram question or the member asks you to report something, the server shares it with the Chatgram team; questions are shared without their name unless they asked you to report.',
+    '- If the question is about Chatgram itself and you cannot confirm the answer, say so honestly in one sentence and add this exact marker at the very end: [[CHATGRAM_UNKNOWN: the cleaned question]]. Use it for no other question.',
     '- You cannot see earlier group messages. Never invent what the group is discussing; if asked what the group is chatting about, say you only see the messages sent to you (or the quoted message), and explain that you can answer a specific question.',
     '- If you cannot help, say so in one sentence and suggest Chatgram Support.',
     'Only the reply text is needed: no preamble, no "here is my answer".',
@@ -321,10 +349,14 @@ async function ensureParticipant(context) {
 
 function emitTyping(context, typing) {
   try {
-    realtime.emitToChat(context.chatId, typing ? 'typing:start' : 'typing:stop', {
+    const payload = {
       chatId: String(context.chatId),
       userId: String(context.aiId),
-    });
+    };
+    // In asker-only mode the typing indicator itself would reveal that the AI
+    // is about to answer, so only the asker's devices see it.
+    if (context.private) realtime.emitToUser(context.askerId, typing ? 'typing:start' : 'typing:stop', payload);
+    else realtime.emitToChat(context.chatId, typing ? 'typing:start' : 'typing:stop', payload);
   } catch {
     /* typing is best effort */
   }
@@ -335,6 +367,7 @@ async function deliverMessages(context, contents) {
   const delivered = [];
   const target = context.io || realtime.getIo();
   await ensureParticipant(context);
+  const visibleTo = context.private && context.askerId ? [context.askerId] : [];
   for (const content of contents) {
     if (!content) continue;
     const created = await Message.create({
@@ -345,14 +378,22 @@ async function deliverMessages(context, contents) {
       sentAt: new Date(),
       deliveredTo: [context.aiId],
       readBy: [context.aiId],
+      // Private answers are stored with the asker as the only reader.
+      visibleTo,
+      aiReplyTo: context.messageId || null,
     });
     await Chat.findByIdAndUpdate(context.chatId, { lastMessage: created._id, updatedAt: new Date() });
     const populated = await Message.findById(created._id).populate('senderId', '_id displayName avatarUrl');
-    const payload = populated.toObject();
+    const payload = { ...populated.toObject(), private: visibleTo.length > 0 };
     delivered.push(payload);
     if (target) {
       realtime.joinUsersToChat(context.chatId, [...(context.participants || []), String(context.aiId)]);
-      target.to(realtime.roomForChat(context.chatId)).emit('message:new', payload);
+      if (visibleTo.length > 0) {
+        // Askers' other tabs/devices still receive it; the group room never does.
+        for (const userId of visibleTo) realtime.emitToUser(userId, 'message:new', payload);
+      } else {
+        target.to(realtime.roomForChat(context.chatId)).emit('message:new', payload);
+      }
     }
   }
   return delivered;
@@ -482,6 +523,11 @@ async function answerItem(context, policy) {
     emitTyping(context, false);
   }
 
+  // The model marks Chatgram questions it cannot confirm with a hidden marker;
+  // capture it from the RAW text before cleanModelAnswer() strips it, so the
+  // unknown question can be recorded with the asker's mention thread.
+  const unknownMatch = String(result.text).match(/\[\[CHATGRAM_UNKNOWN:\s*([\s\S]*?)\]\]/i);
+  const unknownQuestion = unknownMatch ? unknownMatch[1].trim().slice(0, 500) : '';
   let answer = cleanModelAnswer(result.text);
   const reportResult = await reports.handleModelReport({
     text: answer,
@@ -494,6 +540,27 @@ async function answerItem(context, policy) {
     },
   });
   answer = reportResult.text;
+  // Unknown Chatgram question: record it for the team with ONLY the asker's
+  // mention thread (their question, any quoted message, and the AI reply) — no
+  // other group messages. reports.js redacts contacts/codes before storing and
+  // never throws, so a hiccup cannot break the group answer.
+  if (unknownQuestion && !reportResult.created) {
+    await reports.createReport({
+      type: 'unknown_question',
+      title: `Unknown Chatgram question: ${unknownQuestion.slice(0, 120)}`,
+      summary: answer.slice(0, 1200) || 'The assistant could not confirm the answer.',
+      userText: context.question || unknownQuestion,
+      source: context.groupName ? `Group: ${context.groupName}` : 'Group chat',
+      askerId: context.askerId,
+      askerName: context.askerName,
+      includeConversation: true,
+      transcript: [
+        context.quoted ? `Quoted message: ${context.quoted}` : null,
+        `Mention from ${context.askerName || 'the asker'}: ${context.question || ''}`,
+        `Chatgram AI reply: ${answer}`,
+      ].filter(Boolean).join('\n'),
+    });
+  }
   const truncated = result.finishReason === 'length' || detectUnfinished(answer);
   if (truncated) answer = trimUnfinishedTail(answer);
   if (!answer) answer = "I couldn't put an answer together — please try again in a moment.";
@@ -548,9 +615,13 @@ async function maybeAnswer({ chat, message, io }) {
   const senderId = message.senderId?._id || message.senderId;
   const baseContext = {
     chatId: String(chat._id),
+    messageId: message._id ? String(message._id) : null,
     askerId: senderId ? String(senderId) : null,
     participants: (chat.participants || []).map((participant) => String(participant?._id || participant)),
     groupName: chat.groupName || '',
+    // Asker-only mode (chunk 1C): the question and every answer/notice are
+    // stored with visibleTo = [asker] and never broadcast to the group room.
+    private: chat.groupSettings?.aiReplyVisibility !== 'everyone',
   };
 
   if (chat.groupSettings?.aiMentions !== true) {
@@ -558,6 +629,20 @@ async function maybeAnswer({ chat, message, io }) {
     // admin usage page can show mentions that arrived while the toggle was off.
     await noteEvent('rejected', 'feature_off', baseContext);
     return { handled: false, reason: 'feature_off' };
+  }
+
+  // Defensive: if the question was created by an older/other code path without
+  // the private marker, add it now so it cannot be read by other members.
+  if (baseContext.private && baseContext.messageId && baseContext.askerId) {
+    const already = Array.isArray(message.visibleTo)
+      && message.visibleTo.some((id) => String(id?._id || id) === baseContext.askerId);
+    if (!already) {
+      try {
+        await Message.updateOne({ _id: baseContext.messageId }, { $set: { visibleTo: [baseContext.askerId] } });
+      } catch {
+        /* best effort; the reply path below is still private */
+      }
+    }
   }
 
   const aiId = await aiAccount.ensureAiUser();
@@ -658,6 +743,9 @@ module.exports = {
   trimUnfinishedTail,
   cleanModelAnswer,
   buildSystemPrompt,
+  askerOnlyReplies,
+  privateMentionVisibleTo,
+  isPrivateMessage,
   MENTION_RE,
   MENTION_HANDLE,
   MENTION_ALIASES,

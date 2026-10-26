@@ -25,6 +25,9 @@ function settingsOf(chat) {
     whoCanSendMessages: settings.whoCanSendMessages === 'admins' ? 'admins' : 'all',
     whoCanAddMembers: settings.whoCanAddMembers === 'admins' ? 'admins' : 'all',
     requireApproval: settings.requireApproval === true,
+    // "@Chatgram AI" mentions switch + who can see the answers (chunk 1C).
+    aiMentions: settings.aiMentions === true,
+    aiReplyVisibility: settings.aiReplyVisibility === 'everyone' ? 'everyone' : 'asker',
   };
 }
 

@@ -113,6 +113,9 @@ export function useRealtimeBridge(): void {
           queryClient.setQueryData<Message[]>(['messages', chatId], (prev) =>
             (prev ?? []).map((m) => {
               if (m.senderId === reader) return m;
+              // A private AI message is not visible to this reader: the receipt
+              // must not be attached to it (it would look like they read it).
+              if ((m.visibleTo?.length ?? 0) > 0 && !m.visibleTo?.includes(reader)) return m;
               if (!all && m.readBy.includes(reader)) return m;
               if (m.readBy.includes(reader)) return m;
               return { ...m, readBy: [...m.readBy, reader] };

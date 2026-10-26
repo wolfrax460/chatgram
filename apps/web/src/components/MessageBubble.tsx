@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Reply, Copy, Trash2, MoreVertical, Smile, Pin, Eye, Pencil, Star, Forward, Flag, Check, X } from 'lucide-react';
+import { Reply, Copy, Trash2, MoreVertical, Smile, Pin, Eye, Pencil, Star, Forward, Flag, Check, X, Lock, Share2 } from 'lucide-react';
 import type { Message, MessageStatus } from '@chatgram/core';
 import { MessageMedia } from './MessageMedia';
 import { MessageTicks } from './MessageTicks';
@@ -23,6 +23,8 @@ export interface BubbleActions {
   onForward?: (message: Message) => void;
   /** Report this message to the moderation team. */
   onReport?: (message: Message) => void;
+  /** Reveal a private group AI answer to the whole group (asker only). */
+  onShareWithGroup?: (message: Message) => void;
 }
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -55,6 +57,9 @@ export function MessageBubble({
 
   const mine = message.senderId === meId;
   const senderName = message.sender?.displayName;
+  // Chunk 1C: hidden AI questions/answers only ever reach the asker, so a
+  // non-empty visibleTo means "only you can see this".
+  const isPrivate = message.private === true || (message.visibleTo?.length ?? 0) > 0;
 
   const grouped = message.reactions.reduce<Record<string, number>>((acc, reaction) => {
     acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
@@ -272,6 +277,18 @@ export function MessageBubble({
 
             <MessageMedia message={message} mine={mine} />
 
+            {isPrivate ? (
+              <span
+                className={`mb-1 flex items-center gap-1 text-[10.5px] font-semibold ${
+                  mine ? 'text-white/80' : 'text-ink-500 dark:text-ink-400'
+                }`}
+                data-testid="private-ai-label"
+              >
+                <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />
+                Only visible to you
+              </span>
+            ) : null}
+
             {editing !== null ? (
               <div className="min-w-[220px]">
                 <textarea
@@ -326,6 +343,22 @@ export function MessageBubble({
               {mine ? <MessageTicks status={status} /> : null}
             </span>
           </div>
+
+          {isPrivate && actions.onShareWithGroup ? (
+            <div className={`mt-1 ${mine ? 'text-right' : 'text-left'}`}>
+              <button
+                type="button"
+                onClick={() => actions.onShareWithGroup?.(message)}
+                aria-label="Share this AI answer with the group"
+                title="Share this AI answer with the group"
+                data-testid="share-with-group"
+                className="inline-flex items-center gap-1 rounded-full border border-ink-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-brand-700 shadow-sm transition hover:bg-brand-50 dark:border-white/15 dark:bg-ink-700 dark:text-brand-200 dark:hover:bg-white/10"
+              >
+                <Share2 className="h-3 w-3" aria-hidden="true" />
+                Share with group
+              </button>
+            </div>
+          ) : null}
 
           {message.reactions.length > 0 ? (
             <div className={`absolute -bottom-3 flex flex-wrap gap-1 ${mine ? 'right-2' : 'left-2'}`}>

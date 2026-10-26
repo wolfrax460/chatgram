@@ -21,6 +21,8 @@ const LEGACY = new Map([
   ['pages/Admin.tsx', 2],
   ['pages/Auth.tsx', 3],
   ['pages/Settings.tsx', 1],
+  // Legacy report-reason picker in the group info panel (predates the guard).
+  ['pages/Groups.tsx', 1],
 ]);
 
 let passed = 0;

@@ -164,6 +164,18 @@ async function webhookHandler(req, res) {
       return;
     }
 
+    // 1A: a reply to one of the AI-report alerts is saved on the matching
+    // AdminInbox record as the admin-answer draft. This is the production path
+    // when the bot is webhook-driven (getUpdates polling then gets HTTP 409 and
+    // stays off, so the poller in reportTelegram cannot receive the reply).
+    try {
+      const reportTelegram = require('./reportTelegram');
+      const saved = await reportTelegram.saveReplyFromUpdate(update);
+      if (saved?.ok) return; // a report reply is not a bot command
+    } catch (error) {
+      console.warn('Telegram report reply could not be saved:', String(error?.message || error).slice(0, 160));
+    }
+
     const reply = await handleCommand(message.text);
     if (reply) await send(reply);
   } catch (error) {

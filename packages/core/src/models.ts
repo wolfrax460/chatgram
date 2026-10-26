@@ -53,6 +53,15 @@ export interface Message {
   starredBy?: string[];
   /** True when the signed-in reader starred it (server convenience field). */
   starred?: boolean;
+  /**
+   * Chunk 1C: allow-list of users who may read this message. Empty/absent means
+   * everyone in the chat. A private group AI question/answer lists only the asker.
+   */
+  visibleTo?: string[];
+  /** Convenience flag from the API: true when visibleTo is non-empty. */
+  private?: boolean;
+  /** For a private AI answer/notice: the asker's mention message it answers. */
+  aiReplyTo?: string;
 }
 
 export interface Chat {
@@ -75,6 +84,8 @@ export interface Chat {
     requireApproval: boolean;
     /** "@Chatgram AI" mentions are allowed in this group (off by default). */
     aiMentions?: boolean;
+    /** Who can see AI answers: only the asker (default) or everyone. */
+    aiReplyVisibility?: 'asker' | 'everyone';
   };
   inviteEnabled?: boolean;
   pinnedMessageId?: string;
@@ -167,6 +178,9 @@ export function messageFromJson(json: unknown): Message {
     editedAt: j.editedAt ? String(j.editedAt) : undefined,
     starredBy: asStringArray(j.starredBy),
     starred: j.starred === true,
+    visibleTo: asStringArray(j.visibleTo),
+    private: j.private === true || asStringArray(j.visibleTo).length > 0,
+    aiReplyTo: j.aiReplyTo ? idOf(j.aiReplyTo) : undefined,
   };
 }
 
@@ -202,6 +216,7 @@ export function chatFromJson(json: unknown): Chat {
         whoCanAddMembers: raw.whoCanAddMembers === 'admins' ? ('admins' as const) : ('all' as const),
         requireApproval: raw.requireApproval === true,
         aiMentions: raw.aiMentions === true,
+        aiReplyVisibility: raw.aiReplyVisibility === 'everyone' ? ('everyone' as const) : ('asker' as const),
       };
     })(),
     inviteEnabled: j.inviteEnabled === true,

@@ -35,6 +35,9 @@ const platformSettingsSchema = new mongoose.Schema(
     termsUrl: { type: String, default: '/docs/#terms' },
     dataRetentionDays: { type: Number, default: 365 },
     reviewLogRetentionDays: { type: Number, default: 730 },
+    // 1A: send AI reports to the owner's Telegram (the Inbox still stores every
+    // report when this is off). AI_REPORT_TELEGRAM=false still forces it off.
+    reportTelegramEnabled: { type: Boolean, default: true },
     lastBackupAt: { type: Date, default: null },
     lastBackupSizeBytes: { type: Number, default: 0 },
     lastBackupPath: { type: String, default: '' },

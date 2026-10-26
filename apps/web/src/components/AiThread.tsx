@@ -3,6 +3,7 @@ import { Bot, Copy, RefreshCw, Reply, Sparkles, ThumbsDown, ThumbsUp } from 'luc
 import { usePrefs } from '@chatgram/core';
 import { api } from '../lib/api';
 import { aiThread, useAiThread } from '../lib/aiThread';
+import { useI18n } from '../lib/i18n';
 import { ChatHeader } from './ChatHeader';
 import Composer from './Composer';
 import { dateSeparatorLabel, formatTime, sameDay } from '../lib/ui';
@@ -22,8 +23,6 @@ const SUGGESTIONS = [
   'Write a short polite message asking a client for a meeting',
   'Help me fix a JavaScript bug: my array filter returns undefined',
 ];
-
-const DISCLAIMER = 'Chatgram AI can make mistakes. Messages are processed by a third-party AI provider.';
 
 /**
  * The hidden `[[CHATGRAM_UNKNOWN: …]]` learning marker is stripped on the server,
@@ -223,6 +222,7 @@ export function AiThread({
 }) {
   const timeFormat = usePrefs((s) => s.timeFormat);
   const pinned = useAiThread((s) => s.pinned);
+  const { t } = useI18n();
 
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -593,7 +593,7 @@ export function AiThread({
             className="mx-auto mb-3 w-full max-w-2xl rounded-xl border border-ink-200 bg-ink-50 px-3 py-2 text-center text-[11.5px] text-ink-600 dark:border-white/10 dark:bg-white/[.04] dark:text-ink-300"
             data-testid="ai-disclaimer"
           >
-            {DISCLAIMER}
+            {t('aiNotice')}
           </div>
 
           {messages.length === 0 ? (

@@ -91,6 +91,8 @@ const en: Dict = {
   errTotpInvalid: 'That code is not correct. Try again.',
   totpCode: 'Authenticator code',
   totpHint: 'The 6-digit number in your authenticator app.',
+  aiNotice:
+    'Chatgram AI can make mistakes; answers are processed by a third-party AI provider. When you ask it to report something, or it cannot answer a Chatgram question, the server sends a report to the Chatgram team, who can see it. Reports are linked to your account so the team can reply; in a group your name is included, and unanswerable questions have emails, phone numbers and card numbers removed. Chats are protected in transit but not end-to-end encrypted.',
 };
 
 const rw: Dict = {
@@ -135,6 +137,9 @@ const rw: Dict = {
   errServerUnreachable: 'Ntibishoboka kugera kuri seriveri.',
   infoResetSent: 'Niba konti ibaho, kode yoherejwe.',
   infoResetDone: 'Ijambo ry’ibanga ryahinduwe.',
+  // TODO: native review — Kinyarwanda wording of the Chatgram AI notice.
+  aiNotice:
+    'Chatgram AI ishobora kwibeshya; ibisubizo byayo bishorwa na serivisi yindi ya AI (third-party). Iyo uyisabye kohereza raporo, cyangwa idashoboye gusubiza ikibazo kijyanye na Chatgram, seriveri yohereza raporo ku ikipe ya Chatgram, kandi iyo ikipe irayireba. Raporo ihujwe na konti yawe kugira ngo iyo ikipe ishobore kugusubiza; mu itsinda izina ryawe ririmo, kandi ku bibazo idashoboye gusubiza hakurwaho imeyili, nimero za telefoni na nimero za karita. Ibiganiro birindwa mu nzira (TLS) ariko ntibishyizwa mu mabanga kuva ku wohereje kugera ku woherejwe (end-to-end).',
 };
 
 const fr: Dict = {
@@ -179,6 +184,9 @@ const fr: Dict = {
   errServerUnreachable: 'Serveur inaccessible. Réessayez bientôt.',
   infoResetSent: 'Si ce compte existe, un code a été envoyé.',
   infoResetDone: 'Mot de passe modifié.',
+  // TODO: native review — French wording of the Chatgram AI notice.
+  aiNotice:
+    'Chatgram AI peut se tromper ; les réponses sont traitées par un fournisseur d’IA tiers. Lorsque vous lui demandez de signaler quelque chose, ou lorsqu’il ne peut pas répondre à une question sur Chatgram, le serveur envoie un rapport à l’équipe Chatgram, qui peut le consulter. Le rapport est lié à votre compte pour que l’équipe puisse vous répondre ; dans un groupe, votre nom y figure, et les questions sans réponse sont transmises avec les adresses e-mail, numéros de téléphone et numéros de carte retirés. Les conversations sont protégées en transit mais ne sont pas chiffrées de bout en bout (end-to-end).',
 };
 
 const sw: Dict = {
@@ -223,6 +231,9 @@ const sw: Dict = {
   errServerUnreachable: 'Seva haipatikani.',
   infoResetSent: 'Kama akaunti ipo, msimbo umetumwa.',
   infoResetDone: 'Neno la siri limebadilishwa.',
+  // TODO: native review — Swahili wording of the Chatgram AI notice.
+  aiNotice:
+    'Chatgram AI inaweza kukosea; majibu yake huchakatwa na mtoa huduma wa AI wa nje (third-party). Unapoiomba kuripoti jambo, au inaposhindwa kujibu swali kuhusu Chatgram, seva hutuma ripoti kwa timu ya Chatgram, na timu hiyo inaweza kuiona. Ripoti inaunganishwa na akaunti yako ili timu iweze kukujibu; kwenye kikundi jina lako linajumuishwa, na maswali ambayo haijajibiwa hutumwa bila barua pepe, namba za simu na namba za kadi. Mazungumzo yanalindwa wakati yanasafiri (TLS) lakini hayasimbwi kwa usiri kutoka mwanzo hadi mwisho (end-to-end).',
 };
 
 const DICTS: Record<Locale, Dict> = { en, rw, fr, sw };

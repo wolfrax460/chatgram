@@ -101,6 +101,58 @@ function main() {
   const beginnerPrompt = mentions.buildSystemPrompt('JIPSE', 'Janvier', true, true);
   check('beginner answers get step-by-step instructions', /beginner/i.test(beginnerPrompt) && /worked example/i.test(beginnerPrompt));
   check('the prompt addresses the asker by name', /@Janvier/.test(prompt));
+  check(
+    'the prompt asks for the hidden unknown-question marker for Chatgram questions',
+    /\[\[CHATGRAM_UNKNOWN: the cleaned question\]\]/.test(prompt),
+  );
+
+  // ---- private AI replies in groups (chunk 1C) ------------------------------
+  const askerGroup = { type: 'group', groupSettings: { aiMentions: true } };
+  check('asker-only is the default privacy mode', mentions.askerOnlyReplies(askerGroup) === true);
+  check(
+    'a plain mention is stored privately by default',
+    JSON.stringify(mentions.privateMentionVisibleTo(askerGroup, '@chatgramai hello', 'asker-1')) === JSON.stringify(['asker-1']),
+    mentions.privateMentionVisibleTo(askerGroup, '@chatgramai hello', 'asker-1'),
+  );
+  check(
+    'a message without a mention stays public',
+    mentions.privateMentionVisibleTo(askerGroup, 'hello everyone', 'asker-1').length === 0,
+  );
+  const everyoneGroup = { type: 'group', groupSettings: { aiMentions: true, aiReplyVisibility: 'everyone' } };
+  check(
+    "everyone mode keeps mentions public",
+    mentions.askerOnlyReplies(everyoneGroup) === false
+      && mentions.privateMentionVisibleTo(everyoneGroup, '@chatgramai hello', 'asker-1').length === 0,
+  );
+  const offGroup = { type: 'group', groupSettings: { aiMentions: false } };
+  check(
+    'AI mentions switched off never make messages private',
+    mentions.privateMentionVisibleTo(offGroup, '@chatgramai hello', 'asker-1').length === 0,
+  );
+  check(
+    'direct chats are never private',
+    mentions.privateMentionVisibleTo(
+      { type: 'direct', groupSettings: { aiMentions: true, aiReplyVisibility: 'asker' } },
+      '@chatgramai hello',
+      'asker-1',
+    ).length === 0,
+  );
+  check(
+    'explicit asker mode stays private for every alias',
+    ['@chatgramai hi', '@Chatgram AI hi', '@chatgram hi'].every(
+      (text) => mentions.privateMentionVisibleTo(
+        { type: 'group', groupSettings: { aiMentions: true, aiReplyVisibility: 'asker' } },
+        text,
+        'u1',
+      ).length === 1,
+    ),
+  );
+  check(
+    'the private flag follows the visibleTo allow-list',
+    mentions.isPrivateMessage({ visibleTo: ['u1'] }) === true
+      && mentions.isPrivateMessage({ visibleTo: [] }) === false
+      && mentions.isPrivateMessage({}) === false,
+  );
 
   // ---- notices ---------------------------------------------------------------
   check('provider failure notice is polite', /trouble reaching my AI provider/i.test(mentions.NOTICE.provider));

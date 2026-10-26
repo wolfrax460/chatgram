@@ -163,7 +163,21 @@ const adminInboxSchema = new mongoose.Schema(
     askerName: { type: String, default: '' },
     ref: { type: String, default: '' },
     fixPrompt: { type: String, default: '' },
+    // 1A fix-prompt generator (reports-engine): where the prompt came from
+    // ('ai' second admin call or the deterministic 'template' fallback) and the
+    // "Needs clarification" questions when the report was too vague.
+    fixPromptSource: { type: String, default: 'template' },
+    fixPromptQuestions: { type: [String], default: [] },
     transcript: { type: String, default: '' },
+    // 1A Telegram two-way replies: the bot's message id for this report, and
+    // the owner's Telegram reply saved as an admin-answer draft (never claims
+    // it was delivered: sentToUser flips only when the Inbox sends it).
+    telegramMessageId: { type: Number, default: null, index: true },
+    telegramReply: {
+      text: { type: String, default: '' },
+      at: { type: Date, default: null },
+      sentToUser: { type: Boolean, default: false },
+    },
   },
   { timestamps: false },
 );
@@ -438,6 +452,22 @@ async function sendMessage({ userId, conversationId, text }) {
   if (unknownQuestion) {
     unknown = true;
     await recordUnknown(userId, unknownQuestion || body, finalText, answer.providerKey);
+    // 1A: keep the asker's thread with the unknown-question report. reports.js
+    // redacts the transcript before storing it; no instant Telegram for these
+    // (notify:false) — the counter row above still feeds the dashboard.
+    await reports.createReport({
+      type: 'unknown_question',
+      title: `Unknown Chatgram question: ${String(unknownQuestion || body).slice(0, 120)}`,
+      summary: finalText.slice(0, 1200),
+      userText: body,
+      source: 'AI chat',
+      askerId: userId,
+      includeConversation: true,
+      transcript: [...messages, { role: 'assistant', text: finalText }]
+        .map((message) => `${message.role === 'assistant' ? 'AI' : 'User'}: ${message.text}`)
+        .join('\n'),
+      notify: false,
+    });
   }
   if (!unknown && looksLowConfidence(finalText)) {
     unknown = true;
@@ -547,6 +577,21 @@ async function streamMessage({ userId, conversationId, text, onDelta }) {
   if (unknownQuestion) {
     unknown = true;
     await recordUnknown(userId, unknownQuestion || body, finalText, providerKey);
+    // 1A: keep the asker's thread with the unknown-question report (see
+    // sendMessage above; the counter row above still feeds the dashboard).
+    await reports.createReport({
+      type: 'unknown_question',
+      title: `Unknown Chatgram question: ${String(unknownQuestion || body).slice(0, 120)}`,
+      summary: finalText.slice(0, 1200),
+      userText: body,
+      source: 'AI chat',
+      askerId: userId,
+      includeConversation: true,
+      transcript: [...messages, { role: 'assistant', text: finalText }]
+        .map((message) => `${message.role === 'assistant' ? 'AI' : 'User'}: ${message.text}`)
+        .join('\n'),
+      notify: false,
+    });
   }
   if (!unknown && looksLowConfidence(finalText)) {
     unknown = true;
@@ -631,6 +676,27 @@ async function listInbox({ status = 'new', page = 1, limit = 25 } = {}) {
       duplicateCount: Math.max(0, (duplicateMap.get(String(item.type) + '|' + String(item.normalized || item.question)) || 1) - 1),
       createdAt: item.createdAt,
       lastSeenAt: item.lastSeenAt,
+      // 1A report fields (admin-only endpoint; the Inbox UI renders these).
+      title: item.title || '',
+      summary: item.summary || '',
+      userText: item.userText || '',
+      source: item.source || '',
+      askerName: item.askerName || '',
+      askerId: item.askerId ? String(item.askerId) : null,
+      ref: item.ref || '',
+      fixPrompt: item.fixPrompt || '',
+      fixPromptSource: item.fixPromptSource || '',
+      fixPromptQuestions: Array.isArray(item.fixPromptQuestions) ? item.fixPromptQuestions : [],
+      transcript: item.transcript || '',
+      // 1A Telegram two-way reply draft for "Send to user".
+      telegramMessageId: typeof item.telegramMessageId === 'number' ? item.telegramMessageId : null,
+      telegramReply: item.telegramReply?.text
+        ? {
+            text: item.telegramReply.text,
+            at: item.telegramReply.at || null,
+            sentToUser: Boolean(item.telegramReply.sentToUser),
+          }
+        : null,
     })),
     total,
     page: Number(page) || 1,
@@ -704,6 +770,22 @@ async function deliverAnswerToUser(item, answerText) {
   return { delivered: true, chatId: String(chat._id), messageId: String(message._id) };
 }
 
+/**
+ * 1A: mark a two-way Telegram reply as sent to the user, but only after the
+ * answer was really delivered (or had already been delivered). Never claims
+ * delivery when there is no asker to send to.
+ */
+async function markTelegramReplySent(item, delivered) {
+  if (!item?.telegramReply?.text || item.telegramReply.sentToUser === true) return;
+  if (!(delivered?.delivered || delivered?.alreadyDelivered)) return;
+  item.telegramReply.sentToUser = true;
+  try {
+    await item.save();
+  } catch (error) {
+    console.warn('Could not mark the Telegram reply as sent:', String(error?.message || error).slice(0, 160));
+  }
+}
+
 async function answerInboxItem(id, answer) {
   const text = cleanAdminAnswer(answer);
   const item = await AdminInbox.findById(id);
@@ -713,6 +795,7 @@ async function answerInboxItem(id, answer) {
   if (item.deliveredAnswerMessageId) {
     const entry = await AiKnowledge.findOne({ inboxId: item._id });
     const delivered = await deliverAnswerToUser(item, item.answer || text);
+    await markTelegramReplySent(item, delivered);
     return { item, entry, delivered, alreadyDelivered: true };
   }
 
@@ -727,6 +810,7 @@ async function answerInboxItem(id, answer) {
     entry = await AiKnowledge.create({ question: item.question, answer: item.answer, keywords, inboxId: item._id });
   }
   const delivered = await deliverAnswerToUser(item, item.answer);
+  await markTelegramReplySent(item, delivered);
   return { item, entry, delivered };
 }
 

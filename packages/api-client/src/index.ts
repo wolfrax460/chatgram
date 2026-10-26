@@ -704,6 +704,8 @@ export class ApiClient {
         isOnline?: boolean;
         lastSeen?: string | null;
         joinedAt?: string | null;
+        /** The built-in Chatgram AI account (rendered as an assistant row). */
+        isAiAccount?: boolean;
       }[];
       group?: {
         id: string;
@@ -712,7 +714,14 @@ export class ApiClient {
         avatarUrl: string;
         createdBy: { id: string; displayName: string } | null;
         createdAt: string | null;
-        settings: { whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins'; requireApproval?: boolean; aiMentions?: boolean };
+        settings: {
+          whoCanEditInfo: 'all' | 'admins';
+          whoCanSendMessages: 'all' | 'admins';
+          whoCanAddMembers: 'all' | 'admins';
+          requireApproval?: boolean;
+          aiMentions?: boolean;
+          aiReplyVisibility?: 'asker' | 'everyone';
+        };
         inviteEnabled: boolean;
         inviteToken: string | null;
         pinnedMessageId: string | null;
@@ -761,7 +770,7 @@ export class ApiClient {
       groupName?: string;
       groupDescription?: string;
       groupAvatar?: string;
-      groupSettings?: Partial<{ whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins'; requireApproval: boolean; aiMentions: boolean }>;
+      groupSettings?: Partial<{ whoCanEditInfo: 'all' | 'admins'; whoCanSendMessages: 'all' | 'admins'; whoCanAddMembers: 'all' | 'admins'; requireApproval: boolean; aiMentions: boolean; aiReplyVisibility: 'asker' | 'everyone' }>;
     },
   ) {
     return this.request(`/api/chats/${chatId}`, { method: 'PATCH', body: fields });
@@ -947,6 +956,18 @@ export class ApiClient {
     return this.request<{ message: string; reportId: string; reason: string }>(
       `/api/messages/${messageId}/report`,
       { method: 'POST', body: { reason, details } },
+    );
+  }
+
+  /**
+   * Share a private group AI answer (the asker's question + the linked AI
+   * replies/notices) with the whole group. Only the asker may do this; the
+   * server clears the allow-list, re-broadcasts the messages and posts a note.
+   */
+  shareWithGroup(messageId: string) {
+    return this.request<{ message: string; chatId: string; sharedIds: string[]; noteId: string | null }>(
+      `/api/messages/${messageId}/share-with-group`,
+      { method: 'POST' },
     );
   }
 

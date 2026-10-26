@@ -28,7 +28,11 @@ function main() {
   console.log('\ncall registry unit test (no DB, no API)\n');
   registry.reset();
 
-  check('participant cap is 20', registry.MAX_PARTICIPANTS === 20, String(registry.MAX_PARTICIPANTS));
+  check(
+    'participant caps are video 6 / audio 12',
+    registry.MAX_PARTICIPANTS === 6 && registry.capacityFor(true) === 6 && registry.capacityFor(false) === 12,
+    `MAX_PARTICIPANTS=${registry.MAX_PARTICIPANTS} video=${registry.capacityFor(true)} audio=${registry.capacityFor(false)}`,
+  );
 
   // ---------------------------------------------------------------- creation
   const created = registry.create({
@@ -87,12 +91,33 @@ function main() {
     const res = registry.join('big', user(100 + n));
     if (res.ok) admitted += 1;
     else {
-      check('cap: the 21st participant is rejected with CALL_FULL', res.code === 'CALL_FULL', res.code);
+      check('cap: the 13th participant of an audio call is rejected with CALL_FULL', res.code === 'CALL_FULL', res.code);
       break;
     }
   }
-  check('cap: exactly 20 participants admitted', registry.participants('big').length === 20, String(registry.participants('big').length));
-  check('cap: admitted 19 joiners after the caller', admitted === 19, String(admitted));
+  check('cap: exactly 12 participants admitted to an audio call', registry.participants('big').length === 12, String(registry.participants('big').length));
+  check('cap: admitted 11 joiners after the caller', admitted === 11, String(admitted));
+  check('cap: an audio call cannot pass 12 (registry.capacity)', registry.capacity('big') === 12, String(registry.capacity('big')));
+
+  // Video calls are capped much lower than audio (mesh bandwidth): 6 people.
+  const videoCall = registry.create({
+    callId: 'video1',
+    chatId: 'chat4v',
+    video: true,
+    initiator: user(200),
+    invitees: Array.from({ length: 10 }, (_, i) => String(200 + i)),
+  });
+  check('cap: video call created', videoCall.ok === true);
+  let videoAdmitted = 0;
+  for (let n = 1; n <= 10; n += 1) {
+    if (registry.join('video1', user(200 + n)).ok) videoAdmitted += 1;
+  }
+  check(
+    'cap: exactly 6 participants admitted to a video call',
+    registry.participants('video1').length === 6 && videoAdmitted === 5,
+    String(registry.participants('video1').length),
+  );
+  registry.destroy('video1');
 
   // ------------------------------------------------------------------ leave
   const left = registry.leave('c1', '2');

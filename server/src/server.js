@@ -363,6 +363,18 @@ server.listen(PORT, () => {
   } else {
     logStartup();
   }
+
+  // 1A two-way Telegram replies for AI reports: long-poll getUpdates only when
+  // the bot is configured (the poller itself re-checks the admin setting and
+  // never logs tokens or chat ids). Guarded so it can never crash the API.
+  try {
+    if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+      const reportTelegram = require('./support/reportTelegram');
+      void reportTelegram.startPolling();
+    }
+  } catch (error) {
+    console.warn('Telegram report polling could not start:', String(error?.message || error).slice(0, 160));
+  }
 });
 
 /** Close sockets, then the HTTP server, then Mongo. PM2 sends SIGTERM. */

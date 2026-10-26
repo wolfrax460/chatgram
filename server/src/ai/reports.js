@@ -10,7 +10,8 @@ const mongoose = require('mongoose');
 function AdminInbox() {
   return require('./chatgram').AdminInbox;
 }
-const notifier = require('../support/notifier');
+const fixPrompt = require('./fixPrompt');
+const { redact } = require('./redact');
 
 const REPORT_TYPES = new Set([
   'bug_report',
@@ -85,42 +86,17 @@ function stripDuplicatePrefix(text, displayName) {
   return String(text || '').replace(pattern, '').trim();
 }
 
-/** Ready-to-use prompt for the coding assistant. */
+/**
+ * Ready-to-use prompt for the coding assistant (deterministic fallback form).
+ * The AI-enriched version is generated asynchronously by fixPrompt.js; this
+ * synchronous export is kept for callers/tests that only need the template.
+ */
 function buildFixPrompt(report) {
-  const type = report.type;
-  const transcript = report.transcript ? String(report.transcript).slice(0, 8000) : '';
-  const lines = [
-    `Title: ${report.title}`,
-    '',
-    'Context: Chatgram (React web app at apps/web, Electron desktop shell, Capacitor Android, Express/Mongo backend).',
-    `Report type: ${type} · reference ${report.ref || '(pending)'}`,
-    `Reported from: ${report.source || 'Chatgram AI'}`,
-    '',
-    'Observed behaviour:',
-    clean(report.userText || report.summary, 2000),
-    '',
-    'Expected behaviour:',
-    type === 'feature_request'
-      ? 'The requested capability works as described above, without regressions.'
-      : 'The reported behaviour no longer occurs and the described problem is resolved.',
-    '',
-    'Steps to reproduce:',
-    '- Open Chatgram and reproduce the reported flow.',
-    transcript ? `- Transcript / context:\n${transcript}` : '- Use the summary above; the reporter did not include a transcript.',
-    '',
-    'Likely areas of code (verify before editing):',
-    type === 'bug_report'
-      ? '- apps/web/src (UI), server/src (API), server/src/ai or server/src/support for assistant issues; check docs/progress.md for the area history.'
-      : '- apps/web/src/pages, apps/web/src/components, server/src/controllers, docs/progress.md.',
-    '',
-    'Acceptance criteria:',
-    '- The reported problem is fixed / the requested feature is usable end to end.',
-    '- No secrets printed, no full pre-deploy gate required by token rules; tsc + production build green.',
-    '- Deploy per docs/deploy.md (backup first for backend changes, web-only needs no DB backup) with a rollback row.',
-    '',
-    'Constraints: token budget is limited; no new Playwright suites; extend existing tests; never print secrets.',
-  ];
-  return lines.join('\n');
+  try {
+    return fixPrompt.buildTemplatePrompt(report || {});
+  } catch {
+    return `Goal: Investigate the Chatgram report ${clean(report && report.ref, 40) || '(reference pending)'}.\n\nObserved behaviour (the reporter’s exact words — quoted once, not repeated below):\n> ${clean(report && (report.userText || report.summary || report.title), 1600) || '(no text captured)'}`;
+  }
 }
 
 function referenceCode() {
@@ -133,8 +109,41 @@ function normalizedTitle(type, title) {
 }
 
 /**
+ * Persist the generated prompt fields. The normal path is `record.save()`; the
+ * raw-collection write is a safety net for a deployed AdminInbox schema that
+ * predates fixPromptSource/fixPromptQuestions, so the source is never lost.
+ */
+async function persistFixPromptFields(record) {
+  let saveError = null;
+  try {
+    await record.save();
+  } catch (error) {
+    saveError = error;
+    console.warn('AI report fix prompt save failed:', String(error?.message || error).slice(0, 160));
+  }
+  try {
+    const Model = AdminInbox();
+    const hasSchemaFields = Boolean(Model.schema.path('fixPromptSource') && Model.schema.path('fixPromptQuestions'));
+    if (saveError && record._id && !hasSchemaFields) {
+      await Model.collection.updateOne(
+        { _id: record._id },
+        {
+          $set: {
+            fixPrompt: record.fixPrompt,
+            fixPromptSource: record.fixPromptSource,
+            fixPromptQuestions: record.fixPromptQuestions || [],
+          },
+        },
+      );
+    }
+  } catch {
+    /* the prompt already lives on the in-memory record; a DB hiccup must not lose the report */
+  }
+}
+
+/**
  * Create (or merge into) an AdminInbox report. Never throws to the caller;
- * returns {ok, record, ref, merged} or {ok:false, error}.
+ * returns {ok, record, ref, merged, notified, alert, promptSource} or {ok:false, error}.
  */
 async function createReport({
   type = 'support_request',
@@ -148,6 +157,7 @@ async function createReport({
   includeConversation = false,
   status = 'new',
   notify = true,
+  fixPromptChat = null,
 } = {}) {
   try {
     const cleanType = REPORT_TYPES.has(type) ? type : 'support_request';
@@ -155,6 +165,9 @@ async function createReport({
     const cleanSummary = clean(summary || title, 1200);
     const normalized = normalizedTitle(cleanType, cleanTitle);
     const now = new Date();
+    // Conversation context is stored redacted (emails, phones, codes, tokens,
+    // card numbers) for every report type.
+    const safeTranscript = transcript ? redact(String(transcript), { allowContact: false }).slice(0, 12000) : '';
     let record = await AdminInbox().findOne({ normalized, status: { $ne: 'ignored' } });
     let merged = false;
     if (record) {
@@ -162,6 +175,7 @@ async function createReport({
       record.lastSeenAt = now;
       if (cleanSummary && cleanSummary.length > String(record.summary || '').length) record.summary = cleanSummary;
       if (userText) record.userText = clean(userText, 6000);
+      if (includeConversation && safeTranscript) record.transcript = safeTranscript;
       await record.save();
       merged = true;
     } else {
@@ -177,27 +191,46 @@ async function createReport({
         askerName: clean(askerName, 120),
         ref: referenceCode(),
         fixPrompt: '',
-        transcript: includeConversation ? String(transcript || '').slice(0, 12000) : '',
+        fixPromptSource: 'template',
+        fixPromptQuestions: [],
+        transcript: includeConversation ? safeTranscript : '',
         status: status === 'in_progress' || status === 'answered' || status === 'fixed' || status === 'ignored' ? status : 'new',
         count: 1,
         lastSeenAt: now,
       });
     }
-    if (PROBLEM_TYPES.has(cleanType) || cleanType === 'support_request') {
-      record.fixPrompt = buildFixPrompt({
-        ...record.toObject(),
-        type: cleanType,
-        title: cleanTitle,
-        summary: cleanSummary,
-        userText,
-        source,
-        transcript,
-      });
-      await record.save();
+    let promptSource = record.fixPromptSource || 'template';
+    if ((PROBLEM_TYPES.has(cleanType) || cleanType === 'support_request') && (merged ? !record.fixPrompt : true)) {
+      const generated = await fixPrompt.generateFixPrompt(
+        {
+          ...record.toObject(),
+          type: cleanType,
+          title: cleanTitle,
+          summary: cleanSummary,
+          userText: clean(userText, 6000) || record.userText,
+          source,
+          askerName,
+          transcript: safeTranscript,
+        },
+        fixPromptChat ? { chat: fixPromptChat } : {},
+      );
+      record.fixPrompt = generated.text;
+      record.fixPromptSource = generated.source;
+      record.fixPromptQuestions = generated.questions || [];
+      promptSource = generated.source;
+      await persistFixPromptFields(record);
     }
-    let notified = false;
-    if (notify) notified = await notifyReport(record);
-    return { ok: true, record, ref: record.ref, merged, notified };
+    let alert = { ok: false, skipped: false, error: null };
+    if (notify) alert = await sendReportAlert(record);
+    return {
+      ok: true,
+      record,
+      ref: record.ref,
+      merged,
+      notified: Boolean(alert.ok),
+      alert,
+      promptSource,
+    };
   } catch (error) {
     console.warn('AI report creation failed:', String(error?.message || error).slice(0, 200));
     return { ok: false, error: String(error?.message || error).slice(0, 200) };
@@ -215,26 +248,72 @@ function emojiFor(type) {
   }[type] || '📩';
 }
 
-async function notifyReport(record) {
-  if (String(process.env.AI_REPORT_TELEGRAM || 'true').toLowerCase() === 'false') return false;
-  const firstLines = String(record.summary || record.title || '').slice(0, 600);
-  const inboxUrl = `${process.env.CLIENT_URL || 'https://chatgram-xi.vercel.app'}/web/admin/inbox`;
-  const text = [
-    `${emojiFor(record.type)} ${record.type} · ${record.ref}`,
-    `Title: ${record.title}`,
-    firstLines,
-    `Where: ${record.source || 'Chatgram AI'}`,
-    `Asked by: ${record.askerName || 'Chatgram user'}`,
-    `Inbox: ${inboxUrl}`,
-    record.fixPrompt ? `\nFix prompt (first 600 chars):\n${record.fixPrompt.slice(0, 600)}` : null,
-  ].filter(Boolean).join('\n');
+/**
+ * Send the SHORT report alert through the Telegram reports module
+ * (server/src/support/reportTelegram.js). That module owns the message layout:
+ * emoji + type, reference, title, 2-3 line summary, where, asker, Inbox link —
+ * the fix prompt never goes to Telegram, and the summary is shortened at a
+ * sentence/word boundary, never mid-sentence.
+ *
+ * Returns {ok, skipped, error, messageId}. `skipped` means the channel is
+ * intentionally off/unconfigured (not a failure); `ok:false` means it tried and
+ * failed. Never throws.
+ */
+async function sendReportAlert(record) {
+  let telegram = null;
   try {
-    const results = await notifier.notifyAlert(text);
-    return Array.isArray(results) ? results.some((result) => result.ok) : false;
+    telegram = require('../support/reportTelegram');
   } catch (error) {
-    console.warn('AI report Telegram notify failed:', String(error?.message || error).slice(0, 160));
-    return false;
+    console.warn('AI report notifier unavailable:', String(error?.message || error).slice(0, 160));
+    return { ok: false, skipped: true, error: 'notifier unavailable' };
   }
+  try {
+    if (typeof telegram.sendReport !== 'function') {
+      return { ok: false, skipped: true, error: 'notifier unavailable' };
+    }
+    if (typeof telegram.isEnabled === 'function') {
+      const enabled = await telegram.isEnabled();
+      if (enabled === false) return { ok: false, skipped: true };
+    }
+    const result = await telegram.sendReport(record);
+    if (result && typeof result === 'object') {
+      return {
+        ok: result.ok === true,
+        skipped: result.skipped === true,
+        error: result.error ? String(result.error).slice(0, 200) : null,
+        messageId: result.messageId === undefined ? null : result.messageId,
+      };
+    }
+    return { ok: Boolean(result), skipped: false, error: null, messageId: null };
+  } catch (error) {
+    console.warn('AI report notification failed:', String(error?.message || error).slice(0, 160));
+    return { ok: false, skipped: false, error: String(error?.message || error).slice(0, 200) };
+  }
+}
+
+/** Boolean compatibility wrapper (true only when a channel really delivered). */
+async function notifyReport(record) {
+  const alert = await sendReportAlert(record);
+  return Boolean(alert.ok);
+}
+
+/**
+ * The honest confirmation sentence. "sent" is only used when Telegram really
+ * delivered; a record saved but un-alerted says "recorded"; a failed alert says
+ * so and offers the support email.
+ */
+function confirmationFor(result) {
+  const ref = result.ref;
+  if (result.merged) {
+    return `Done. I've added this to the existing Chatgram team report (reference ${ref}).`;
+  }
+  if (result.alert?.ok) {
+    return `Done. I've sent this to the Chatgram team. Reference ${ref}.`;
+  }
+  if (result.alert?.skipped) {
+    return `Done. I've recorded this for the Chatgram team inbox. Reference ${ref}.`;
+  }
+  return `I've recorded this for the Chatgram team inbox (reference ${ref}), but I couldn't send the alert right now. Please email ${SUPPORT_EMAIL} if it's urgent.`;
 }
 
 /**
@@ -259,6 +338,7 @@ async function handleModelReport({ text, context = {} } = {}) {
     askerName: context.askerName || '',
     transcript: context.transcript || '',
     includeConversation: directive.includeConversation || false,
+    fixPromptChat: context.fixPromptChat || null,
   });
   if (!result.ok) {
     return {
@@ -268,9 +348,7 @@ async function handleModelReport({ text, context = {} } = {}) {
       failed: true,
     };
   }
-  const confirmation = result.merged
-    ? `Done. I've added this to the existing Chatgram team report (reference ${result.ref}).`
-    : `Done. I've sent this to the Chatgram team. Reference ${result.ref}.`;
+  const confirmation = confirmationFor(result);
   const body = stripActionClaims(visible).trim();
   return {
     text: [body, confirmation].filter(Boolean).join('\n\n').trim(),
@@ -279,6 +357,8 @@ async function handleModelReport({ text, context = {} } = {}) {
     created: true,
     merged: result.merged,
     notified: result.notified,
+    alert: result.alert,
+    promptSource: result.promptSource,
     confirmation,
   };
 }
@@ -293,7 +373,10 @@ module.exports = {
   claimsAction,
   stripDuplicatePrefix,
   buildFixPrompt,
+  generateFixPrompt: fixPrompt.generateFixPrompt,
   createReport,
+  sendReportAlert,
   notifyReport,
+  confirmationFor,
   handleModelReport,
 };

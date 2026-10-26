@@ -148,6 +148,17 @@ export interface AdminUserDetailPayload {
   lastMessageAt: string | null;
 }
 
+/**
+ * A Telegram reply the admin wrote on a report (two-way replies, Chunk 1).
+ * Optional everywhere because older staging/production builds may not store it
+ * yet — the UI simply hides the block when the field is absent.
+ */
+export interface InboxTelegramReply {
+  text: string;
+  at: string | null;
+  sentToUser: boolean;
+}
+
 export interface InboxRow {
   id: string;
   type: string;
@@ -162,6 +173,20 @@ export interface InboxRow {
   duplicateCount: number;
   createdAt: string;
   lastSeenAt: string;
+  /* 1A AI report fields (server fills these; defaults keep legacy rows safe). */
+  title?: string;
+  summary?: string;
+  userText?: string;
+  source?: string;
+  askerName?: string;
+  askerId?: string | null;
+  ref?: string;
+  fixPrompt?: string;
+  fixPromptSource?: string;
+  fixPromptQuestions?: string[];
+  transcript?: string;
+  telegramMessageId?: number | null;
+  telegramReply?: InboxTelegramReply | null;
 }
 
 export interface InboxPayload {
@@ -169,6 +194,18 @@ export interface InboxPayload {
   total: number;
   page: number;
   pageCount: number;
+}
+
+export interface InboxCombineRecord {
+  id: string;
+  ref: string;
+  title: string;
+}
+
+/** Response of POST /api/admin/ai/inbox/combine. */
+export interface InboxCombineResult {
+  prompt: string;
+  records: InboxCombineRecord[];
 }
 
 export interface ProviderRow {
@@ -248,6 +285,49 @@ export function relativeTime(iso: string | null | undefined): string {
 export function shortDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/** Exact local timestamp for report details (the admin needs the real time). */
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/**
+ * Copy text to the clipboard. Uses the async Clipboard API when available and
+ * falls back to a hidden textarea + execCommand for older/embedded browsers and
+ * non-secure origins. Returns true when the copy actually happened.
+ */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  if (!text) return false;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Permission denied or insecure context: fall through to the DOM fallback.
+  }
+  try {
+    if (typeof document === 'undefined') return false;
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.top = '0';
+    area.style.left = '-9999px';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    area.setSelectionRange(0, area.value.length);
+    const copied = document.execCommand('copy');
+    document.body.removeChild(area);
+    return copied;
+  } catch {
+    return false;
+  }
 }
 
 export function initials(name: string | undefined): string {

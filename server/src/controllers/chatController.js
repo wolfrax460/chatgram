@@ -12,6 +12,39 @@ const storage = require('../utils/storage');
 
 const PARTICIPANT_FIELDS = '_id displayName avatarUrl about isOnline lastSeen phone email';
 
+/**
+ * Chunk 1C: the chat's stored `lastMessage` may be a private AI question/answer
+ * that this member may not read. Replace it with the newest message they can
+ * read (or null) so the chat list preview/unread state never leaks the text.
+ * Only the private-last-message case costs one extra query per chat.
+ */
+async function applyVisibleLastMessage(chatPlain, userId) {
+  const last = chatPlain.lastMessage;
+  if (!last) return chatPlain;
+  const lastPlain = typeof last.toObject === 'function' ? last.toObject() : last;
+  if (Message.isVisibleTo(lastPlain, userId)) {
+    return {
+      ...chatPlain,
+      lastMessage: { ...lastPlain, private: (lastPlain.visibleTo || []).length > 0 },
+    };
+  }
+  const fallback = await Message.findOne({
+    chatId: chatPlain._id,
+    isDeleted: { $ne: true },
+    ...Message.visibilityFilter(userId),
+  })
+    .sort({ _id: -1 })
+    .select('_id content type mediaUrl senderId sentAt readBy deliveredTo visibleTo')
+    .lean();
+  return {
+    ...chatPlain,
+    // If every message in the chat is private to someone else, show the neutral
+    // "No messages yet" preview rather than the hidden text.
+    lastMessage: fallback ? { ...fallback, private: false } : null,
+  };
+}
+
+
 // @desc    Create a new chat (direct or group)
 // @route   POST /api/chats
 // @access  Private
@@ -177,24 +210,24 @@ const getGroups = async (req, res) => {
       .populate('participants', PARTICIPANT_FIELDS)
       .populate({
         path: 'lastMessage',
-        select: '_id content type mediaUrl senderId sentAt',
+        select: '_id content type mediaUrl senderId sentAt visibleTo',
         populate: { path: 'senderId', select: '_id displayName avatarUrl' },
       })
       .sort({ updatedAt: -1 })
       .lean();
 
-    res.json(
-      groups.map((group) => {
-        const shaped = chatWithLivePresence(group, req.user._id);
-        return {
-          ...shaped,
-          memberCount: shaped.participants.length,
-          isAdmin: (group.groupAdmins || []).some(
-            (a) => a.toString() === req.user._id.toString()
-          ),
-        };
-      })
-    );
+    const shapedGroups = [];
+    for (const group of groups) {
+      const shaped = await applyVisibleLastMessage(chatWithLivePresence(group, req.user._id), req.user._id);
+      shapedGroups.push({
+        ...shaped,
+        memberCount: shaped.participants.length,
+        isAdmin: (group.groupAdmins || []).some(
+          (a) => a.toString() === req.user._id.toString()
+        ),
+      });
+    }
+    res.json(shapedGroups);
   } catch (error) {
     console.error('Get groups error:', error);
     res.status(500).json({ message: 'Server error fetching groups' });
@@ -271,6 +304,12 @@ const updateGroup = async (req, res) => {
       }
       if (body.groupSettings.aiMentions !== undefined) {
         next.aiMentions = Boolean(body.groupSettings.aiMentions);
+        settingsChanged = true;
+      }
+      // Chunk 1C: who can see AI answers in this group ('asker' | 'everyone').
+      if (body.groupSettings.aiReplyVisibility !== undefined) {
+        next.aiReplyVisibility =
+          body.groupSettings.aiReplyVisibility === 'everyone' ? 'everyone' : 'asker';
         settingsChanged = true;
       }
       chat.groupSettings = next;
@@ -368,13 +407,14 @@ const getChats = async (req, res) => {
       .populate('participants', PARTICIPANT_FIELDS)
       .populate({
         path: 'lastMessage',
-        select: '_id content type mediaUrl senderId sentAt readBy deliveredTo',
+        select: '_id content type mediaUrl senderId sentAt readBy deliveredTo visibleTo',
         populate: { path: 'senderId', select: '_id displayName avatarUrl' },
       })
       .sort({ updatedAt: -1 })
       .lean();
 
     // Unread counts in a single aggregation instead of one query per chat.
+    // Private AI messages (visibleTo = [asker]) never count for other members.
     const chatIds = chats.map((c) => c._id);
     const unread = chatIds.length
       ? await Message.aggregate([
@@ -383,6 +423,7 @@ const getChats = async (req, res) => {
               chatId: { $in: chatIds },
               senderId: { $ne: req.user._id },
               readBy: { $nin: [req.user._id] },
+              ...Message.visibilityFilter(req.user._id),
             },
           },
           { $group: { _id: '$chatId', count: { $sum: 1 } } },
@@ -390,10 +431,14 @@ const getChats = async (req, res) => {
       : [];
     const unreadMap = new Map(unread.map((u) => [u._id.toString(), u.count]));
 
-    const result = chats.map((chat) => ({
-      ...chatWithLivePresence(chat, req.user._id),
-      unreadCount: unreadMap.get(chat._id.toString()) || 0,
-    }));
+    const result = [];
+    for (const chat of chats) {
+      const shaped = await applyVisibleLastMessage(chatWithLivePresence(chat, req.user._id), req.user._id);
+      result.push({
+        ...shaped,
+        unreadCount: unreadMap.get(chat._id.toString()) || 0,
+      });
+    }
 
     res.json(result);
   } catch (error) {
@@ -415,7 +460,7 @@ const getChatById = async (req, res) => {
       .populate('participants', PARTICIPANT_FIELDS)
       .populate({
         path: 'lastMessage',
-        select: '_id content type mediaUrl senderId sentAt',
+        select: '_id content type mediaUrl senderId sentAt visibleTo',
         populate: { path: 'senderId', select: '_id displayName avatarUrl' },
       });
 
@@ -428,7 +473,8 @@ const getChatById = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to access this chat' });
     }
 
-    res.json(chatWithLivePresence(chat, req.user._id));
+    const shaped = await applyVisibleLastMessage(chatWithLivePresence(chat, req.user._id), req.user._id);
+    res.json(shaped);
   } catch (error) {
     console.error('Get chat by ID error:', error);
     if (error.kind === 'ObjectId') {
@@ -574,7 +620,7 @@ const getGroupMembers = async (req, res) => {
   try {
     const chat = await Chat.findById(req.params.id).populate(
       'participants',
-      'displayName avatarUrl about isOnline lastSeen showOnlineStatus'
+      'displayName avatarUrl about isOnline lastSeen showOnlineStatus isAiAccount'
     );
     if (!chat) return res.status(404).json({ message: 'Chat not found' });
     if (chat.type !== 'group') {
@@ -591,6 +637,9 @@ const getGroupMembers = async (req, res) => {
       displayName: p.displayName,
       avatarUrl: p.avatarUrl,
       about: p.about,
+      // The built-in Chatgram AI account is rendered as a dedicated assistant
+      // row in the web client, not as a normal member.
+      isAiAccount: p.isAiAccount === true,
       // ObjectId contains a creation timestamp: a good proxy for "joined".
       joinedAt: p._id && typeof p._id.getTimestamp === 'function' ? p._id.getTimestamp() : null,
       isAdmin: adminIds.includes(String(p._id)),
@@ -988,6 +1037,11 @@ const pinMessage = async (req, res) => {
     }
     const message = await Message.findOne({ _id: messageId, chatId: chat._id, isDeleted: { $ne: true } });
     if (!message) return res.status(404).json({ message: 'Message not found in this group' });
+    // A private AI message cannot be pinned by another member (the pin bar would
+    // render its text). Only the asker may pin their own private thread.
+    if (!Message.isVisibleTo(message, req.user._id)) {
+      return res.status(404).json({ message: 'Message not found in this group' });
+    }
 
     chat.pinnedMessageId = message._id;
     await chat.save();
@@ -1035,6 +1089,7 @@ const getChatMedia = async (req, res) => {
       isDeleted: { $ne: true },
       mediaUrl: { $ne: null },
       type: { $in: ['image', 'video', 'audio', 'file'] },
+      ...Message.visibilityFilter(req.user._id),
     })
       .sort({ sentAt: -1 })
       .limit(100)
@@ -1047,6 +1102,7 @@ const getChatMedia = async (req, res) => {
       isDeleted: { $ne: true },
       type: 'text',
       content: { $regex: 'https?://' },
+      ...Message.visibilityFilter(req.user._id),
     })
       .sort({ sentAt: -1 })
       .limit(100)

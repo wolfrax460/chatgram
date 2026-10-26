@@ -9,6 +9,11 @@ const groupSystem = require('../utils/groupSystem');
 
 const MESSAGE_TYPES = ['text', 'image', 'video', 'audio', 'file'];
 
+/** True when this user may read the message (private AI messages are allow-list). */
+function canReadMessage(message, userId) {
+  return Message.isVisibleTo(message, userId);
+}
+
 async function assertParticipant(chatId, userId) {
   const chat = await Chat.findById(chatId);
   if (!chat) return { error: { status: 404, message: 'Chat not found' } };
@@ -85,6 +90,16 @@ const sendMessage = async (req, res) => {
         ? await groupSystem.mentionedUserIds(content, chat.participants, req.user._id)
         : [];
 
+    // Chunk 1C: in a group whose AI answers are "only the person who asked",
+    // an @Chatgram AI mention is stored privately and never broadcast to the
+    // group room (the AI answer/notice follows the same rule).
+    const groupMentions = require('../ai/groupMentions');
+    const visibleTo =
+      chat.type === 'group' && type === 'text'
+        ? groupMentions.privateMentionVisibleTo(chat, content, req.user._id)
+        : [];
+    const isPrivate = visibleTo.length > 0;
+
     const message = await Message.create({
       chatId,
       senderId: req.user._id,
@@ -95,6 +110,7 @@ const sendMessage = async (req, res) => {
       deliveredTo: [req.user._id],
       readBy: [req.user._id],
       mentionUserIds: mentioned,
+      visibleTo,
     });
 
     await Chat.findByIdAndUpdate(chatId, {
@@ -108,10 +124,10 @@ const sendMessage = async (req, res) => {
     );
 
     realtime.joinUsersToChat(chatId, chat.participants.map((p) => p.toString()));
+
     // If this is the Support account replying on a ticket, mirror it to the
-    // guest's ticket room (additive; failures are swallowed).
-    // If this is a user writing to the Chatgram Support account, let the
-    // assistant answer (or escalate to the owner).
+    // guest's ticket room (additive; failures are swallowed). If this is a user
+    // writing to the Chatgram Support account, let the assistant answer.
     require('../support/supportAgentReply')
       .answerSupportChat(message, realtime.getIo())
       .catch(() => {});
@@ -129,13 +145,17 @@ const sendMessage = async (req, res) => {
       .propagateSupportReply(message, realtime.getIo())
       .catch(() => {});
 
-    realtime.emitToChat(chatId, 'message:new', {
-      ...populated.toObject(),
-      clientId: clientId || null,
-    });
+    const payload = { ...populated.toObject(), clientId: clientId || null, private: isPrivate };
+    if (isPrivate) {
+      // Only the asker's own devices may receive a private AI question live.
+      for (const userId of visibleTo) realtime.emitToUser(userId, 'message:new', payload);
+    } else {
+      realtime.emitToChat(chatId, 'message:new', payload);
+    }
 
-    // @mention notifications (group only, best effort).
-    if (mentioned.length > 0) {
+    // @mention notifications (group only, best effort). Never for a private AI
+    // question: another mentioned member would receive its text.
+    if (!isPrivate && mentioned.length > 0) {
       try {
         groupSystem.emitMentions(populated, chat, mentioned);
       } catch (mentionError) {
@@ -144,11 +164,11 @@ const sendMessage = async (req, res) => {
     }
 
     // Group "@Chatgram AI" mentions: off by default, rate limited, silent on error.
-    require('../ai/groupMentions')
-      .maybeAnswer({ chat, message: populated, io: realtime.getIo() })
+    groupMentions
+      .maybeAnswer({ chat, message: payload, io: realtime.getIo() })
       .catch(() => {});
 
-    res.status(201).json(populated);
+    res.status(201).json(payload);
   } catch (error) {
     console.error('Send message error:', error);
     if (error.name === 'ValidationError') {
@@ -181,9 +201,15 @@ const getMessages = async (req, res) => {
     const { error } = await assertParticipant(chatId, req.user._id);
     if (error) return res.status(error.status).json({ message: error.message });
 
-    // Hide messages deleted for everyone, and those this user deleted for
-    // themselves. Additive fields: older documents have no such values.
-    const query = { chatId, isDeleted: { $ne: true }, deletedFor: { $ne: req.user._id } };
+    // Hide messages deleted for everyone, those this user deleted for
+    // themselves, and every private message this user may not read (chunk 1C:
+    // private group AI questions/answers have visibleTo = [asker]).
+    const query = {
+      chatId,
+      isDeleted: { $ne: true },
+      deletedFor: { $ne: req.user._id },
+      ...Message.visibilityFilter(req.user._id),
+    };
     if (before) {
       if (!mongoose.Types.ObjectId.isValid(before)) {
         return res.status(400).json({ message: 'Invalid `before` cursor' });
@@ -200,11 +226,13 @@ const getMessages = async (req, res) => {
     // ...then flip it so the response is chronological.
     messages.reverse();
 
-    // Convenience flag for the client: has the signed-in user starred it?
+    // Convenience flags for the client: has the signed-in user starred it, and
+    // is this one of their own private AI answers ("Only visible to you")?
     const me = String(req.user._id);
     const shaped = messages.map((message) => {
       const json = message.toObject();
       json.starred = (message.starredBy || []).some((id) => String(id) === me);
+      json.private = (message.visibleTo || []).length > 0;
       return json;
     });
 
@@ -232,6 +260,7 @@ const markAsDelivered = async (req, res) => {
 
     const message = await Message.findById(id);
     if (!message) return res.status(404).json({ message: 'Message not found' });
+    if (!canReadMessage(message, req.user._id)) return res.status(404).json({ message: 'Message not found' });
 
     const { error } = await assertParticipant(message.chatId, req.user._id);
     if (error) return res.status(error.status).json({ message: error.message });
@@ -274,7 +303,7 @@ const markAsRead = async (req, res) => {
     const publishReceipts = reader?.readReceipts !== false;
 
     await Message.updateMany(
-      { _id: id, readBy: { $ne: req.user._id } },
+      { _id: id, readBy: { $ne: req.user._id }, ...Message.visibilityFilter(req.user._id) },
       publishReceipts
         ? { $addToSet: { readBy: req.user._id, deliveredTo: req.user._id } }
         : { $addToSet: { deliveredTo: req.user._id } }
@@ -310,7 +339,13 @@ const markChatAsRead = async (req, res) => {
     const publishReceipts = reader?.readReceipts !== false;
 
     const result = await Message.updateMany(
-      { chatId, senderId: { $ne: req.user._id }, readBy: { $ne: req.user._id } },
+      {
+        chatId,
+        senderId: { $ne: req.user._id },
+        readBy: { $ne: req.user._id },
+        // Private AI messages are only read by their allow-list.
+        ...Message.visibilityFilter(req.user._id),
+      },
       publishReceipts
         ? { $addToSet: { readBy: req.user._id, deliveredTo: req.user._id } }
         : { $addToSet: { deliveredTo: req.user._id } }
@@ -426,6 +461,8 @@ const reactToMessage = async (req, res) => {
 
     const message = await Message.findById(req.params.id);
     if (!message) return res.status(404).json({ message: 'Message not found' });
+    // A private AI message is invisible to non-askers: do not even confirm it.
+    if (!canReadMessage(message, req.user._id)) return res.status(404).json({ message: 'Message not found' });
 
     const { chat, error } = await assertParticipant(message.chatId, req.user._id);
     if (error) return res.status(error.status).json({ message: error.message });
@@ -478,7 +515,12 @@ const clearChatMessages = async (req, res) => {
     // Per-user clear: hide everything that exists right now for this user only,
     // so the other participant keeps their history.
     const result = await Message.updateMany(
-      { chatId: chat._id, deletedFor: { $ne: req.user._id } },
+      {
+        chatId: chat._id,
+        deletedFor: { $ne: req.user._id },
+        // Never touch messages this user cannot read (private AI threads).
+        ...Message.visibilityFilter(req.user._id),
+      },
       { $push: { deletedFor: req.user._id } }
     );
 
@@ -563,7 +605,14 @@ const editMessage = async (req, res) => {
       content,
       editedAt: message.editedAt,
     };
-    realtime.emitToChat(message.chatId, 'message:edited', payload);
+    // A private AI question/answer must only reach its allow-list, never the
+    // group room (the edited text is the same private content).
+    const visibleTo = (message.visibleTo || []).map(String);
+    if (visibleTo.length > 0) {
+      for (const userId of visibleTo) realtime.emitToUser(userId, 'message:edited', payload);
+    } else {
+      realtime.emitToChat(message.chatId, 'message:edited', payload);
+    }
     return res.json({ message: 'Message updated', ...payload });
   } catch (error) {
     console.error('Edit message error:', error);
@@ -607,6 +656,9 @@ const forwardMessage = async (req, res) => {
     }
     const source = await Message.findById(id);
     if (!source || source.isDeleted) return res.status(404).json({ message: 'Message not found' });
+    // Forwarding would copy the text into another chat: private AI messages may
+    // only be forwarded by the asker (and share-with-group is the intended path).
+    if (!canReadMessage(source, req.user._id)) return res.status(404).json({ message: 'Message not found' });
     const sourceAccess = await assertParticipant(source.chatId, req.user._id);
     if (sourceAccess.error) return res.status(sourceAccess.error.status).json({ message: sourceAccess.error.message });
 
@@ -654,6 +706,7 @@ const reportMessage = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ message: 'Invalid message ID' });
     const message = await Message.findById(id).populate('senderId', '_id displayName');
     if (!message) return res.status(404).json({ message: 'Message not found' });
+    if (!canReadMessage(message, req.user._id)) return res.status(404).json({ message: 'Message not found' });
     const { error } = await assertParticipant(message.chatId, req.user._id);
     if (error) return res.status(error.status).json({ message: error.message });
     if (String(message.senderId?._id || message.senderId) === String(req.user._id)) {
@@ -687,6 +740,91 @@ const reportMessage = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Share a private group AI answer (question + answer thread) with the group
+ * @route   POST /api/messages/:id/share-with-group
+ * @access  Private (the asker only)
+ *
+ * Chunk 1C: in "only the person who asked" mode the question and every AI
+ * reply/notice carry visibleTo = [asker]. This endpoint (the asker's explicit
+ * "Share with group" action) clears that allow-list on the whole local thread,
+ * re-broadcasts the messages so other members receive them live, and posts a
+ * small system note. The linked messages are found deterministically through
+ * Message.aiReplyTo (set by groupMentions), never guessed from text.
+ */
+const shareWithGroup = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ message: 'Invalid message ID' });
+
+    const message = await Message.findById(id);
+    if (!message || message.isDeleted) return res.status(404).json({ message: 'Message not found' });
+
+    const readers = (message.visibleTo || []).map(String);
+    if (readers.length === 0) {
+      return res
+        .status(400)
+        .json({ message: 'This message is already visible to the group.', code: 'NOT_PRIVATE' });
+    }
+
+    const { chat, error } = await assertParticipant(message.chatId, req.user._id);
+    if (error) return res.status(error.status).json({ message: error.message });
+    if (chat.type !== 'group') {
+      return res.status(400).json({ message: 'Only group AI answers can be shared with a group.', code: 'NOT_GROUP' });
+    }
+    if (!readers.includes(String(req.user._id))) {
+      return res
+        .status(403)
+        .json({ message: 'Only the person who asked can share this AI answer.', code: 'NOT_ASKER' });
+    }
+
+    // The thread root is the asker's mention message; replies point at it.
+    const rootId = message.aiReplyTo ? String(message.aiReplyTo) : String(message._id);
+    const root = await Message.findOne({ _id: rootId, chatId: chat._id, isDeleted: { $ne: true } });
+    const thread = root && Message.isVisibleTo(root, req.user._id) ? [root] : [message];
+    if (root) {
+      const replies = await Message.find({
+        chatId: chat._id,
+        aiReplyTo: root._id,
+        isDeleted: { $ne: true },
+      }).sort({ _id: 1 });
+      for (const reply of replies) {
+        if (!thread.some((row) => String(row._id) === String(reply._id)) && Message.isVisibleTo(reply, req.user._id)) {
+          thread.push(reply);
+        }
+      }
+    }
+
+    const ids = thread.map((row) => row._id);
+    await Message.updateMany({ _id: { $in: ids } }, { $set: { visibleTo: [] } });
+
+    // Re-broadcast the now-public messages to the group room (the asker's own
+    // clients de-duplicate by id; everyone else receives them for the first time).
+    const populated = await Message.find({ _id: { $in: ids } })
+      .populate('senderId', '_id displayName avatarUrl')
+      .sort({ _id: 1 });
+    for (const row of populated) {
+      realtime.emitToChat(chat._id, 'message:new', { ...row.toObject(), private: false });
+    }
+
+    const sharer = await User.findById(req.user._id).select('displayName');
+    const note = await groupSystem.postSystemMessage(
+      chat,
+      `${sharer?.displayName || 'A member'} shared the AI answer with the group`,
+    );
+
+    return res.json({
+      message: 'Shared with the group.',
+      chatId: String(chat._id),
+      sharedIds: ids.map(String),
+      noteId: note ? String(note._id) : null,
+    });
+  } catch (error) {
+    console.error('Share with group error:', error);
+    return res.status(500).json({ message: 'Could not share the AI answer' });
+  }
+};
+
 module.exports = {
   sendMessage,
   getMessages,
@@ -702,4 +840,5 @@ module.exports = {
   starMessage,
   forwardMessage,
   reportMessage,
+  shareWithGroup,
 };

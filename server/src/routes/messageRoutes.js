@@ -16,6 +16,7 @@ const {
   starMessage,
   forwardMessage,
   reportMessage,
+  shareWithGroup,
 } = require('../controllers/messageController');
 const upload = require('../utils/upload');
 
@@ -49,6 +50,9 @@ router.post('/:id/star', starMessage);
 router.delete('/:id/star', starMessage);
 router.post('/:id/forward', forwardMessage);
 router.post('/:id/report', reportMessage);
+// Share a private group AI answer (question + reply thread) with the group.
+// Bearer-token auth (not cookie sessions), so no separate CSRF token is used.
+router.post('/:id/share-with-group', shareWithGroup);
 
 // Mark a single message as delivered / read
 router.post('/:id/delivered', markAsDelivered);

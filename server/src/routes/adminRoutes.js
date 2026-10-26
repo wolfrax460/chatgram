@@ -165,6 +165,8 @@ router.delete('/safety/ip-bans/:ip', requireAdminSession, requireAdminCsrf, safe
 router.get('/settings', requireAdminSession, siteSettings.state);
 router.put('/settings', requireAdminSession, requireAdminCsrf, siteSettings.save);
 router.post('/settings/backup', requireAdminSession, requireAdminCsrf, siteSettings.backupNow);
+// 1A: "Send test message" button for AI-report Telegram alerts.
+router.post('/settings/telegram-test', requireAdminSession, requireAdminCsrf, siteSettings.telegramTest);
 
 // 9b Announcements: in-app banner + official-account broadcasts.
 router.get('/broadcasts', requireAdminSession, broadcasts.list);

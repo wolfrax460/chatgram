@@ -199,7 +199,13 @@ function ChatWindow({
     setShowJump(el.scrollHeight - el.scrollTop - el.clientHeight > 240);
   }
 
-  const list = messages.data ?? [];
+  const list = useMemo(
+    () =>
+      [...(messages.data ?? [])].sort(
+        (a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime(),
+      ),
+    [messages.data],
+  );
   const partner = chatPartner(chat, meId);
   const contactsQuery = useQuery({ queryKey: ['contacts'], queryFn: () => api.contacts(), staleTime: 60_000, retry: false });
   const partnerIsContact = !partner || (contactsQuery.data ?? []).some((person) => person.id === partner.id);
@@ -418,6 +424,22 @@ function ChatWindow({
       setNotice(`Report sent (${result.reportId}). Our team will review it.`);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Could not send the report');
+    }
+  }
+
+  /** Chunk 1C: reveal a private AI answer (and its question) to the group. */
+  async function shareWithGroup(message: Message) {
+    if (readOnly) {
+      setNotice(READ_ONLY_NOTICE);
+      return;
+    }
+    try {
+      await api.shareWithGroup(message.id);
+      void queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
+      void queryClient.invalidateQueries({ queryKey: ['chats'] });
+      setNotice('Shared with the group.');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not share the AI answer');
     }
   }
 
@@ -662,6 +684,7 @@ function ChatWindow({
                         : undefined,
                     onStar: readOnly ? undefined : (row) => void toggleStar(row),
                     onForward: readOnly ? undefined : (row) => setForwardFor(row),
+                    onShareWithGroup: readOnly ? undefined : (row) => void shareWithGroup(row),
                     onReport: (row) => {
                       setReportReason('spam');
                       setReportFor(row);
@@ -1306,7 +1329,16 @@ function Shell({ features }: { features: AppFeatures | null }) {
 
       {groupInfoChat ? (
         <div className="fixed inset-y-0 right-0 z-40 flex max-w-full shadow-2xl" data-testid="group-info-host">
-          <GroupInfo chat={groupInfoChat} meId={meId} onClose={closeGroupInfo} onOpenChat={openChat} />
+          <GroupInfo
+            chat={groupInfoChat}
+            meId={meId}
+            onClose={closeGroupInfo}
+            onOpenChat={openChat}
+            onAskAi={() => {
+              closeGroupInfo();
+              setTab('ai');
+            }}
+          />
         </div>
       ) : null}
 

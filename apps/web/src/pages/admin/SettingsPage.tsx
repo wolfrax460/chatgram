@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Database, Download, Globe, HardDrive, Mail, RefreshCw, Save, Send, ShieldCheck, Timer } from 'lucide-react';
+import { CheckCircle2, Database, Download, Globe, HardDrive, Mail, RefreshCw, Save, Send, ShieldCheck, Timer, XCircle } from 'lucide-react';
 import { adminFetch, relativeTime, type AdminSessionInfo } from './api';
 import { Chip, PageHead, Skeleton, useToast } from './ui';
 
@@ -13,6 +13,7 @@ type SettingsValues = {
   termsUrl: string;
   dataRetentionDays: number;
   reviewLogRetentionDays: number;
+  reportTelegramEnabled: boolean;
 };
 
 type SettingsStatus = {
@@ -55,6 +56,8 @@ export default function SettingsPage({ session }: { session: AdminSessionInfo })
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
+  const [testingTelegram, setTestingTelegram] = useState(false);
+  const [telegramTest, setTelegramTest] = useState<{ ok: boolean; message: string } | null>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -114,6 +117,26 @@ export default function SettingsPage({ session }: { session: AdminSessionInfo })
       setError(backupError instanceof Error ? backupError.message : 'The backup failed.');
     } finally {
       setBackingUp(false);
+    }
+  }
+
+  /** Send one real Telegram test message through the report bot (audited). */
+  async function sendTelegramTest() {
+    setTestingTelegram(true);
+    setTelegramTest(null);
+    try {
+      const result = await adminFetch<{ ok: boolean; message: string }>('/api/admin/settings/telegram-test', {
+        method: 'POST',
+        csrf: session.csrfToken,
+      });
+      setTelegramTest({ ok: result.ok !== false, message: result.message || 'Test message sent to the owner’s Telegram.' });
+    } catch (testError) {
+      setTelegramTest({
+        ok: false,
+        message: testError instanceof Error ? testError.message : 'The test message could not be sent.',
+      });
+    } finally {
+      setTestingTelegram(false);
     }
   }
 
@@ -205,6 +228,37 @@ export default function SettingsPage({ session }: { session: AdminSessionInfo })
                 </div>
                 <p className="mt-2 text-[12px] text-[var(--ad-muted)]">
                   The bot token is write-only: the dashboard only reports whether <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> are set, and never returns their values. Set them on the server to enable Telegram alerts.
+                </p>
+                <label className="mt-3 flex items-start justify-between gap-3 rounded-xl border border-[var(--ad-border)] p-2.5">
+                  <span>
+                    <span className="block text-[12.5px] font-semibold">Send reports to Telegram</span>
+                    <span className="block text-[11px] text-[var(--ad-muted)]">
+                      AI reports (bugs, feature requests, complaints) are sent to the owner’s Telegram. Turn this off to keep
+                      them in the Inbox only — every report is still stored and nothing is lost. The server environment
+                      variable <code>AI_REPORT_TELEGRAM=false</code> still forces them off.
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={values.reportTelegramEnabled}
+                    onChange={(event) => set('reportTelegramEnabled', event.target.checked)}
+                    aria-label="Send reports to Telegram"
+                  />
+                </label>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button type="button" className="admin-btn admin-btn-sm" disabled={testingTelegram} onClick={() => void sendTelegramTest()}>
+                    <Send className="h-3.5 w-3.5" /> {testingTelegram ? 'Sending…' : 'Send test message'}
+                  </button>
+                  {telegramTest ? (
+                    <Chip tone={telegramTest.ok ? 'success' : 'danger'}>
+                      {telegramTest.ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />} {telegramTest.message}
+                    </Chip>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-[11px] text-[var(--ad-muted)]">
+                  The test sends one real message with the same bot the reports use. It tests the server credentials, not the
+                  switch above; the switch applies to new AI reports after you save.
                 </p>
               </div>
             </div>

@@ -228,6 +228,16 @@ function registerSocketHandlers(io) {
             ? await groupSystem.mentionedUserIds(content, chat.participants, socket.userId)
             : [];
 
+        // Chunk 1C: in a group whose AI answers are "only the person who asked",
+        // an @Chatgram AI mention is private from the moment it is stored, and
+        // the question never reaches the group room.
+        const groupMentions = require('../ai/groupMentions');
+        const visibleTo =
+          chat.type === 'group' && type === 'text'
+            ? groupMentions.privateMentionVisibleTo(chat, content, socket.userId)
+            : [];
+        const isPrivate = visibleTo.length > 0;
+
         const message = await Message.create({
           chatId,
           senderId: socket.userId,
@@ -239,6 +249,7 @@ function registerSocketHandlers(io) {
           deliveredTo: [socket.userId],
           readBy: [socket.userId],
           mentionUserIds: mentioned,
+          visibleTo,
         });
 
         await Chat.findByIdAndUpdate(chatId, {
@@ -255,7 +266,7 @@ function registerSocketHandlers(io) {
         // was created after they connected.
         realtime.joinUsersToChat(chatId, chat.participants.map((p) => p.toString()));
 
-        const payload = { ...populated.toObject(), clientId: clientId || null };
+        const payload = { ...populated.toObject(), clientId: clientId || null, private: isPrivate };
         // Mirror a Support-account reply onto its ticket (additive, non-fatal).
       require('../support/supportAgentReply')
         .answerSupportChat(payload, io)
@@ -274,10 +285,16 @@ function registerSocketHandlers(io) {
         .propagateSupportReply(payload, io)
         .catch(() => {});
 
-      io.to(realtime.roomForChat(chatId)).emit('message:new', payload);
+      if (isPrivate) {
+        // Only the asker's own devices may receive a private AI question live.
+        for (const userId of visibleTo) realtime.emitToUser(userId, 'message:new', payload);
+      } else {
+        io.to(realtime.roomForChat(chatId)).emit('message:new', payload);
+      }
 
-      // @mention notifications for group members.
-      if (mentioned.length > 0) {
+      // @mention notifications for group members (never for a private AI
+      // question: that would leak its text to a mentioned member).
+      if (!isPrivate && mentioned.length > 0) {
         try {
           groupSystem.emitMentions(payload, chat, mentioned);
         } catch (mentionError) {
@@ -286,7 +303,7 @@ function registerSocketHandlers(io) {
       }
 
       // Group "@Chatgram AI" mentions: off by default, rate limited, silent on error.
-      require('../ai/groupMentions')
+      groupMentions
         .maybeAnswer({ chat, message: payload, io })
         .catch(() => {});
       } catch (error) {
@@ -698,7 +715,7 @@ async function applyReceipt(socket, data, field, event) {
     ? { _id: messageId }
     : { chatId, senderId: { $ne: socket.userId } };
 
-  const messages = await Message.find(query).select('_id chatId senderId ' + field);
+  const messages = await Message.find(query).select('_id chatId senderId visibleTo ' + field);
   if (!messages.length) return;
 
   // Authorise: the user must belong to every chat involved.
@@ -711,7 +728,11 @@ async function applyReceipt(socket, data, field, event) {
   );
 
   const affected = messages.filter(
-    (m) => allowed.has(m.chatId.toString()) && !m[field].some((u) => u.equals(socket.userId))
+    (m) =>
+      allowed.has(m.chatId.toString()) &&
+      // Private AI messages are only marked read/delivered by their allow-list.
+      Message.isVisibleTo(m, socket.userId) &&
+      !m[field].some((u) => u.equals(socket.userId))
   );
   if (!affected.length) {
     if (messageId) socket.emit(event, { messageId, chatId: data.chatId || null });
