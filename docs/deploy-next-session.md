@@ -4,17 +4,19 @@ This is the checklist to run after the next chunk is green. Nothing here is a
 secret: replace the SSH key path with your own local path, and never print or
 commit `.secrets/`, `.env` values or API keys.
 
-## Current production state (verified 2026-10-26 14:30)
+## Current production state (verified 2026-10-26 16:15, after Chunk 1 completion)
 
 | Item | Value |
 | --- | --- |
-| Web / landing / docs | Vercel `chatgram-dj8wmg0bv` (https://chatgram-xi.vercel.app) |
-| API / WebSocket | Oracle VM, PM2 `chatgram-api` **#105**, https://chatgram.duckdns.org |
+| Web / landing / docs | Vercel `chatgram-9z6qd5uqx` (https://chatgram-xi.vercel.app) |
+| API / WebSocket | Oracle VM, PM2 `chatgram-api` **#116**, https://chatgram.duckdns.org |
 | Health | `POST /api/status/health` → `{ok:true}` |
-| Last backend backup | `20261026-111532` (88K) + `src.bak-20261026-111532` |
-| Last backend change | Chunk 1A server-executed AI reports (commit `fdc903b`) |
-| Last web change | chat-list icon / Google-environment fixes (commit `3777667`) |
+| Last backend backup | `20261026-140604` (92K) + `src.bak-20261026-140604` |
+| Last backend change | Chunk 1 complete (commit `24001d5`) |
+| Last web change | Chunk 1 complete (`chatgram-9z6qd5uqx`) |
+| SSH key (local path only; never print/copy the key itself) | `C:\Users\mugis\Downloads\mugisha recovery codes for github 8\chatgram recovery keys\ssh-key-2026-10-19.key` |
 | Test-account helpers on VM | `/tmp/prod-backup.sh`, `/tmp/prod-smoke-account.js` (both present) |
+| Docs shipped for production fix prompts | `~/chatgram/docs/progress.md` + `decisions.md` (refresh with each backend deploy) |
 | Admin/support credentials | only in your local `.secrets/admin-credentials.txt` (never in the repo) |
 
 ## What must be finished before the next deploy

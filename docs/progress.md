@@ -1,3 +1,44 @@
+## NEXT SESSION STARTS HERE (2026-10-26, after CHUNK 1 complete + deployed)
+
+### Done this session (all remaining Chunk 1 items, deployed)
+1. FIX-PROMPT GENERATOR (item 6): `server/src/ai/fixPrompt.js` (new) generates the coding-assistant prompt with a second admin-side AI call (`service.chat` with feature `chatgramAI` + `options.ignoreLegacyToggle`, only that caller uses it) and a report-specific deterministic fallback: one-line Goal; Context/feature area; Observed vs expected in concrete terms (user words quoted once, referenced as "the reporter's words above" elsewhere); numbered feature-specific steps; Likely files/modules grounded in docs/progress.md + docs/decisions.md (shipped to the VM at `~/chatgram/docs/`, needs refreshing each deploy); checkable acceptance criteria; Constraints (token rules/no secrets/deploy.md). Vague reports get a "Needs clarification" question list instead of invented details. Records `fixPromptSource='ai'|'template'` + `fixPromptQuestions`. Never throws; a prompt failure cannot lose the report.
+2. ADMIN INBOX UI: report rows show type emoji chip, RPT ref, status, title, summary, source/group, asker name+id, full timestamp, duplicate/occurrence count and the exact user words; Copy fix prompt (+ AI/Template chip and clarification list); Copy transcript for unknown_question when stored; multi-select + "Combine selected into one prompt" (POST /api/admin/ai/inbox/combine, admin session+CSRF, 2-25 ids, grouped by area, duplicates merged, refs labelled, audited `ai_inbox_combine`); Telegram reply block with "Send to user" (existing answer endpoint; disabled honestly when the report has no user).
+3. TELEGRAM REPORTS: `server/src/support/reportTelegram.js` (new) with the admin setting "Send reports to Telegram" (default ON, env `AI_REPORT_TELEGRAM=false` still forces off), short message (type/ref/title/2-3 sentence summary/where/asker/inbox link, never the fix prompt, never cut), Test button (POST /api/admin/settings/telegram-test, audited) and two-way replies: production's bot is WEBHOOK-driven, so `telegramBot.js` webhookHandler forwards `reply_to_message` updates to `saveReplyFromUpdate` (poller stays as a fallback and 409-disables when a webhook is set); the reply is stored as a draft (`telegramReply {text,at,sentToUser}`) and `sentToUser` flips only when the Inbox really delivers it.
+4. UNKNOWN QUESTION THREADS: 1:1 Chatgram AI unknown answers now store an `unknown_question` Inbox record with the recent conversation (question + AI reply, redacted); group mentions store the asker's mention thread + quoted message + AI reply only (never other members' text), no Telegram alert for those (digest/instant rule unchanged).
+5. PRIVACY/COPY: Privacy Policy (/docs) has a "Chatgram AI reports" section (server-side reports, visible to authorised team members, contact data redacted, asker name included in groups, TLS but NOT end-to-end encrypted, reported/flagged content review) and the in-app AI notice (`t('aiNotice')`) exists in EN/RW/FR/SW (RW/FR/SW flagged `TODO: native review`).
+6. 1C PRIVATE GROUP AI REPLIES: `Chat.groupSettings.aiReplyVisibility` ('asker' default | 'everyone'), `Message.visibleTo`/`aiReplyTo`, server-side REST filtering + socket emission to the asker's user room only (the group room never receives the question/answer), hidden-last-message preview fallback, filtered unread/media/pin/links, "Only visible to you" label + "Share with group" (POST /api/messages/:id/share-with-group, asker-only, posts "X shared the AI answer with the group"), "Chatgram AI (assistant)" row with "Ask privately", admin-only setting in group info. Legacy messages have no visibleTo so nothing old is hidden.
+
+### Tests / deploy (2026-10-26)
+- Unit: 8 files in `npm run test:unit` 165/165 green (fixed two PRE-EXISTING drifts: callRegistry caps now 6 video/12 audio, nativeSelect allowlist includes legacy Groups.tsx report-reason select). New unit files run separately: aiReports 76/76, groupMentions 49/49, reportTelegram 37/37.
+- Integration: every file green against staging :5003 (`BASE_URL`+`E2E_API_URL` set); systemAnswers 24/24 on the clean rerun (an earlier 5-check failure was staging state from a concurrently-aborted run, not code).
+- AI suite: green except 3 PRE-EXISTING `aiTail.test.js` delivery assertions (the test expects a boolean `answered.delivered`; the code has returned `{delivered,...}` since 9b — unrelated to this chunk, test needs updating).
+- Playwright: targeted 25/28; the 3 failures are PRE-EXISTING stale `groups.spec.js` expectations (since session 49 the Groups tab opens Group info; pinned/system-message assertions assume the chat opens). Full Playwright cannot run in one pass on staging because the signup throttle (20/IP/hour) returns 429 after ~50 accounts — disable it in the staging PlatformSettings before a full run.
+- Production smoke (temp accounts deleted, leftovers verified 0): 24/24 — health, all new endpoints auth-gated 401, temp group, group AI setting asker-only, mention stored private, asker got a real private AI reply, other member saw neither question nor reply but still saw public messages, share-with-group revealed the thread and a second share was refused, /docs carries the report/TLS copy, web bundle carries "Only visible to you".
+- Backend: DB backup `20261026-140604` (92K) + `src.bak-20261026-140604`, health 200 after PM2 restart #116. Web: `chatgram-9z6qd5uqx` (alias chatgram-xi.vercel.app); `/`, `/web/`, `/docs/`, `/web/admin` 200 and the `/api` proxy verified (GET health + POST login forwards). Commit `24001d5`.
+- ADMIN 405 FIXED (reported by owner at the end of this session): the previous web deployment shipped without the `/api` proxy, so POST /api/admin/auth/login fell back to HTML/405. Redeploying through `scripts/deploy-web.ps1` restored it; POST https://chatgram-xi.vercel.app/api/admin/auth/login now returns a JSON 400 for a wrong password (not 405).
+
+### Not verified / crosses (honest)
+- No real successful Telegram SEND or a real two-way reply was exercised live (tests stub fetch; the Inbox flow and webhook forwarding are code+unit verified only). Merged duplicates share one `telegramMessageId`, so a reply to an older merged alert is ignored.
+- The admin Inbox "Send to user" and Telegram reply paths were smoke-tested at API level, not clicked in a browser.
+- RW/FR/SW notice/translations need native review.
+- Landing marketing copy/guides still carry the old one-line AI disclaimer (CHUNK 6).
+- `aiTail.test.js` 3 stale assertions + `groups.spec.js` 3 stale expectations remain (pre-existing, documented above).
+- Real phones/Electron were not tested (unchanged from before).
+
+### Gotchas for next session
+- STAGING: port 5000 on this PC is NOT Chatgram (an unrelated python "C2 Dashboard" holds it). Start staging with `powershell -ExecutionPolicy Bypass -File scripts/start-staging.ps1 -Port 5003` and set BOTH `BASE_URL` and `E2E_API_URL` to it; several integration files ignore `E2E_API_URL`.
+- CONCURRENT SESSIONS: another session was editing/committing/deploying this same repo during this session. It clobbered the `adminRoutes.js` Telegram-test route line while fixing its own crash-loop (restored here) and its deploy once crash-looped because a routes file mixed its change with our uncommitted controller. Before commit/deploy: `git status`, `git log -3`, check for foreign uncommitted files, and never deploy a file that mixes two sessions' work.
+- SSH key for the Oracle VM is at `C:\Users\mugis\Downloads\mugisha recovery codes for github 8\chatgram recovery keys\ssh-key-2026-10-19.key` (local path only; docs/deploy-next-session.md updated). Always `bash /tmp/prod-backup.sh` first (prints BACKUP_OK + SRC_BACKUP_OK).
+- Fix-prompt generation reads `docs/progress.md` + `docs/decisions.md` from `~/chatgram/docs/` on the VM; copy them with each backend deploy or prompts silently degrade to the built-in area table.
+- Production Telegram bot has a WEBHOOK set → two-way replies arrive through `telegramBot.js` forwarding, not `getUpdates` polling.
+- Ship `server/src` with `scp -r server/src/. ubuntu@…:~/chatgram/server/src/` (content copy) to avoid nesting `src/src`; no `npm ci` needed unless server/package*.json changed.
+- Rollback for this deploy: `src.bak-20261026-140604` + DB backup `20261026-140604`, previous web deployment `chatgram-a4kwzcglx`.
+
+### Next chunks in order
+CHUNK 2 group call rooms/call outcomes/screen share/camera privacy + extend scripts/verify-calls.js; CHUNK 3 Android diagnosis/optimisation/testing; CHUNK 7 version tracker + auto-update; CHUNK 4 WhatsApp-style UI + disappearing/auto-reply/suggested replies + /guide; CHUNK 5 maintenance server-side 503/localized settings/socket gate; CHUNK 6 landing accuracy/SEO polish.
+
+---
+
 ## Admin System health: database storage + VM diagnostics (deployed 2026-10-26)
 
 The admin "System health" page now answers two everyday questions without SSH:
@@ -51,7 +92,7 @@ base (`7e500b5`) so it no longer carries the foreign WIP line.
 **Rule to avoid a repeat:** a route and its controller function must be committed together, and
 never deploy a file that mixes your change with someone else's uncommitted work.
 
-## NEXT SESSION STARTS HERE (2026-10-26, after Chunk 1 partial)
+## Previous note (SUPERSEDED by the block at the top): NEXT SESSION STARTS HERE (2026-10-26, after Chunk 1 partial)
 
 ### Done this session (Chunk 1, 1A server core)
 - Server-executed AI reports: hidden [[CHATGRAM_REPORT]] JSON action parsed by the server (never the model); AdminInbox record created with type bug_report/feature_request/support_request/complaint/abuse_report/unknown_question, title, summary, exact user words, source (group/AI chat), asker name/id, timestamp, duplicate count+merge, status, reference RPT-XXXX.
