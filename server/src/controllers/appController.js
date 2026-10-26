@@ -1,31 +1,17 @@
-// App version tracking + update policy
+// App version tracking + update policy.
+//
+// Chunk 7A: GET /api/app/version is the public update check used by the Windows
+// and Android apps. It answers from the published AppRelease row (falling back to
+// the legacy APP_* env policy on deployments with no release row yet), records
+// the anonymous install id for the admin "Versions in use" panel, enforces our
+// own HTTPS domain for the download URL and never recommends a downgrade.
 const ClientVersion = require('../models/ClientVersion');
+const AppRelease = require('../models/AppRelease');
+const appUpdate = require('../utils/appUpdate');
 
-/**
- * Semantic-ish version comparison.
- * Returns -1, 0 or 1. Tolerates "1.2", "1.2.3", "1.2.3+7" and junk.
- */
-function compareVersions(a, b) {
-  const parse = (value) =>
-    String(value || '0')
-      .split('+')[0] // drop build metadata
-      .split('.')
-      .map((part) => parseInt(part.replace(/[^0-9]/g, ''), 10) || 0);
+const { compareVersions } = appUpdate;
 
-  const left = parse(a);
-  const right = parse(b);
-  const length = Math.max(left.length, right.length);
-
-  for (let i = 0; i < length; i++) {
-    const x = left[i] || 0;
-    const y = right[i] || 0;
-    if (x > y) return 1;
-    if (x < y) return -1;
-  }
-  return 0;
-}
-
-/** The release the server currently advertises. Change these in .env. */
+/** The legacy release policy from the environment. */
 function policy() {
   const latest = process.env.APP_LATEST_VERSION || '1.0.0';
   const minimum = process.env.APP_MIN_VERSION || '0.0.0';
@@ -38,7 +24,7 @@ function policy() {
   };
 }
 
-/** What should THIS client do? */
+/** What should THIS client do? (legacy heartbeat shape) */
 function evaluate(clientVersion) {
   const p = policy();
   const version = clientVersion || '0.0.0';
@@ -84,9 +70,73 @@ const heartbeat = async (req, res) => {
   }
 };
 
-// @desc    Current release policy (no reporting)
-// @route   GET /api/app/version
+/** The release to advertise: the published AppRelease row, else the env policy. */
+async function resolveRelease(platform) {
+  try {
+    const row = await AppRelease.findOne({ platform }).lean();
+    if (row && row.published === true) return { release: row, source: 'release' };
+  } catch (error) {
+    console.warn('App release lookup failed:', String(error?.message || error).slice(0, 160));
+  }
+  return { release: appUpdate.envPolicy(), source: 'env' };
+}
+
+/** Record the anonymous install id (never linked to a user from this route). */
+async function recordInstall(platform, version, installId) {
+  if (!installId) return;
+  try {
+    await ClientVersion.updateOne(
+      { platform, version, deviceId: installId },
+      {
+        $set: { lastSeen: new Date() },
+        $setOnInsert: { firstSeen: new Date() },
+      },
+      { upsert: true }
+    );
+  } catch (error) {
+    // Update checks must never fail because telemetry failed.
+    console.warn('Client version record failed:', String(error?.message || error).slice(0, 160));
+  }
+}
+
+// @desc    Public update check for the apps (ETag + short cache).
+// @route   GET /api/app/version?platform=windows|android&current=<version>&build=<versionCode>&id=<install id>
 // @access  Public
+const updateCheck = async (req, res) => {
+  const platform = String(req.query.platform || '').toLowerCase();
+  if (!appUpdate.UPDATE_PLATFORMS.includes(platform)) {
+    return res.status(400).json({ message: 'Choose platform=windows or platform=android.' });
+  }
+
+  const currentVersion = appUpdate.cleanVersion(req.query.current);
+  const currentBuild = appUpdate.cleanBuild(req.query.build);
+  const installId = appUpdate.cleanInstallId(req.query.id);
+  const { release, source } = await resolveRelease(platform);
+
+  const payload = {
+    ...appUpdate.buildVersionPayload({
+      platform,
+      release,
+      currentVersion,
+      currentBuild,
+      requestOrigin: appUpdate.requestOrigin(req),
+    }),
+    source,
+  };
+
+  await recordInstall(platform, currentVersion || '0.0.0', installId);
+
+  const etag = appUpdate.buildEtag(payload);
+  res.set('Cache-Control', `public, max-age=${appUpdate.CACHE_SECONDS}`);
+  res.set('ETag', etag);
+  res.set('Access-Control-Expose-Headers', 'ETag, Cache-Control');
+  if (appUpdate.etagMatches(req.headers?.['if-none-match'], etag)) {
+    return res.status(304).end();
+  }
+  return res.json(payload);
+};
+
+/** Kept for compatibility: the old no-argument policy response. */
 const versionInfo = (req, res) => {
   res.json(evaluate(req.query.version));
 };
@@ -127,4 +177,12 @@ const versionUsage = async (req, res) => {
   }
 };
 
-module.exports = { heartbeat, versionInfo, versionUsage, compareVersions, policy, evaluate };
+module.exports = {
+  heartbeat,
+  updateCheck,
+  versionInfo,
+  versionUsage,
+  compareVersions,
+  policy,
+  evaluate,
+};

@@ -76,6 +76,8 @@ router.get('/platform-settings', requireAdminSession, platform.getSettings);
 router.put('/platform-settings', requireAdminSession, requireAdminCsrf, platform.saveSettings);
 
 router.get('/releases', requireAdminSession, releases.listReleases);
+// Chunk 7A: counts by platform/version + last check time (audited read).
+router.get('/releases/versions', requireAdminSession, releases.versionsInUse);
 router.put('/releases', requireAdminSession, requireAdminCsrf, releases.saveReleases);
 
 router.get('/statuses', requireAdminSession, media.listStatuses);

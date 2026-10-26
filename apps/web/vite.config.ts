@@ -1,5 +1,30 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+
+/**
+ * Chunk 7D: write /web/version.json next to the built app. It carries a build id
+ * generated at build time; the running app polls it every 10 minutes (and on tab
+ * focus) and offers a refresh when a newer build is deployed. The file contains
+ * nothing secret and nothing user-specific.
+ */
+function versionFilePlugin(): Plugin {
+  const buildId =
+    process.env.VITE_BUILD_ID ||
+    process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ||
+    `${Date.now().toString(36)}`;
+  const builtAt = new Date().toISOString();
+  return {
+    name: 'chatgram-version-file',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: `${JSON.stringify({ buildId, builtAt })}\n`,
+      });
+    },
+  };
+}
 
 // Served at /web/ alongside the legacy Flutter app at /app/ during migration.
 export default defineConfig(({ mode }) => {
@@ -10,7 +35,7 @@ export default defineConfig(({ mode }) => {
   const apiUrl = (process.env.VITE_API_URL || 'http://127.0.0.1:5000').replace(/\/+$/, '');
 
   return {
-    plugins: [react()],
+    plugins: [react(), versionFilePlugin()],
     base: mode === 'production' ? '/web/' : '/',
     build: {
       outDir: 'dist',

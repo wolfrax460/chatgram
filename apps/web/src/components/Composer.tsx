@@ -247,6 +247,10 @@ export default function Composer({
           value={draft}
           disabled={readOnly}
           onChange={(e) => change(e.target.value)}
+          // Used by the version-refresh banner (Chunk 7D) to keep a typed draft
+          // across the reload: it saves this value in localStorage.
+          data-chatgram-composer="1"
+          data-chat-id={chatId}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();

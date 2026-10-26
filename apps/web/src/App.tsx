@@ -43,6 +43,8 @@ import MaintenancePage from './components/MaintenancePage';
 import { isMaintenancePreview } from './lib/maintenance';
 import { READ_ONLY_BANNER, READ_ONLY_NOTICE } from './lib/readOnly';
 import { ProfilePanel } from './components/ProfilePanel';
+import { UpdateBanner } from './components/UpdateBanner';
+import { takeRefreshDraft } from './lib/appUpdate';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, formatTime, sameDay, statusOf } from './lib/ui';
 
@@ -169,8 +171,13 @@ function ChatWindow({
     queryFn: () => api.messages(chat.id),
   });
 
+  // On open (or chat switch) restore a draft saved by the version-refresh banner
+  // (Chunk 7D); the ref guard keeps it through React StrictMode's double effect.
+  const draftChatRef = useRef<string | null>(null);
   useEffect(() => {
-    setDraft('');
+    if (draftChatRef.current === chat.id) return;
+    draftChatRef.current = chat.id;
+    setDraft(takeRefreshDraft(chat.id) ?? '');
     setReplyTo(null);
     setInChatSearch('');
     setSearchOpen(false);
@@ -1537,6 +1544,7 @@ export default function App() {
 
   return (
     <>
+      <UpdateBanner />
       {user ? <Shell features={features} /> : <Auth />}
       {features?.supportWidgetEnabled === false ? null : <SupportWidget hideLauncher={Boolean(user)} />}
     </>

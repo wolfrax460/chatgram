@@ -1,12 +1,16 @@
 // App version tracking + update policy
 const express = require('express');
 const router = express.Router();
-const { heartbeat, versionInfo, versionUsage } = require('../controllers/appController');
+const { heartbeat, updateCheck, versionUsage } = require('../controllers/appController');
 const { publicReleases } = require('../controllers/appReleasesController');
+const { createVersionLimiter } = require('../utils/appUpdate');
+
+const versionLimiter = createVersionLimiter();
 
 // Public: clients must be able to check for updates before signing in.
 router.post('/heartbeat', heartbeat);
-router.get('/version', versionInfo);
+// Chunk 7A public update check (rate limited, ETag + 60 s cache).
+router.get('/version', versionLimiter, updateCheck);
 router.get('/versions', versionUsage);
 // Public feature flags + maintenance message for the web/desktop/mobile clients.
 router.get('/features', async (req, res) => {
