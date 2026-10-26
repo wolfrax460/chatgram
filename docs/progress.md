@@ -1,3 +1,13 @@
+## CHUNK 2 COMPLETE (2026-10-26, deployed) — group call rooms + call fixes
+
+**2A root cause (verified live):** the mesh join path and "ring every online member" already worked; the room had NO queryable/replayable state — no persisted call card, no `call:room` snapshot, no `GET /api/calls/state` (404), no `call:join`. The callId existed only in the one-shot `call:incoming` ring payload, which the client auto-declines/forgets after 45 s, so an offline/late/missed-ring member could never obtain it or a Join affordance (a reconnecting member received 0 events).
+
+**Delivered:** new `server/src/utils/callRooms.js` (persisted `Message` type `call` card, `call:room` snapshots broadcast at start/join/leave/decline/end/authenticate, `call:card-updated`, `call:ended`); `callRegistry` invitees/membership/media state/1:1→group conversion/caps (12 total, 6 camera seats, audio-only past 6); `socketHandler` `call:join` (callId or chatId), `call:add-participant`, `call:signal`, `call:failed`, group-vs-1:1 leave semantics, ring-timeout missed sweep, `GET /api/calls/state`; outcomes Declined/Missed/Busy/Failed to connect (never "Call ended")/Ended+duration/Cancelled in CallLog, history and cards; web group ring Join/Decline, live call card + "Call in progress, N people · Join" banner, real mesh join, add-participant, outcomes + Retry, real getDisplayMedia screen share (receiver large view + sharing bar + system audio where supported, Electron desktopCapturer picker, Android button hidden with note), camera-off really stops the outgoing video track + dark tiles, "Turn off incoming video" toggle with audio-still-plays note. `scripts/verify-calls.js` rewritten.
+
+**Verified:** `node scripts/verify-calls.js` **32/32 in 92s** (1:1 ring/decline/retry, cancel on both sides, add-participant conversion, group ring to all, B joins, C declines then late-joins via banner, 3-way mesh media, live card, camera-off (B sends no video track, A sees dark tile), incoming-video toggle, real headless screen share + receiver label + stop, leave keeps call, banner clears, Ended+duration, Busy+Retry, real `call:failed` → "Failed to connect" + Retry, cleanup). `server/test/integration/calls.test.js` **137/137** on rerun (one flaky declined-history assertion on the first run). Unit callRegistry 31/31, typecheck + web build green, `node --check` all changed server files. Backend PM2 #117, health 200, DB backup `20261026-153330` + `src.bak-20261026-153330`. Web `chatgram-8dhgpgvgf`; `/web/` 200, `/docs/` 200, `GET /api/calls/state` 401 unauth, admin login POST still JSON 400 (proxy intact). Commit `e2377f4`.
+
+**Not verified:** Firefox/Safari screen capture and system audio (code-checked only), Electron picker (not launched), Android share button (no device), Missed/no-answer UI not in verify-calls (time budget), no real ICE/media across networks (fake SDP). Converted 1:1 room does not create a group chat record (added contact rings but has no chat card) — follow-up. Rollback: `src.bak-20261026-153330` + DB backup, previous web `chatgram-9z6qd5uqx`.
+
 ## NEXT SESSION STARTS HERE (2026-10-26, after CHUNK 1 complete + deployed)
 
 ### Done this session (all remaining Chunk 1 items, deployed)
@@ -35,7 +45,7 @@
 - Rollback for this deploy: `src.bak-20261026-140604` + DB backup `20261026-140604`, previous web deployment `chatgram-a4kwzcglx`.
 
 ### Next chunks in order
-CHUNK 2 group call rooms/call outcomes/screen share/camera privacy + extend scripts/verify-calls.js; CHUNK 3 Android diagnosis/optimisation/testing; CHUNK 7 version tracker + auto-update; CHUNK 4 WhatsApp-style UI + disappearing/auto-reply/suggested replies + /guide; CHUNK 5 maintenance server-side 503/localized settings/socket gate; CHUNK 6 landing accuracy/SEO polish.
+CHUNK 3 Android diagnosis/optimisation/testing; CHUNK 7 version tracker + auto-update; CHUNK 4 WhatsApp-style UI + disappearing/auto-reply/suggested replies + /guide; CHUNK 5 maintenance server-side 503/localized settings/socket gate; CHUNK 6 landing accuracy/SEO polish. (CHUNK 2 is complete and deployed — see the CHUNK 2 block above.)
 
 ---
 
@@ -112,7 +122,7 @@ never deploy a file that mixes your change with someone else's uncommitted work.
 - 1B group mention fixes from this round's chat (duplicate address fixed; no-context and admin-contact honesty instructions added) were mostly implemented in the previous session and verified; this session added the report/prefix/honesty prompt pieces only.
 
 ### Next chunks in order
-CHUNK 2 group call rooms/call outcomes/screen share/camera privacy + extend scripts/verify-calls.js; CHUNK 3 Android diagnosis/optimisation/testing; CHUNK 7 version tracker + auto-update; CHUNK 4 WhatsApp-style UI + disappearing/auto-reply/suggested replies + /guide; CHUNK 5 maintenance server-side 503/localized settings/socket gate; CHUNK 6 landing accuracy/SEO polish.
+CHUNK 3 Android diagnosis/optimisation/testing; CHUNK 7 version tracker + auto-update; CHUNK 4 WhatsApp-style UI + disappearing/auto-reply/suggested replies + /guide; CHUNK 5 maintenance server-side 503/localized settings/socket gate; CHUNK 6 landing accuracy/SEO polish. (CHUNK 2 is complete and deployed — see the CHUNK 2 block above.)
 
 ### Gotchas
 - reports.js gets AdminInbox lazily via require('./chatgram') to avoid a circular require; do not move that to a top-level require.

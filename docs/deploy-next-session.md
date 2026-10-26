@@ -8,12 +8,12 @@ commit `.secrets/`, `.env` values or API keys.
 
 | Item | Value |
 | --- | --- |
-| Web / landing / docs | Vercel `chatgram-9z6qd5uqx` (https://chatgram-xi.vercel.app) |
-| API / WebSocket | Oracle VM, PM2 `chatgram-api` **#116**, https://chatgram.duckdns.org |
+| Web / landing / docs | Vercel `chatgram-8dhgpgvgf` (https://chatgram-xi.vercel.app) |
+| API / WebSocket | Oracle VM, PM2 `chatgram-api` **#117**, https://chatgram.duckdns.org |
 | Health | `POST /api/status/health` → `{ok:true}` |
-| Last backend backup | `20261026-140604` (92K) + `src.bak-20261026-140604` |
-| Last backend change | Chunk 1 complete (commit `24001d5`) |
-| Last web change | Chunk 1 complete (`chatgram-9z6qd5uqx`) |
+| Last backend backup | `20261026-153330` (92K) + `src.bak-20261026-153330` |
+| Last backend change | Chunk 2 calls (commit `e2377f4`) |
+| Last web change | Chunk 2 calls (`chatgram-8dhgpgvgf`) |
 | SSH key (local path only; never print/copy the key itself) | `C:\Users\mugis\Downloads\mugisha recovery codes for github 8\chatgram recovery keys\ssh-key-2026-10-19.key` |
 | Test-account helpers on VM | `/tmp/prod-backup.sh`, `/tmp/prod-smoke-account.js` (both present) |
 | Docs shipped for production fix prompts | `~/chatgram/docs/progress.md` + `decisions.md` (refresh with each backend deploy) |
