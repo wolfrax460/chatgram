@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { CircleDashed, FileVideo, Music, Plus, Image as ImageIcon } from 'lucide-react';
 import { useSession, type StatusItem, type User } from '@chatgram/core';
 import { api } from '../lib/api';
+import { READ_ONLY_SEND_HINT } from '../lib/readOnly';
 import { Avatar, timeAgo } from '../components/status/Parts';
 import { StatusComposer } from '../components/status/StatusComposer';
 import { StatusViewer, type StatusGroup } from '../components/status/StatusViewer';
@@ -48,7 +49,7 @@ function mediaIcons(items: StatusItem[]) {
 
 /* ------------------------------------------------------------------ page */
 
-export default function Status() {
+export default function Status({ readOnly = false }: { readOnly?: boolean }) {
   const me = useSession((s) => s.user);
   const [composing, setComposing] = useState(false);
   const [viewing, setViewing] = useState<StatusGroup | null>(null);
@@ -69,7 +70,13 @@ export default function Status() {
         <CircleDashed className="h-5 w-5 text-brand-600" />
         <h2 className="font-bold">Status</h2>
         <span className="flex-1" />
-        <button type="button" className="btn-primary" onClick={() => setComposing(true)}>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => setComposing(true)}
+          disabled={readOnly}
+          title={readOnly ? READ_ONLY_SEND_HINT : undefined}
+        >
           <Plus className="h-4 w-4" /> Add
         </button>
       </header>
@@ -78,7 +85,10 @@ export default function Status() {
         {/* my status */}
         <button
           type="button"
-          onClick={() => (mine ? setViewing(mine) : setComposing(true))}
+          onClick={() => {
+            if (mine) setViewing(mine);
+            else if (!readOnly) setComposing(true);
+          }}
           className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-ink-100/70 dark:hover:bg-white/[.04]"
         >
           <div className="relative">

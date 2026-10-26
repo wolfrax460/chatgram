@@ -30,6 +30,12 @@ const supportAccount = require('./utils/supportAccount');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 const app = express();
+
+// The API is not for search engines: never index it.
+app.use((req, res, next) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  next();
+});
 const server = http.createServer(app);
 
 // ------------------------------------------------------------------- origin

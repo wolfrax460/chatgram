@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Smile, Paperclip, Send, Mic, Image as ImageIcon, FileText, Camera } from 'lucide-react';
 import { useRealtime } from '@chatgram/core';
 import { formatDuration, useVoiceRecorder } from '../lib/useVoiceRecorder';
+import { READ_ONLY_BANNER } from '../lib/readOnly';
 
 const EMOJIS = [
   '😀', '😂', '😊', '😍', '😎', '🤔', '😅', '🙃',
@@ -28,6 +29,11 @@ export interface ComposerProps {
    */
   textOnly?: boolean;
   placeholder?: string;
+  /**
+   * Read-only maintenance mode: the input and every send/upload/record action
+   * are disabled, with the same banner message used at the top of the app.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -48,6 +54,7 @@ export default function Composer({
   onDismissNotice,
   textOnly = false,
   placeholder,
+  readOnly = false,
 }: ComposerProps) {
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -79,6 +86,7 @@ export default function Composer({
   }, [recorder.error, onDismissNotice]);
 
   function change(value: string) {
+    if (readOnly) return;
     onDraftChange(value);
     if (value.trim()) onTyping(true);
     if (typingTimer.current) window.clearTimeout(typingTimer.current);
@@ -87,6 +95,7 @@ export default function Composer({
 
   function submit(e?: React.FormEvent) {
     e?.preventDefault();
+    if (readOnly) return;
     const value = draft.trim();
     if (!value || busy) return;
     onTyping(false);
@@ -152,6 +161,15 @@ export default function Composer({
         </p>
       ) : null}
 
+      {readOnly ? (
+        <p
+          className="border-b border-amber-300/60 bg-amber-50 px-3 py-2 text-[12px] leading-snug text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+          data-testid="composer-read-only"
+        >
+          {READ_ONLY_BANNER}
+        </p>
+      ) : null}
+
       {/* emoji picker */}
       {emojiOpen ? (
         <div className="absolute bottom-full left-3 z-30 mb-1 grid w-64 grid-cols-8 gap-1 rounded-xl border border-ink-200 bg-white p-2 shadow-xl dark:border-white/10 dark:bg-ink-700">
@@ -191,6 +209,7 @@ export default function Composer({
           type="button"
           className="btn-ghost !px-2"
           title="Emoji"
+          disabled={readOnly}
           onClick={() => {
             setEmojiOpen((v) => !v);
             setAttachOpen(false);
@@ -208,7 +227,7 @@ export default function Composer({
               setAttachOpen((v) => !v);
               setEmojiOpen(false);
             }}
-            disabled={busy}
+            disabled={busy || readOnly}
           >
             {busy ? <span className="text-xs">…</span> : <Paperclip className="h-5 w-5" />}
           </button>
@@ -226,6 +245,7 @@ export default function Composer({
           ref={textRef}
           rows={1}
           value={draft}
+          disabled={readOnly}
           onChange={(e) => change(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -233,12 +253,12 @@ export default function Composer({
               submit();
             }
           }}
-          placeholder={placeholder ?? (connected ? 'Type a message' : 'Reconnecting…')}
-          className="field max-h-[120px] min-h-[42px] flex-1 resize-none py-2.5 leading-6"
+          placeholder={readOnly ? READ_ONLY_BANNER : (placeholder ?? (connected ? 'Type a message' : 'Reconnecting…'))}
+          className="field max-h-[120px] min-h-[42px] flex-1 resize-none py-2.5 leading-6 disabled:cursor-not-allowed disabled:opacity-60"
         />
 
         {draft.trim() || textOnly ? (
-          <button type="submit" className="btn-primary !px-3" disabled={busy || !draft.trim()} title="Send" aria-label="Send message">
+          <button type="submit" className="btn-primary !px-3" disabled={busy || readOnly || !draft.trim()} title={readOnly ? READ_ONLY_BANNER : 'Send'} aria-label={readOnly ? READ_ONLY_BANNER : 'Send message'}>
             <Send className="h-5 w-5" />
           </button>
         ) : (
@@ -246,8 +266,8 @@ export default function Composer({
             type="button"
             className="btn-ghost !px-3"
             onClick={() => void recorder.start()}
-            disabled={busy}
-            title="Record a voice note"
+            disabled={busy || readOnly}
+            title={readOnly ? READ_ONLY_BANNER : 'Record a voice note'}
           >
             <Mic className="h-5 w-5" />
           </button>

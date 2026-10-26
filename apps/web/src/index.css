@@ -44,6 +44,19 @@
   to   { width: 100%; }
 }
 
+/* Maintenance page: a soft brand pulse on the logo. It is decorative only and
+   is switched off entirely for users who prefer reduced motion. */
+@keyframes chatgram-logo-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.96; }
+  50%      { transform: scale(1.045); opacity: 1; }
+}
+.maintenance-logo {
+  animation: chatgram-logo-pulse 3s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .maintenance-logo { animation: none; }
+}
+
 /* ---------------------------------------------------------------------------
    Scrollbars: thin, dark, transparent track everywhere (no bright white track
    on any section, light or dark theme).

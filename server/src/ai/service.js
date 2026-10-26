@@ -12,7 +12,7 @@
  *  - a daily token budget.
  */
 const { AiError, ERROR_CODES } = require('./errors');
-const { PROVIDERS, adapterFor } = require('./adapters');
+const { PROVIDERS, adapterFor, mapHttpError } = require('./adapters');
 const { getEffectiveSettings } = require('./settings');
 const { redactMessages, redact } = require('./redact');
 
@@ -347,28 +347,66 @@ async function* streamForFeature(options = {}) {
   const messages = normalizeMessages(options.messages);
   const system = options.system ? redact(options.system, { allowContact: true }) : undefined;
   const maxTokens = options.maxTokens || settings.maxOutputTokens;
+  const registry = providerRegistry();
+  // A group answer is posted as one finished message, so it does not need live
+  // deltas. Buffering means a provider that dies mid-stream cannot leave a
+  // half answer that a fallback then duplicates.
+  const buffered = options.buffer === true;
+  const seen = new Set();
+  let lastError = null;
 
   for (const entry of chain) {
-    if (!entry.baseUrl || breakerOpen(entry.provider)) continue;
+    // De-duplicate by provider KEY: the production chain listed the same
+    // provider as primary and fallback, so a rate-limited primary "fell back"
+    // to the identical endpoint and failed again.
+    const key = entry.key || entry.provider;
+    if (!entry.baseUrl || seen.has(key) || breakerOpen(key)) continue;
+    seen.add(key);
+
     const openAiCompatible = entry.provider === 'openai-compatible' || PROVIDERS[entry.provider]?.adapter === 'openai-compatible';
+    const started = Date.now();
     if (!openAiCompatible) {
       // Adapters without native streaming: one chunk through the regular path.
-      const result = await callProvider(entry, {
-        system,
-        messages: redactMessages(messages),
-        temperature: settings.temperature,
-        maxTokens,
-        timeoutMs: settings.timeoutMs,
-        signal: options.signal,
-      });
-      addTokens((result.usage?.inputTokens || 0) + (result.usage?.outputTokens || 0));
-      yield { delta: String(result.text || ''), providerKey: entry.key || entry.provider };
-      return;
+      const parts = [];
+      try {
+        const result = await callProvider(entry, {
+          system,
+          messages: redactMessages(messages),
+          temperature: settings.temperature,
+          maxTokens,
+          timeoutMs: settings.timeoutMs,
+          signal: options.signal,
+        });
+        const usage = result.usage || { inputTokens: 0, outputTokens: 0 };
+        addTokens((usage.inputTokens || 0) + (usage.outputTokens || 0));
+        noteSuccess(key);
+        registry?.recordHealth?.(key, {
+          ok: true,
+          latencyMs: Date.now() - started,
+          tokens: (usage.inputTokens || 0) + (usage.outputTokens || 0),
+        });
+        const delta = { delta: String(result.text || ''), providerKey: key };
+        if (buffered) parts.push(delta);
+        else yield delta;
+        const final = { delta: '', done: true, finishReason: null, providerKey: key };
+        if (buffered) parts.push(final);
+        else yield final;
+        if (buffered) yield* parts;
+        return;
+      } catch (error) {
+        lastError = error instanceof AiError ? error : new AiError(ERROR_CODES.UNAVAILABLE, error.message);
+        noteFailure(key);
+        registry?.recordHealth?.(key, { ok: false, latencyMs: Date.now() - started, error: lastError.code });
+        if (options.signal?.aborted) throw new AiError(ERROR_CODES.TIMEOUT, 'Request aborted.');
+        continue;
+      }
     }
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), settings.timeoutMs);
     const onAbort = () => controller.abort();
     if (options.signal) options.signal.addEventListener('abort', onAbort, { once: true });
+    const parts = [];
     try {
       const response = await fetch(`${entry.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
@@ -393,6 +431,7 @@ async function* streamForFeature(options = {}) {
       const decoder = new TextDecoder();
       let buffer = '';
       let tokens = 0;
+      let finishReason = null;
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -406,10 +445,14 @@ async function* streamForFeature(options = {}) {
           if (!payload || payload === '[DONE]') continue;
           try {
             const json = JSON.parse(payload);
-            const delta = json?.choices?.[0]?.delta?.content;
+            const choice = json?.choices?.[0];
+            if (choice?.finish_reason) finishReason = String(choice.finish_reason);
+            const delta = choice?.delta?.content;
             if (delta) {
               tokens += 1;
-              yield { delta: String(delta), providerKey: entry.key || entry.provider };
+              const chunk = { delta: String(delta), providerKey: key };
+              if (buffered) parts.push(chunk);
+              else yield chunk;
             }
           } catch {
             /* ignore malformed keep-alive lines */
@@ -417,9 +460,17 @@ async function* streamForFeature(options = {}) {
         }
       }
       addTokens(tokens);
+      noteSuccess(key);
+      registry?.recordHealth?.(key, { ok: true, latencyMs: Date.now() - started, tokens });
+      const final = { delta: '', done: true, finishReason, providerKey: key };
+      if (buffered) parts.push(final);
+      else yield final;
+      if (buffered) yield* parts;
       return;
     } catch (error) {
-      noteFailure(entry.provider);
+      lastError = error instanceof AiError ? error : new AiError(ERROR_CODES.UNAVAILABLE, error.message);
+      noteFailure(key);
+      registry?.recordHealth?.(key, { ok: false, latencyMs: Date.now() - started, error: lastError.code });
       if (options.signal?.aborted) throw new AiError(ERROR_CODES.TIMEOUT, 'Request aborted.');
       // Try the next provider in the chain.
     } finally {
@@ -427,7 +478,7 @@ async function* streamForFeature(options = {}) {
       if (options.signal) options.signal.removeEventListener('abort', onAbort);
     }
   }
-  throw new AiError(ERROR_CODES.UNAVAILABLE, 'No AI provider answered.');
+  throw lastError || new AiError(ERROR_CODES.UNAVAILABLE, 'No AI provider answered.');
 }
 
 // Callers do `const { service } = require('./service')` once, at load time, so the

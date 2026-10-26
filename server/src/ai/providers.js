@@ -217,10 +217,11 @@ async function setFeatures(input = {}) {
   for (const feature of FEATURES) {
     const assignment = incoming[feature];
     if (!assignment) continue;
-    next[feature] = {
-      primary: assignment.primary || null,
-      fallbacks: Array.isArray(assignment.fallbacks) ? assignment.fallbacks.slice(0, 5) : [],
-    };
+    const primary = assignment.primary || null;
+    const fallbacks = Array.isArray(assignment.fallbacks)
+      ? [...new Set(assignment.fallbacks.filter((key) => key && key !== primary))].slice(0, 5)
+      : [];
+    next[feature] = { primary, fallbacks };
   }
   validateAssignment(next, providers);
   doc.lastFeatureChange = {
@@ -254,9 +255,13 @@ async function resolveFeatureChain(feature) {
   const assignment = doc?.features?.[feature];
   if (!assignment || (!assignment.primary && (assignment.fallbacks || []).length === 0)) return null;
   const providers = doc.providers || [];
+  // A provider cannot fall back to itself: the production routing listed
+  // "ollama-cloud" as both primary and fallback, which made a rate-limited
+  // primary retry the identical endpoint instead of reaching another provider.
   const order = [assignment.primary, ...(assignment.fallbacks || [])].filter(Boolean);
+  const keyOrder = [...new Set(order)];
   const chain = [];
-  for (const key of order) {
+  for (const key of keyOrder) {
     const entry = providers.find((candidate) => candidate.key === key);
     if (!entry || entry.enabled === false) continue;
     chain.push({

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Moon, Sun, Monitor, MessageCircle, LogOut, Users, CircleDashed, Phone,
   Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy, Sparkles, BadgeCheck,
-  UserRoundPlus, Plus, Download, Share2, FolderUp, FileText, Camera,
+  UserRoundPlus, Plus, Download, Share2, FolderUp, FileText, Camera, Lock,
 } from 'lucide-react';
 import {
   chatPartner,
@@ -39,6 +39,9 @@ import SupportWidget from './components/SupportWidget';
 import { AiThread } from './components/AiThread';
 import { useAiThread } from './lib/aiThread';
 import JoinGroup from './pages/JoinGroup';
+import MaintenancePage from './components/MaintenancePage';
+import { isMaintenancePreview } from './lib/maintenance';
+import { READ_ONLY_BANNER, READ_ONLY_NOTICE } from './lib/readOnly';
 import { ProfilePanel } from './components/ProfilePanel';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, formatTime, sameDay, statusOf } from './lib/ui';
@@ -103,7 +106,18 @@ function setUnreadFavicon(count: number): void {
 
 /* ------------------------------------------------------------------- chat */
 
-function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: () => void }) {
+function ChatWindow({
+  chat,
+  meId,
+  onBack,
+  readOnly = false,
+}: {
+  chat: Chat;
+  meId: string;
+  onBack: () => void;
+  /** Read-only maintenance mode: reading works, every write path is disabled. */
+  readOnly?: boolean;
+}) {
   const queryClient = useQueryClient();
   const profilePanel = useProfilePanel();
   const groupInfo = useGroupInfo();
@@ -148,14 +162,16 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
   }, [chat.id]);
 
   useEffect(() => {
+    if (readOnly) return;
     api.markChatRead(chat.id).catch(() => {});
     void queryClient.invalidateQueries({ queryKey: ['chats'] });
-  }, [chat.id, queryClient]);
+  }, [chat.id, queryClient, readOnly]);
 
   // While this conversation is open and the window is focused, incoming
   // messages must be marked read — otherwise the sender never gets blue ticks.
   useEffect(() => {
     const list = messages.data;
+    if (readOnly) return undefined;
     if (!list || list.length === 0) return undefined;
     if (document.visibilityState !== 'visible') return undefined;
     const hasUnread = list.some((message) => message.senderId !== meId && !message.readBy.includes(meId));
@@ -167,7 +183,7 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
         .catch(() => undefined);
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [messages.data, meId, chat.id, queryClient]);
+  }, [messages.data, meId, chat.id, queryClient, readOnly]);
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }));
@@ -203,6 +219,10 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
     : list;
 
   async function sendText(text: string) {
+    if (readOnly) {
+      setNotice(READ_ONLY_NOTICE);
+      return;
+    }
     const body = replyTo ? `> ${replyTo.name}: ${replyTo.preview}\n${text}` : text;
     const clientId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimistic: Message = {
@@ -235,6 +255,10 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
   }
 
   async function sendFile(file: File, forced?: 'image' | 'file' | 'audio') {
+    if (readOnly) {
+      setNotice(READ_ONLY_NOTICE);
+      return;
+    }
     if (file.size > 10 * 1024 * 1024) {
       setNotice('That file is larger than 10 MB.');
       return;
@@ -343,6 +367,10 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
   });
 
   async function editMessage(message: Message, content: string) {
+    if (readOnly) {
+      setNotice(READ_ONLY_NOTICE);
+      return;
+    }
     const before = queryClient.getQueryData<Message[]>(['messages', chat.id]) ?? [];
     queryClient.setQueryData<Message[]>(['messages', chat.id], (prev) =>
       (prev ?? []).map((row) =>
@@ -399,6 +427,7 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
         chat={chat}
         meId={meId}
         partner={partner}
+        readOnly={readOnly}
         typing={typing}
         online={isOnline}
         connected={connected}
@@ -450,25 +479,29 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
               : partner
                 ? profilePanel.openProfile(partner.id, chat.id)
                 : undefined,
-          onMute: async () => {
-            try {
-              await api.muteChat(chat.id);
-              setNotice('Notifications muted for this chat.');
-            } catch (err) {
-              setNotice(err instanceof Error ? err.message : 'Could not mute this chat');
-            }
-          },
+          onMute: readOnly
+            ? undefined
+            : async () => {
+                try {
+                  await api.muteChat(chat.id);
+                  setNotice('Notifications muted for this chat.');
+                } catch (err) {
+                  setNotice(err instanceof Error ? err.message : 'Could not mute this chat');
+                }
+              },
           onForward: () => setNotice('Forwarding is still being deployed — coming soon.'),
-          onClearChat: async () => {
-            try {
-              await api.clearChat(chat.id);
-              queryClient.setQueryData<Message[]>(['messages', chat.id], []);
-              void queryClient.invalidateQueries({ queryKey: ['chats'] });
-              setNotice('Chat cleared for you.');
-            } catch (err) {
-              setNotice(err instanceof Error ? err.message : 'Could not clear chat');
-            }
-          },
+          onClearChat: readOnly
+            ? undefined
+            : async () => {
+                try {
+                  await api.clearChat(chat.id);
+                  queryClient.setQueryData<Message[]>(['messages', chat.id], []);
+                  void queryClient.invalidateQueries({ queryKey: ['chats'] });
+                  setNotice('Chat cleared for you.');
+                } catch (err) {
+                  setNotice(err instanceof Error ? err.message : 'Could not clear chat');
+                }
+              },
           onBlock: () => (partner ? profilePanel.openProfile(partner.id, chat.id) : undefined),
         }}
         onBack={onBack}
@@ -615,16 +648,20 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
                   lastInGroup={lastInGroup}
                   actions={{
                     onReply: reply,
-                    onDelete: removeMessage,
-                    onReact: reactTo,
+                    onDelete: readOnly
+                      ? () => setNotice(READ_ONLY_NOTICE)
+                      : removeMessage,
+                    onReact: readOnly ? () => setNotice(READ_ONLY_NOTICE) : reactTo,
                     onOpenProfile: (userId) => profilePanel.openProfile(userId, chat.id),
-                    onPin: chat.type === 'group' ? (message) => void pinToGroup(message) : undefined,
+                    onPin: !readOnly && chat.type === 'group' ? (message) => void pinToGroup(message) : undefined,
                     onSeenBy:
                       message.senderId === meId ? (message) => setReadersFor(message) : undefined,
                     onEdit:
-                      message.senderId === meId ? (row, content) => void editMessage(row, content) : undefined,
-                    onStar: (row) => void toggleStar(row),
-                    onForward: (row) => setForwardFor(row),
+                      !readOnly && message.senderId === meId
+                        ? (row, content) => void editMessage(row, content)
+                        : undefined,
+                    onStar: readOnly ? undefined : (row) => void toggleStar(row),
+                    onForward: readOnly ? undefined : (row) => setForwardFor(row),
                     onReport: (row) => {
                       setReportReason('spam');
                       setReportFor(row);
@@ -657,6 +694,7 @@ function ChatWindow({ chat, meId, onBack }: { chat: Chat; meId: string; onBack: 
           onSendText={sendText}
           onSendFile={sendFile}
           onTyping={emitTyping}
+          readOnly={readOnly}
           replyTo={replyTo ? { name: replyTo.name, preview: replyTo.preview } : null}
           onCancelReply={() => setReplyTo(null)}
           notice={notice}
@@ -800,6 +838,10 @@ function Shell({ features }: { features: AppFeatures | null }) {
   const user = useSession((s) => s.user);
   const setUser = useSession((s) => s.setUser);
   const { mode, cycle } = useTheme();
+  // Read-only mode (PlatformSettings.readOnlyMode): reads work, writes fail with
+  // 503. The realtime send/call events are NOT behind the server gate, so the
+  // client disables them explicitly.
+  const readOnly = features?.readOnlyMode === true;
   const timeFormat = usePrefs((s) => s.timeFormat);
   const connected = useRealtime((s) => s.connected);
   const typing = useRealtime((s) => s.typing);
@@ -943,6 +985,7 @@ function Shell({ features }: { features: AppFeatures | null }) {
   }
 
   async function sendEmptyDocument(chatId: string) {
+    if (readOnly) return;
     if (!emptyDocument) return;
     try {
       const uploaded = await api.uploadMedia(emptyDocument);
@@ -959,10 +1002,21 @@ function Shell({ features }: { features: AppFeatures | null }) {
   return (
     <ProfilePanelContext.Provider value={profileApi}>
     <GroupInfoContext.Provider value={groupInfoApi}>
-    <div className="app-viewport flex overflow-hidden">
+    <div className="app-viewport flex flex-col overflow-hidden">
       <CallOverlay call={callState} />
       <CallAlerts />
       <CallAlerts />
+      {readOnly ? (
+        <div
+          role="status"
+          data-testid="read-only-banner"
+          className="flex shrink-0 items-start gap-2 border-b border-amber-300/60 bg-amber-50 px-3 py-2 text-[12.5px] leading-snug text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+        >
+          <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <p className="min-w-0 flex-1">{READ_ONLY_BANNER}</p>
+        </div>
+      ) : null}
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <nav className="hidden w-[76px] shrink-0 flex-col items-center gap-1 border-r border-ink-200 py-4 dark:border-white/10 sm:flex">
         {NAV.map(({ key, label, Icon }) => {
           const badge = key === 'calls' ? missedCalls.data?.count ?? 0 : 0;
@@ -1125,7 +1179,7 @@ function Shell({ features }: { features: AppFeatures | null }) {
               onQuestionHandled={() => setAiPendingQuestion(null)}
             />
           ) : selected ? (
-            <ChatWindow chat={selected} meId={meId} onBack={() => setSelectedId(null)} />
+            <ChatWindow chat={selected} meId={meId} onBack={() => setSelectedId(null)} readOnly={readOnly} />
           ) : (
             <section className="hidden min-h-0 flex-1 place-items-center overflow-y-auto px-6 py-6 text-center sm:grid">
               <div className="w-full max-w-md">
@@ -1177,7 +1231,7 @@ function Shell({ features }: { features: AppFeatures | null }) {
                     { label: 'New group', icon: FolderUp, action: () => setTab('groups') },
                     { label: 'Chatgram AI', icon: Sparkles, action: () => setTab('ai') },
                   ].map((action) => (
-                    <button key={action.label} type="button" onClick={action.action} className="flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[11px] font-medium text-ink-600 hover:bg-ink-100/70 dark:text-ink-300 dark:hover:bg-white/[.04]" aria-label={action.label} title={action.label}>
+                    <button key={action.label} type="button" onClick={action.action} disabled={readOnly} className="flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[11px] font-medium text-ink-600 hover:bg-ink-100/70 disabled:cursor-not-allowed disabled:opacity-50 dark:text-ink-300 dark:hover:bg-white/[.04]" aria-label={action.label} title={readOnly ? READ_ONLY_NOTICE : action.label}>
                       <span className="grid h-9 w-9 place-items-center rounded-full bg-ink-100 text-ink-700 dark:bg-white/[.07] dark:text-ink-100"><action.icon className="h-4 w-4" /></span>
                       {action.label}
                     </button>
@@ -1212,11 +1266,11 @@ function Shell({ features }: { features: AppFeatures | null }) {
       ) : (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {tab === 'status' ? (
-            <Status />
+            <Status readOnly={readOnly} />
           ) : tab === 'groups' ? (
             <Groups onOpenChat={openChat} />
           ) : tab === 'calls' ? (
-            <Calls onOpenChat={openChat} />
+            <Calls onOpenChat={openChat} readOnly={readOnly} />
           ) : (
             <SettingsPage onOpenSupport={openChat} />
           )}
@@ -1266,6 +1320,7 @@ function Shell({ features }: { features: AppFeatures | null }) {
           onBack={groupInfoId ? closeProfile : undefined}
         />
       ) : null}
+      </div>
     </div>
     </GroupInfoContext.Provider>
     </ProfilePanelContext.Provider>
@@ -1293,19 +1348,37 @@ export default function App() {
   const setReady = useSession((s) => s.setReady);
   const [features, setFeatures] = useState<AppFeatures | null>(null);
 
-  // Feature flags + maintenance state (the server also enforces every flag).
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/app/features')
-      .then((response) => (response.ok ? response.json() : null))
-      .then((payload) => {
-        if (!cancelled && payload) setFeatures(payload as AppFeatures);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
+  const loadFeatures = useCallback(async () => {
+    try {
+      const response = await fetch('/api/app/features', { cache: 'no-store', headers: { Accept: 'application/json' } });
+      if (!response.ok) return;
+      const payload = (await response.json()) as AppFeatures | null;
+      if (payload) setFeatures(payload);
+    } catch {
+      // Keep the last known flags: the maintenance page polls on its own.
+    }
   }, []);
+
+  // Feature flags + maintenance state (the server also enforces every flag).
+  // Re-read periodically and on resume, so maintenance / read-only switches show
+  // up without a manual reload; Electron and Android resume fire these events.
+  useEffect(() => {
+    void loadFeatures();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadFeatures();
+    }, 60_000);
+    const onVisible = () => {
+      if (!document.hidden) void loadFeatures();
+    };
+    const onOnline = () => void loadFeatures();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onOnline);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [loadFeatures]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1342,16 +1415,16 @@ export default function App() {
     );
   }
 
+  // Local preview of the maintenance experience (admin dashboard → Preview):
+  // `?maintenance-preview=1` renders the page without enabling maintenance.
+  if (isMaintenancePreview()) {
+    return <MaintenancePage preview maintenanceMessage={features?.maintenanceMessage ?? ''} />;
+  }
+
+  // Full maintenance: every non-admin API call returns 503, so the whole app is
+  // replaced by the branded page that polls health + feature flags.
   if (features?.maintenanceMode) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-ink-900 p-6 text-center text-ink-100">
-        <div className="max-w-md rounded-2xl border border-white/10 bg-white/[.03] p-6">
-          <p className="text-2xl font-bold">Chatgram is under maintenance</p>
-          <p className="mt-2 text-sm text-ink-300">{features.maintenanceMessage || 'We will be back shortly.'}</p>
-          <p className="mt-3 text-[11.5px] text-ink-500">Health: /api/status/health · status updates will appear here when it ends.</p>
-        </div>
-      </div>
-    );
+    return <MaintenancePage maintenanceMessage={features.maintenanceMessage} />;
   }
 
   // Group invite links: /web/join/<token>

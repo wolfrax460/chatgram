@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import type { Chat, User as ChatUser } from '@chatgram/core';
 import { chatTitle } from '@chatgram/core';
+import { READ_ONLY_CALL_HINT } from '../lib/readOnly';
 import { avatarGradient, initialsFor, lastSeenLabel, type TimeFormat } from '../lib/ui';
 
 export interface HeaderMenuActions {
@@ -53,6 +54,7 @@ export function ChatHeader({
   menu,
   onBack,
   ai,
+  readOnly = false,
 }: {
   chat?: Chat;
   meId?: string;
@@ -70,6 +72,8 @@ export function ChatHeader({
   menu: HeaderMenuActions;
   onBack: () => void;
   ai?: AiHeaderInfo;
+  /** Read-only maintenance mode: calls are paused (server gate does not cover the socket). */
+  readOnly?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const title = ai ? ai.title : chat ? chatTitle(chat, meId ?? '') : '';
@@ -181,12 +185,30 @@ export function ChatHeader({
       </button>
       {!ai ? (
         <>
-          <button type="button" className="btn-ghost !px-2" title="Voice call" aria-label="Voice call" onClick={onCall}>
-            <Phone className="h-5 w-5" />
-          </button>
-          <button type="button" className="btn-ghost !px-2" title="Video call" aria-label="Video call" onClick={onVideoCall}>
-            <Video className="h-5 w-5" />
-          </button>
+          <span title={readOnly ? READ_ONLY_CALL_HINT : undefined} className="inline-flex">
+            <button
+              type="button"
+              className={`btn-ghost !px-2 ${readOnly ? 'cursor-not-allowed opacity-40' : ''}`}
+              title={readOnly ? READ_ONLY_CALL_HINT : 'Voice call'}
+              aria-label={readOnly ? READ_ONLY_CALL_HINT : 'Voice call'}
+              disabled={readOnly}
+              onClick={onCall}
+            >
+              <Phone className="h-5 w-5" />
+            </button>
+          </span>
+          <span title={readOnly ? READ_ONLY_CALL_HINT : undefined} className="inline-flex">
+            <button
+              type="button"
+              className={`btn-ghost !px-2 ${readOnly ? 'cursor-not-allowed opacity-40' : ''}`}
+              title={readOnly ? READ_ONLY_CALL_HINT : 'Video call'}
+              aria-label={readOnly ? READ_ONLY_CALL_HINT : 'Video call'}
+              disabled={readOnly}
+              onClick={onVideoCall}
+            >
+              <Video className="h-5 w-5" />
+            </button>
+          </span>
         </>
       ) : null}
       <button

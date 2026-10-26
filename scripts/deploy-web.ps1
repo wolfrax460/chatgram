@@ -34,10 +34,13 @@ $config = @'
   "routes": [
     { "src": "/api/(.*)", "dest": "https://chatgram.duckdns.org/api/$1" },
     { "src": "/downloads/(.*)", "dest": "https://chatgram.duckdns.org/downloads/$1" },
+    { "src": "/rw/?", "dest": "/rw/index.html" },
+    { "src": "/fr/?", "dest": "/fr/index.html" },
+    { "src": "/sw/?", "dest": "/sw/index.html" },
     { "handle": "filesystem" },
     { "src": "/web(/.*)?", "dest": "/web/index.html" },
     { "src": "/docs(/.*)?", "dest": "/docs/index.html" },
-    { "src": "/(.*)", "dest": "/index.html" }
+    { "src": "/(.*)", "dest": "/404.html", "status": 404 }
   ],
   "redirects": [
     { "source": "/app", "destination": "/web/", "permanent": false },
@@ -46,7 +49,10 @@ $config = @'
   "headers": [
     { "source": "/static/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
     { "source": "/web/static/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
-    { "source": "/assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }] }
+    { "source": "/assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }] },
+    { "source": "/web", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] },
+    { "source": "/web/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] },
+    { "source": "/api/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] }
   ]
 }
 '@

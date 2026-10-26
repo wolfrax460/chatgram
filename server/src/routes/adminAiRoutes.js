@@ -43,7 +43,12 @@ router.put('/policy', requireAdminCsrf, async (req, res) => {
         maxInputChars: policy.maxInputChars,
         blockedTopics: policy.blockedTopics.length,
         alertsEnabled: policy.alertsEnabled,
-      }).slice(0, 300),
+        groupUserHourlyLimit: policy.groupUserHourlyLimit,
+        groupChatHourlyLimit: policy.groupChatHourlyLimit,
+        groupQueueLimit: policy.groupQueueLimit,
+        groupMaxInputChars: policy.groupMaxInputChars,
+        groupMaxOutputTokens: policy.groupMaxOutputTokens,
+      }).slice(0, 400),
     );
     return res.json({ policy });
   } catch (error) {

@@ -5,6 +5,8 @@
  */
 const mongoose = require('mongoose');
 const { AiMessage, AiKnowledge, AdminInbox, AiConversation } = require('../ai/chatgram');
+const GroupAiEvent = require('../models/GroupAiEvent');
+const groupMentions = require('../ai/groupMentions');
 const admin = require('../admin/auth');
 
 function rangeStart(days) {
@@ -54,6 +56,36 @@ async function usage(req, res) {
       const key = day.toISOString().slice(0, 10);
       series.push({ day: key, count: byDay.get(key) || 0 });
     }
+
+    // Group "@Chatgram AI" metrics: answered / queued / rejected by reason /
+    // failed in the last 24 h. Server API only — the dashboard page still has to
+    // render the block (see docs/reports/ai-mentions.md).
+    const groupSince = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    let groupTotals = [];
+    let groupRejections = [];
+    try {
+      [groupTotals, groupRejections] = await Promise.all([
+        GroupAiEvent.aggregate([
+          { $match: { createdAt: { $gte: groupSince } } },
+          { $group: { _id: '$type', count: { $sum: 1 } } },
+        ]),
+        GroupAiEvent.aggregate([
+          { $match: { createdAt: { $gte: groupSince }, type: 'rejected' } },
+          { $group: { _id: '$reason', count: { $sum: 1 } } },
+          { $sort: { count: -1 } },
+        ]),
+      ]);
+    } catch {
+      groupTotals = [];
+      groupRejections = [];
+    }
+    const groupLast24h = { answered: 0, queued: 0, rejected: 0, failed: 0 };
+    for (const row of groupTotals) {
+      if (row._id in groupLast24h) groupLast24h[row._id] = row.count;
+    }
+    const rejectedByReason = {};
+    for (const row of groupRejections) rejectedByReason[row._id || 'unknown'] = row.count;
+
     return res.json({
       days,
       totals: {
@@ -68,6 +100,12 @@ async function usage(req, res) {
       byProvider: questionsByProvider.map((row) => ({ provider: row._id || 'unknown', count: row.count })),
       topQuestions: topQuestions.map((row) => ({ question: row._id, count: row.count, lastAt: row.lastAt })),
       inboxByType: inboxByType.map((row) => ({ type: row._id || 'unknown', count: row.count })),
+      // Group "@Chatgram AI" (Oct-26 fix): last 24 h from GroupAiEvent + live queue.
+      groupMentions: {
+        last24h: { ...groupLast24h, rejectedByReason },
+        queue: groupMentions.queueSnapshot(),
+        sinceBoot: groupMentions.stats(),
+      },
     });
   } catch (error) {
     console.error('Admin AI usage error:', error.message);

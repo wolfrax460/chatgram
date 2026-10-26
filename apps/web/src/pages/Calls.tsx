@@ -8,6 +8,7 @@ import type { CallHistoryItem } from '@chatgram/api-client';
 import { useSession } from '@chatgram/core';
 import { api } from '../lib/api';
 import { startCall } from '../lib/calls';
+import { READ_ONLY_CALL_HINT } from '../lib/readOnly';
 import { avatarGradient, formatTime, initialsFor, type TimeFormat } from '../lib/ui';
 import { usePrefs } from '@chatgram/core';
 
@@ -38,7 +39,14 @@ function DirectionIcon({ call }: { call: CallHistoryItem }) {
  * Calls tab: history on the left, call details on the right, and a picker for
  * starting a new voice/video call with one person or a group.
  */
-export default function Calls({ onOpenChat }: { onOpenChat: (chatId: string) => void }) {
+export default function Calls({
+  onOpenChat,
+  readOnly = false,
+}: {
+  onOpenChat: (chatId: string) => void;
+  /** Read-only mode: call history stays readable, starting a call is disabled. */
+  readOnly?: boolean;
+}) {
   const me = useSession((s) => s.user);
   const timeFormat = usePrefs((s) => s.timeFormat);
   const queryClient = useQueryClient();
@@ -70,14 +78,16 @@ export default function Calls({ onOpenChat }: { onOpenChat: (chatId: string) => 
     enabled: picker === 'group',
   });
 
-  // Opening the tab clears the missed-call badge.
+  // Opening the tab clears the missed-call badge (a write, so skipped when the
+  // server is in read-only maintenance mode).
   useEffect(() => {
+    if (readOnly) return;
     if ((missed.data?.count ?? 0) === 0) return;
     void api
       .markCallsSeen()
       .then(() => queryClient.invalidateQueries({ queryKey: ['call-missed-count'] }))
       .catch(() => undefined);
-  }, [missed.data?.count, queryClient]);
+  }, [missed.data?.count, queryClient, readOnly]);
 
   const calls = history.data?.calls ?? [];
   const filtered = useMemo(() => {
@@ -93,6 +103,11 @@ export default function Calls({ onOpenChat }: { onOpenChat: (chatId: string) => 
     call.participants.find((p) => p.id !== me?.id) ?? call.participants[0] ?? call.caller;
 
   async function callPeer(peerId: string, displayName: string, video: boolean) {
+    if (readOnly) {
+      setPicker(null);
+      setError(READ_ONLY_CALL_HINT);
+      return;
+    }
     setPicker(null);
     setError('');
     try {
@@ -104,6 +119,11 @@ export default function Calls({ onOpenChat }: { onOpenChat: (chatId: string) => 
   }
 
   async function callGroup(groupId: string, title: string, participantCount: number, video: boolean) {
+    if (readOnly) {
+      setPicker(null);
+      setError(READ_ONLY_CALL_HINT);
+      return;
+    }
     setPicker(null);
     setError('');
     try {
@@ -181,7 +201,9 @@ export default function Calls({ onOpenChat }: { onOpenChat: (chatId: string) => 
         <button
           type="button"
           onClick={() => setPicker('single')}
-          className="flex w-full items-center gap-3 border-b border-ink-200 px-4 py-3 text-left hover:bg-ink-100/70 dark:border-white/10 dark:hover:bg-white/[.04]"
+          disabled={readOnly}
+          title={readOnly ? READ_ONLY_CALL_HINT : undefined}
+          className="flex w-full items-center gap-3 border-b border-ink-200 px-4 py-3 text-left hover:bg-ink-100/70 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent dark:border-white/10 dark:hover:bg-white/[.04]"
         >
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-600 text-white">
             <Phone className="h-5 w-5" />
@@ -243,9 +265,10 @@ export default function Calls({ onOpenChat }: { onOpenChat: (chatId: string) => 
 
                 <button
                   type="button"
-                  className="btn-ghost !px-2"
-                  aria-label={`Call ${title} again`}
-                  title="Call back"
+                  className={`btn-ghost !px-2 ${readOnly ? 'cursor-not-allowed opacity-40' : ''}`}
+                  aria-label={readOnly ? READ_ONLY_CALL_HINT : `Call ${title} again`}
+                  title={readOnly ? READ_ONLY_CALL_HINT : 'Call back'}
+                  disabled={readOnly}
                   onClick={() => {
                     if (call.isGroup) void callGroup(call.chatId ?? '', title, call.participants.length, false);
                     else if (person) void callPeer(person.id, person.displayName, false);
@@ -255,9 +278,10 @@ export default function Calls({ onOpenChat }: { onOpenChat: (chatId: string) => 
                 </button>
                 <button
                   type="button"
-                  className="btn-ghost !px-2"
-                  aria-label={`Video call ${title} again`}
-                  title="Video call back"
+                  className={`btn-ghost !px-2 ${readOnly ? 'cursor-not-allowed opacity-40' : ''}`}
+                  aria-label={readOnly ? READ_ONLY_CALL_HINT : `Video call ${title} again`}
+                  title={readOnly ? READ_ONLY_CALL_HINT : 'Video call back'}
+                  disabled={readOnly}
                   onClick={() => {
                     if (call.isGroup) void callGroup(call.chatId ?? '', title, call.participants.length, true);
                     else if (person) void callPeer(person.id, person.displayName, true);
@@ -369,7 +393,9 @@ export default function Calls({ onOpenChat }: { onOpenChat: (chatId: string) => 
                 <div className="mt-5 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    className="btn-primary"
+                    className={`btn-primary ${readOnly ? 'cursor-not-allowed opacity-50' : ''}`}
+                    disabled={readOnly}
+                    title={readOnly ? READ_ONLY_CALL_HINT : undefined}
                     onClick={() => {
                       const person = otherPerson(selected);
                       if (selected.isGroup) void callGroup(selected.chatId ?? '', selected.title, selected.participants.length, false);
@@ -380,7 +406,9 @@ export default function Calls({ onOpenChat }: { onOpenChat: (chatId: string) => 
                   </button>
                   <button
                     type="button"
-                    className="btn-ghost"
+                    className={`btn-ghost ${readOnly ? 'cursor-not-allowed opacity-50' : ''}`}
+                    disabled={readOnly}
+                    title={readOnly ? READ_ONLY_CALL_HINT : undefined}
                     onClick={() => {
                       const person = otherPerson(selected);
                       if (selected.isGroup) void callGroup(selected.chatId ?? '', selected.title, selected.participants.length, true);
