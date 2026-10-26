@@ -37,7 +37,8 @@ git status --short
 git log --oneline -1
 
 # 1. SSH key for the Oracle VM (your local path)
-$key = '<path-to-chatgram-ssh-key>'
+# Chatgram key (Oct-19). The ssh-key-2026-10-17* keys in Downloads are stale and rejected.
+$key = Join-Path $env:USERPROFILE 'Downloads\mugisha recovery codes for github 8\chatgram recovery keys\ssh-key-2026-10-19.key'
 ssh -i $key -o ConnectTimeout=15 ubuntu@84.12.64.204 "echo ssh-ok"
 
 # 2. Vercel CLI must be logged in
@@ -59,7 +60,7 @@ dependencies, install them **before** restarting or PM2 will crash-loop
 (`MODULE_NOT_FOUND` happened once).
 
 ```powershell
-$key = '<path-to-chatgram-ssh-key>'
+$key = Join-Path $env:USERPROFILE 'Downloads\mugisha recovery codes for github 8\chatgram recovery keys\ssh-key-2026-10-19.key'
 
 # A1. Verified DB + source backup (the script prints BACKUP_OK / SRC_BACKUP_OK)
 ssh -i $key ubuntu@84.12.64.204 "bash /tmp/prod-backup.sh"

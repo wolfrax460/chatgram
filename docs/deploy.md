@@ -15,7 +15,8 @@ what is currently deployed. **Deploy only when green** (`deploy-after-green`).
 ## 0. Access
 
 ```powershell
-$key = 'C:\Users\<you>\...\chatgram-ssh.key'
+# Chatgram key (Oct-19). The ssh-key-2026-10-17* keys in Downloads are stale and rejected.
+$key = Join-Path $env:USERPROFILE 'Downloads\mugisha recovery codes for github 8\chatgram recovery keys\ssh-key-2026-10-19.key'
 ssh -i $key ubuntu@84.12.64.204
 ```
 
