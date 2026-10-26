@@ -56,3 +56,8 @@
 - Fix: removed apps/web/.env.local, moved dev-only values to apps/web/.env.development.local (loaded in dev mode only), rebuilt, confirmed the production bundle contains no 127.0.0.1/staging URL, and redeployed. scripts/deploy-web.ps1 now refuses to deploy when apps/web/.env.local exists.
 - Verified live: the Google button calls https://chatgram.duckdns.org/api/auth/google/url (200), opens accounts.google.com sign-in for chatgram.duckdns.org with no redirect_uri_mismatch and no console errors; the poll endpoint starts. The configured redirect URI https://chatgram.duckdns.org/api/auth/google/callback is accepted by Google.
 - The Vite dev server for hot reload now runs at http://127.0.0.1:5174/ using apps/web/.env.development.local (staging API), so code edits hot-reload locally without touching the production build.
+
+
+### Session 55 (2026-10-26) - chat-list compose button icon
+- The circled green square next to "Chats" is the New chat / compose button (it opens the contacts/search panel), not the Contact info add-to-contacts button; its icon was a pencil, so it looked unchanged after the add-contact icon work.
+- Changed it to the person-with-plus icon with title/aria "New chat or contact"; Contact info still uses the plain plus, New chat > New contact and the empty-screen quick action use person-with-plus. Rebuilt and redeployed; the Vite dev server serves the updated module for hot reload.

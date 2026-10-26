@@ -1,6 +1,6 @@
 import { onlineNow, usePresenceView } from '../lib/presence';
 import { useMemo, useState } from 'react';
-import { Search, SquarePen, Check, CheckCheck, Sparkles } from 'lucide-react';
+import { Search, UserRoundPlus, Check, CheckCheck, Sparkles } from 'lucide-react';
 import type { Chat } from '@chatgram/core';
 import { chatTitle, chatPartner } from '@chatgram/core';
 import { avatarGradient, formatTime, initialsFor, previewText, type TimeFormat } from '../lib/ui';
@@ -52,8 +52,8 @@ export function ChatList({
         <div className="flex items-center gap-2">
           <h2 className="text-[17px] font-bold">Chats</h2>
           <span className="flex-1" />
-          <button type="button" className="btn-primary !px-2.5" onClick={onNewChat} title="New chat">
-            <SquarePen className="h-4 w-4" />
+          <button type="button" className="btn-primary !px-2.5" onClick={onNewChat} title="New chat or contact" aria-label="New chat or contact">
+            <UserRoundPlus className="h-4 w-4" />
           </button>
         </div>
         <div className="relative mt-2.5">
