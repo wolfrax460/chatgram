@@ -57,6 +57,13 @@ $config = @'
 }
 '@
 
+# Never bake a local dev API URL into the production bundle: Vite loads
+# apps/web/.env.local for `npm run build` too. Dev-only values belong in
+# apps/web/.env.development.local (loaded in dev mode only).
+if (Test-Path (Join-Path $repo 'apps\web\.env.local')) {
+  throw 'apps/web/.env.local exists - remove it (use apps/web/.env.development.local for dev) before deploying'
+}
+
 if (-not $SkipBuild) {
   Write-Host '==> building landing page' -ForegroundColor Cyan
   npm run build --prefix client/landing
