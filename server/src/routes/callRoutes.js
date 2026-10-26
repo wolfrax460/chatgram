@@ -17,6 +17,7 @@ const {
   clearCalls,
   callContacts,
   callGroups,
+  getCallState,
 } = require('../controllers/callController');
 
 const isTest = process.env.NODE_ENV === 'test' || process.env.AUTH_RATE_LIMIT_DISABLED === 'true';
@@ -42,6 +43,8 @@ const historyLimiter = rateLimit({
 router.use(protect);
 
 router.get('/ice', iceLimiter, getIceServers);
+// Live room state (discover/join an ongoing call; chunk 2).
+router.get('/state', historyLimiter, getCallState);
 router.get('/missed-count', historyLimiter, missedCount);
 router.get('/contacts', historyLimiter, callContacts);
 router.get('/groups', historyLimiter, callGroups);

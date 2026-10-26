@@ -52,15 +52,24 @@ export interface RealtimeHandlers {
   onCallParticipantJoined?: (payload: CallParticipantJoined) => void;
   onCallParticipantLeft?: (payload: CallParticipantLeft) => void;
   onCallParticipantDeclined?: (payload: CallParticipantDeclined) => void;
+  onCallParticipantInvited?: (payload: CallParticipantInvited) => void;
+  /** Relayed media-state signal (mute/camera/screen/incoming-video-off). */
+  onCallSignal?: (payload: CallSignalEvent) => void;
+  /** Per-participant media state snapshot from the server. */
+  onCallParticipantState?: (payload: CallParticipantState) => void;
   onCallOffer?: (payload: CallOffer) => void;
   onCallAnswer?: (payload: CallAnswer) => void;
   onCallIce?: (payload: CallIce) => void;
-  /** The whole call is over (missed, or everybody left). */
+  /** The whole call is over (missed, declined, failed, cancelled, ended). */
   onCallEnded?: (payload: CallEnd) => void;
   onCallUnavailable?: (payload: CallUnavailable) => void;
   onCallBusy?: (payload: CallBusy) => void;
   onCallAnsweredElsewhere?: (payload: CallAnsweredElsewhere) => void;
-  onCallError?: (payload: { message: string; code?: string }) => void;
+  onCallError?: (payload: { message: string; code?: string; capacity?: number; audioOnlyAvailable?: boolean }) => void;
+  /** Live room snapshot for this chat (banner / call card "Join"). */
+  onCallRoom?: (room: CallRoomUpdate) => void;
+  /** The persisted call card message changed state (started/ongoing/ended). */
+  onCallCardUpdated?: (payload: { chatId: string; messageId: string; call: Record<string, unknown> }) => void;
   /** A group member list changed (add/remove/leave/promote). */
   onGroupMembers?: (payload: { chatId: string }) => void;
   /** Somebody @mentioned me in a group. */
@@ -73,7 +82,7 @@ export interface RealtimeHandlers {
 }
 
 /** A person taking part in a call (or being rung by one). */
-export interface CallParticipantInfo {
+export interface CallParticipantInfo extends CallParticipantStateFields {
   id: string;
   displayName?: string;
   avatarUrl?: string | null;
@@ -93,6 +102,12 @@ export interface CallIncoming {
   /** Participant cap for this call type (6 video / 12 audio). */
   capacity?: number;
   from: CallParticipantInfo;
+  /** Everyone already in the room (with their media state). */
+  participants?: CallParticipantInfo[];
+  startedAt?: string | number | null;
+  state?: string;
+  /** The chat message that represents this call (persisted call card). */
+  cardMessageId?: string | null;
 }
 
 /** My outgoing call is now ringing on at least one device. */
@@ -121,7 +136,7 @@ export interface CallAnsweredElsewhere {
   callId: string;
 }
 
-/** I accepted and am now in the call; these people are already connected. */
+/** I accepted/joined and am now in the call; these people are already connected. */
 export interface CallJoined {
   callId: string;
   chatId: string;
@@ -129,23 +144,29 @@ export interface CallJoined {
   isGroup: boolean;
   title: string;
   participants: CallParticipantInfo[];
+  startedAt?: string | number | null;
+  capacity?: number;
 }
 
 export interface CallParticipantJoined {
   callId: string;
   participant: CallParticipantInfo;
+  /** Every participant in the room after the change. */
+  participants?: CallParticipantInfo[];
 }
 
 export interface CallParticipantLeft {
   callId: string;
   userId: string;
   reason: string;
+  participants?: CallParticipantInfo[];
 }
 
 export interface CallParticipantDeclined {
   callId: string;
   userId: string;
   isGroup: boolean;
+  participants?: CallParticipantInfo[];
 }
 
 export interface CallAnswer {
@@ -164,18 +185,89 @@ export interface CallIce {
   callId: string;
   from?: CallParticipantInfo;
   candidate: unknown;
+  /** Older servers ride signals on call:ice; kept for compatibility. */
+  signal?: CallSignalInfo;
 }
 
 export interface CallEnd {
   callId: string;
   chatId?: string;
   reason: string;
+  status?: string;
+  durationSeconds?: number;
+  participants?: CallParticipantInfo[];
 }
 
 export interface CallUnavailable {
   callId: string;
   chatId: string;
   isGroup: boolean;
+}
+
+/** Media-state fields the server tracks for every call participant. */
+export interface CallParticipantStateFields {
+  audioOnly?: boolean;
+  muted?: boolean;
+  cameraOn?: boolean;
+  screenSharing?: boolean;
+  sharingKind?: 'screen' | 'window' | 'browser';
+  hasSystemAudio?: boolean;
+  /** This participant asked not to receive video (audio-only reception). */
+  incomingVideoOff?: boolean;
+}
+
+/** A live room snapshot broadcast to the whole chat (banner + call card). */
+export interface CallRoomUpdate {
+  chatId: string;
+  callId: string | null;
+  state: 'ringing' | 'active' | 'ended';
+  status: 'ringing' | 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'cancelled';
+  video: boolean;
+  mode: 'voice' | 'video';
+  isGroup: boolean;
+  title: string;
+  startedBy: { id: string; displayName: string; avatarUrl?: string | null } | null;
+  startedAt: string | number | null;
+  answeredAt: string | number | null;
+  endedAt: string | number | null;
+  durationSeconds: number;
+  participants: CallParticipantInfo[];
+  participantCount: number;
+  capacity: number;
+  /** Camera slots (6 for a video room, 0 for a voice room). */
+  videoCapacity?: number;
+  cameraCount?: number;
+  inviteeCount?: number;
+  cardMessageId: string | null;
+  endReason: string | null;
+  joinable: boolean;
+}
+
+export interface CallSignalInfo {
+  kind: string;
+  muted?: boolean;
+  cameraOn?: boolean;
+  screenSharing?: boolean;
+  sharingKind?: 'screen' | 'window' | 'browser';
+  hasSystemAudio?: boolean;
+  off?: boolean;
+}
+
+export interface CallSignalEvent {
+  callId: string;
+  from?: CallParticipantInfo;
+  signal?: CallSignalInfo;
+}
+
+export interface CallParticipantState {
+  callId?: string;
+  participant: CallParticipantInfo;
+}
+
+export interface CallParticipantInvited {
+  callId: string;
+  participant: CallParticipantInfo;
+  participants?: CallParticipantInfo[];
 }
 
 export interface RealtimeOptions {
@@ -288,15 +380,24 @@ export class RealtimeClient {
     socket.on('call:participant-joined', (data: CallParticipantJoined) => h.onCallParticipantJoined?.(data));
     socket.on('call:participant-left', (data: CallParticipantLeft) => h.onCallParticipantLeft?.(data));
     socket.on('call:participant-declined', (data: CallParticipantDeclined) => h.onCallParticipantDeclined?.(data));
+    socket.on('call:participant-invited', (data: CallParticipantInvited) => h.onCallParticipantInvited?.(data));
+    socket.on('call:participant-state', (data: CallParticipantState) => h.onCallParticipantState?.(data));
+    socket.on('call:signal', (data: CallSignalEvent) => h.onCallSignal?.(data));
     socket.on('call:offer', (data: CallOffer) => h.onCallOffer?.(data));
     socket.on('call:answer', (data: CallAnswer) => h.onCallAnswer?.(data));
     socket.on('call:ice', (data: CallIce) => h.onCallIce?.(data));
+    socket.on('call:room', (data: CallRoomUpdate) => h.onCallRoom?.(data));
+    socket.on('call:card-updated', (data: { chatId: string; messageId: string; call: Record<string, unknown> }) =>
+      h.onCallCardUpdated?.(data),
+    );
     socket.on('call:ended', (data: CallEnd) => h.onCallEnded?.(data));
     socket.on('call:end', (data: CallEnd) => h.onCallEnded?.(data));
     socket.on('call:unavailable', (data: CallUnavailable) => h.onCallUnavailable?.(data));
     socket.on('call:busy', (data: CallBusy) => h.onCallBusy?.(data));
     socket.on('call:answered-elsewhere', (data: CallAnsweredElsewhere) => h.onCallAnsweredElsewhere?.(data));
-    socket.on('call:error', (data: { message: string; code?: string }) => h.onCallError?.(data));
+    socket.on('call:error', (data: { message: string; code?: string; capacity?: number; audioOnlyAvailable?: boolean }) =>
+      h.onCallError?.(data),
+    );
     socket.on('message:mention', (data: unknown) => {
       const payload = (data ?? {}) as {
         message?: unknown;

@@ -12,6 +12,8 @@ const mongoose = require('mongoose');
 const CallLog = require('../models/CallLog');
 const User = require('../models/User');
 const Chat = require('../models/Chat');
+const callRegistry = require('../utils/callRegistry');
+const { roomSnapshot } = require('../utils/callRooms');
 
 const parseList = (value) =>
   String(value || '')
@@ -87,13 +89,26 @@ function directionFor(log, meId) {
 function statusFor(log, meId, direction) {
   const me = String(meId);
   const answered = (log.answeredBy || []).some((id) => String(id) === me);
+  const declined = (log.declinedBy || []).some((id) => String(id) === me);
+  const busy = (log.busyBy || []).some((id) => String(id) === me);
+  const failed = log.status === 'failed';
+
+  // Explicit per-user actions always win.
+  if (declined) return 'declined';
+  if (busy) return 'busy';
+  if (answered) return failed ? 'failed' : 'completed';
+
+  // Never joined. The caller sees the room-level outcome; a callee who never
+  // answered sees a missed call (except when the whole call failed).
   if (direction === 'outgoing') {
-    if (log.answeredAt) return 'completed';
+    if (failed) return 'failed';
     if (log.status === 'declined') return 'declined';
+    if (log.status === 'busy') return 'busy';
+    if (log.status === 'cancelled') return 'cancelled';
+    if (log.status === 'missed') return 'missed';
     return log.status === 'completed' ? 'completed' : 'cancelled';
   }
-  if (answered) return 'completed';
-  if ((log.declinedBy || []).some((id) => String(id) === me)) return 'declined';
+  if (failed) return 'failed';
   return 'missed';
 }
 
@@ -102,12 +117,16 @@ function serialize(log, meId) {
   const status = statusFor(log, meId, direction);
   return {
     id: String(log._id),
+    // The in-memory room id: matches the call card's call.callId.
+    callId: log.callId || null,
     chatId: log.chatId ? String(log.chatId) : null,
     type: log.type,
     isGroup: log.isGroup,
     title: log.title || '',
     direction,
     status,
+    endReason: log.endReason || null,
+    participantCount: (log.participants || []).length,
     startedAt: log.startedAt,
     answeredAt: log.answeredAt,
     endedAt: log.endedAt,
@@ -166,7 +185,9 @@ const missedCount = async (req, res) => {
       callerId: { $ne: req.user._id },
       answeredBy: { $ne: req.user._id },
       declinedBy: { $ne: req.user._id },
+      busyBy: { $ne: req.user._id },
       hiddenFor: { $ne: req.user._id },
+      status: { $in: ['missed', 'cancelled'] },
       startedAt: { $gt: since },
     });
     res.json({ count });
@@ -266,6 +287,49 @@ const callGroups = async (req, res) => {
   }
 };
 
+// @desc    Live call room state for a chat (or every live room in my chats)
+// @route   GET /api/calls/state?chatId=<id>
+// @access  Private
+//
+// Chunk 2: this is what lets a member who was offline (or who missed the ring)
+// discover an ongoing room and join it — the room is no longer only reachable
+// through the one-shot incoming-call event.
+const getCallState = async (req, res) => {
+  try {
+    const { chatId } = req.query;
+    if (chatId) {
+      if (!mongoose.Types.ObjectId.isValid(String(chatId))) {
+        return res.status(400).json({ message: 'Invalid chat id' });
+      }
+      const chat = await Chat.findOne({ _id: chatId, participants: req.user._id }).select('_id').lean();
+      if (!chat) return res.status(403).json({ message: 'You are not a member of this chat.' });
+      const call = callRegistry.findCallForChat(String(chatId));
+      return res.json({ call: call ? roomSnapshot(call) : null });
+    }
+
+    const me = String(req.user._id);
+    const chats = await Chat.find({ participants: req.user._id }).select('_id').lean();
+    const chatIds = new Set(chats.map((chat) => String(chat._id)));
+    const calls = callRegistry
+      .activeCalls()
+      .filter(
+        (call) =>
+          chatIds.has(String(call.chatId)) ||
+          call.participants.has(me) ||
+          (call.invitees && call.invitees.has(me)),
+      )
+      .map(roomSnapshot);
+    return res.json({ calls });
+  } catch (error) {
+    console.error('Call state error:', error.message);
+    return res.status(500).json({ message: 'Could not load the call state' });
+  }
+};
+
+// @desc    Call configuration and call history
+// @route   GET /api/calls/ice (and the helpers above)
+// @access  Private
+
 module.exports = {
   getIceServers,
   mintTurnCredentials,
@@ -276,4 +340,5 @@ module.exports = {
   clearCalls,
   callContacts,
   callGroups,
+  getCallState,
 };

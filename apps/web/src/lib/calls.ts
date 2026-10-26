@@ -24,22 +24,76 @@ export type CallStatus =
   | 'ended'
   | 'error';
 
+/**
+ * How a call finished. The UI must never say "Call ended" for a call that
+ * failed — each value has its own wording (WhatsApp-like).
+ */
+export type CallOutcome =
+  | 'declined'
+  | 'missed'
+  | 'busy'
+  | 'failed'
+  | 'ended'
+  | 'cancelled'
+  | 'answered-elsewhere'
+  | 'unavailable';
+
 export interface CallParticipant {
   id: string;
   displayName?: string;
   avatarUrl?: string | null;
   audioOnly?: boolean;
-  /** Signalled in-call state (best effort, via the existing call:ice relay). */
+  /** Signalled in-call state (relayed by the server's call:signal event). */
   muted?: boolean;
   cameraOn?: boolean;
   screenSharing?: boolean;
+  /** 'screen' | 'window' | 'browser' while sharing. */
+  sharingKind?: 'screen' | 'window' | 'browser';
+  /** The shared screen carries system audio. */
+  hasSystemAudio?: boolean;
+  /** This person stopped receiving my video (they turned incoming video off). */
+  incomingVideoOff?: boolean;
+  /** This participant's video tile should be treated as camera-off. */
+  videoOff?: boolean;
 }
 
+/** In-call state signal, relayed by the server via call:signal / call:participant-state. */
 export interface CallSignal {
-  kind: 'muted' | 'camera' | 'screen' | 'video-request' | 'video-accepted' | 'video-declined';
+  kind: 'muted' | 'camera' | 'screen' | 'video-request' | 'video-accepted' | 'video-declined' | 'incoming-video-off';
   muted?: boolean;
   cameraOn?: boolean;
   screenSharing?: boolean;
+  sharingKind?: 'screen' | 'window' | 'browser';
+  hasSystemAudio?: boolean;
+  /** For 'incoming-video-off': true = that person stopped receiving video. */
+  off?: boolean;
+}
+
+/** A live group call room snapshot (mirrors the server's call:room payload). */
+export interface CallRoom {
+  chatId: string;
+  callId: string | null;
+  state: 'ringing' | 'active' | 'ended';
+  status: 'ringing' | 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'cancelled';
+  video: boolean;
+  mode: 'voice' | 'video';
+  isGroup: boolean;
+  title: string;
+  startedBy: { id: string; displayName: string; avatarUrl?: string | null } | null;
+  startedAt: number | null;
+  answeredAt: number | null;
+  endedAt: number | null;
+  durationSeconds: number;
+  participants: CallParticipant[];
+  participantCount: number;
+  capacity: number;
+  /** Camera slots (6 for a video room, 0 for a voice room). */
+  videoCapacity?: number;
+  cameraCount?: number;
+  inviteeCount?: number;
+  cardMessageId: string | null;
+  endReason: string | null;
+  joinable: boolean;
 }
 
 export type CallQuality = 'unknown' | 'good' | 'fair' | 'poor';
@@ -78,8 +132,20 @@ export interface CallState {
   videoUpgradePending: boolean;
   /** My screen is being shared right now. */
   screenSharing: boolean;
+  /** System audio is being shared along with the screen (where supported). */
+  screenAudio: boolean;
   /** Low-bandwidth mode: incoming video is hidden until the user turns it back on. */
   lowBandwidth: boolean;
+  /** Incoming video is switched off per person (audio-only reception, saves data). */
+  incomingVideoOff: boolean;
+  /** How the call finished; null while it is still running. */
+  outcome: CallOutcome | null;
+  /** Final call duration in seconds, for the ended screen. */
+  durationSeconds: number;
+  /** True when the last call target can be dialled again from the ended screen. */
+  canRetry: boolean;
+  /** How many people were rung (an incoming group call shows "N people"). */
+  ringCount: number;
   /** Connection indicator detail (from getStats). */
   stats: { latencyMs: number | null; packetLoss: number | null };
 }
@@ -111,7 +177,13 @@ const IDLE: CallState = {
   videoRequest: null,
   videoUpgradePending: false,
   screenSharing: false,
+  screenAudio: false,
   lowBandwidth: false,
+  incomingVideoOff: false,
+  outcome: null,
+  durationSeconds: 0,
+  canRetry: false,
+  ringCount: 0,
   stats: { latencyMs: null, packetLoss: null },
   audioOnly: false,
   devices: { audioInput: [], audioOutput: [], videoInput: [] },
@@ -155,10 +227,15 @@ interface PeerHandle {
   pendingCandidates: RTCIceCandidateInit[];
   restartTimer: number | null;
   disconnectedAt: number | null;
+  /** Stable sender references so tracks can be swapped/removed reliably. */
+  videoSender: RTCRtpSender | null;
+  audioSender: RTCRtpSender | null;
 }
 
 let current: ActiveCall | null = null;
 let localStream: MediaStream | null = null;
+/** The display-capture stream while screen sharing (separate from the camera). */
+let screenStream: MediaStream | null = null;
 let pendingInvite: (ActiveCall & { from: CallParticipant }) | null = null;
 const peers = new Map<string, PeerHandle>();
 let iceServersCache: { servers: RTCIceServer[]; fetchedAt: number; ttlMs: number } | null = null;
@@ -169,6 +246,118 @@ let statsTimer: number | null = null;
 let endTimer: number | null = null;
 let streamTick = 0;
 let myUserId = '';
+/** The target of the last call, so a failed/declined call can be retried. */
+let lastTarget: { chatId: string; title: string; isGroup: boolean; participantCount?: number } | null = null;
+let lastVideo = false;
+
+/** Live group-call rooms by chat id (banner / call card "Join"). */
+const rooms = new Map<string, CallRoom>();
+const roomListeners = new Set<() => void>();
+
+function notifyRooms(): void {
+  for (const listener of roomListeners) listener();
+}
+
+export function subscribeCallRooms(listener: () => void): () => void {
+  roomListeners.add(listener);
+  return () => roomListeners.delete(listener);
+}
+
+export function getCallRoom(chatId: string | null | undefined): CallRoom | null {
+  if (!chatId) return null;
+  return rooms.get(chatId) ?? null;
+}
+
+/** Snapshot object that is safe for useSyncExternalStore (stable identity). */
+export function getCallRoomSnapshot(chatId: string | null | undefined): CallRoom | null {
+  return getCallRoom(chatId);
+}
+
+/** A live room is joinable when it is ringing/active and has free slots. */
+export function canJoinRoom(room: CallRoom | null): boolean {
+  if (!room || !room.callId) return false;
+  return room.state !== 'ended' && room.joinable !== false && room.participantCount < room.capacity;
+}
+
+/** Server room snapshot → internal room (tolerates string/epoch timestamps). */
+export function handleRoom(raw: unknown): void {
+  const payload = (raw ?? {}) as Partial<CallRoom> & { chatId?: string; startedAt?: number | string | null; answeredAt?: number | string | null; endedAt?: number | string | null };
+  const chatId = String(payload.chatId ?? '');
+  if (!chatId) return;
+  if (payload.state === 'ended' || !payload.callId) {
+    if (rooms.delete(chatId)) notifyRooms();
+    return;
+  }
+  const room: CallRoom = {
+    chatId,
+    callId: payload.callId ?? null,
+    state: payload.state === 'ringing' ? 'ringing' : 'active',
+    status: payload.status ?? 'ringing',
+    video: payload.video === true,
+    mode: payload.mode === 'video' || payload.video ? 'video' : 'voice',
+    isGroup: payload.isGroup !== false,
+    title: payload.title || 'Group call',
+    startedBy: payload.startedBy ?? null,
+    startedAt: toEpoch(payload.startedAt),
+    answeredAt: toEpoch(payload.answeredAt),
+    endedAt: toEpoch(payload.endedAt),
+    durationSeconds: payload.durationSeconds ?? 0,
+    participants: Array.isArray(payload.participants) ? payload.participants.map(normalizeParticipant) : [],
+    participantCount: typeof payload.participantCount === 'number' ? payload.participantCount : (payload.participants?.length ?? 0),
+    capacity: payload.capacity || MAX_AUDIO_PARTICIPANTS,
+    videoCapacity: typeof payload.videoCapacity === 'number' ? payload.videoCapacity : undefined,
+    cameraCount: typeof payload.cameraCount === 'number' ? payload.cameraCount : undefined,
+    inviteeCount: typeof payload.inviteeCount === 'number' ? payload.inviteeCount : undefined,
+    cardMessageId: payload.cardMessageId ?? null,
+    endReason: payload.endReason ?? null,
+    joinable: payload.joinable !== false,
+  };
+  rooms.set(chatId, room);
+  notifyRooms();
+}
+
+/** REST seed: replaces every known room for those chats. */
+export function seedCallRooms(snapshots: unknown): void {
+  if (!Array.isArray(snapshots)) return;
+  const keep = new Set<string>();
+  for (const snapshot of snapshots as Array<Partial<CallRoom> & { chatId?: string }>) {
+    if (snapshot && snapshot.chatId && snapshot.state !== 'ended' && snapshot.callId) {
+      handleRoom(snapshot);
+      keep.add(String(snapshot.chatId));
+    }
+  }
+  let changed = false;
+  for (const chatId of [...rooms.keys()]) {
+    if (!keep.has(chatId)) {
+      rooms.delete(chatId);
+      changed = true;
+    }
+  }
+  if (changed) notifyRooms();
+}
+
+function toEpoch(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return value;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeParticipant(raw: unknown): CallParticipant {
+  const value = (raw ?? {}) as Record<string, unknown>;
+  return {
+    id: String(value.id ?? value._id ?? ''),
+    displayName: value.displayName ? String(value.displayName) : undefined,
+    avatarUrl: value.avatarUrl ? String(value.avatarUrl) : null,
+    audioOnly: value.audioOnly === true,
+    muted: value.muted === true,
+    cameraOn: value.cameraOn !== false,
+    screenSharing: value.screenSharing === true,
+    sharingKind: value.sharingKind === 'window' || value.sharingKind === 'browser' ? value.sharingKind : 'screen',
+    hasSystemAudio: value.hasSystemAudio === true,
+    incomingVideoOff: value.incomingVideoOff === true,
+  };
+}
 
 export function setCallUserId(userId: string): void {
   myUserId = userId;
@@ -285,10 +474,16 @@ async function replaceLocalTrack(kind: 'audio' | 'video', track: MediaStreamTrac
   }
   if (track) localStream.addTrack(track);
   for (const handle of peers.values()) {
-    const sender = handle.pc.getSenders().find((s) => s.track?.kind === kind);
+    // Keep the sender reference: after replaceTrack(null) the sender no longer
+    // has a track, so looking it up by track.kind would fail on the way back.
+    const sender = kind === 'video' ? handle.videoSender : handle.audioSender;
     try {
       if (sender) await sender.replaceTrack(track);
-      else if (track && localStream) handle.pc.addTrack(track, localStream);
+      else if (track && localStream) {
+        const added = handle.pc.addTrack(track, localStream);
+        if (kind === 'video') handle.videoSender = added;
+        else handle.audioSender = added;
+      }
     } catch {
       /* renegotiation will catch up */
     }
@@ -444,15 +639,30 @@ function cleanup(): void {
   for (const id of [...peers.keys()]) removePeer(id);
   stopTracks(localStream);
   localStream = null;
+  stopTracks(screenStream);
+  screenStream = null;
   current = null;
   pendingInvite = null;
   streamTick = 0;
 }
 
-function finish(message: string, patch: Partial<CallState> = {}): void {
+/**
+ * End the call with a specific outcome. Failures, declines and missed calls get
+ * their own wording — "Call ended" is only used for a normal end.
+ */
+function finish(outcome: CallOutcome, message: string, patch: Partial<CallState> = {}): void {
+  const durationSeconds = state.startedAt ? Math.max(0, Math.round((Date.now() - state.startedAt) / 1000)) : 0;
   cleanup();
-  setState({ ...IDLE, status: 'ended', message, ...patch });
-  endTimer = window.setTimeout(() => setState({ ...IDLE, streamTick: 0 }), 6000);
+  setState({
+    ...IDLE,
+    status: 'ended',
+    outcome,
+    message,
+    durationSeconds,
+    canRetry: Boolean(lastTarget),
+    ...patch,
+  });
+  endTimer = window.setTimeout(() => setState({ ...IDLE, streamTick: 0 }), 8000);
 }
 
 export function dismissCall(): void {
@@ -480,7 +690,8 @@ function startReconnectWindow(): void {
   if (state.status === 'incoming' || state.status === 'calling') return;
   setState({ status: 'reconnecting' });
   reconnectTimer = window.setTimeout(() => {
-    finish('Connection lost. The call ended.');
+    // A dropped connection is a failed call, never "Call ended".
+    finish('failed', 'Failed to connect — the connection dropped.');
   }, RECONNECT_WINDOW_MS);
 }
 
@@ -514,10 +725,18 @@ async function createPeer(info: CallParticipant): Promise<PeerHandle | null> {
     pendingCandidates: [],
     restartTimer: null,
     disconnectedAt: null,
+    videoSender: null,
+    audioSender: null,
   };
   peers.set(info.id, handle);
 
-  for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
+  for (const track of localStream.getTracks()) {
+    const sender = pc.addTrack(track, localStream);
+    if (track.kind === 'video' && !handle.videoSender) handle.videoSender = sender;
+    if (track.kind === 'audio' && !handle.audioSender) handle.audioSender = sender;
+  }
+  // If this person told us they stopped receiving video, do not send them any.
+  if (info.incomingVideoOff) setPeerVideoDelivery(info.id, false);
 
   pc.ontrack = (event) => {
     for (const incoming of event.streams[0]?.getTracks() ?? [event.track]) {
@@ -617,11 +836,11 @@ function armRingTimeout(): void {
     if (state.status === 'calling') {
       const callId = state.callId;
       if (callId) realtime.emit('call:end', { callId, reason: 'missed' });
-      finish('No answer.');
+      finish('missed', 'No answer.');
     } else if (state.status === 'incoming') {
       const callId = state.callId;
       if (callId) realtime.emit('call:decline', { callId });
-      finish('Missed call.');
+      finish('missed', 'Missed call.');
     }
   }, RING_TIMEOUT_MS);
 }
@@ -631,6 +850,71 @@ function startStatsLoop(): void {
   statsTimer = window.setInterval(() => void measureQuality(), STATS_INTERVAL_MS);
 }
 
+/* ------------------------------------------------------------- outcomes */
+
+const OUTCOME_MESSAGES: Record<CallOutcome, string> = {
+  declined: 'Call declined',
+  missed: 'No answer',
+  busy: 'Busy — they are on another call',
+  failed: 'Failed to connect',
+  ended: 'Call ended',
+  cancelled: 'Call cancelled',
+  'answered-elsewhere': 'Answered on another device',
+  unavailable: 'Nobody available',
+};
+
+/** Sentence-case heading for an outcome (never "Call ended" for a failure). */
+export function outcomeLabel(outcome: CallOutcome | null): string {
+  return outcome ? OUTCOME_MESSAGES[outcome] : 'Call ended';
+}
+
+/** A normal end appends the duration; every other outcome keeps its own words. */
+export function outcomeText(call: CallState): string {
+  if (call.outcome === 'ended') {
+    return call.durationSeconds > 0 ? `${OUTCOME_MESSAGES.ended} · ${clockForCall(call.durationSeconds)}` : OUTCOME_MESSAGES.ended;
+  }
+  return call.message || outcomeLabel(call.outcome);
+}
+
+export function clockForCall(totalSeconds: number): string {
+  const elapsed = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(elapsed / 3600);
+  const minutes = Math.floor((elapsed % 3600) / 60);
+  const seconds = elapsed % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
+}
+
+/**
+ * Retry the last call from the ended screen. A failure is never a dead end.
+ */
+export function retryCall(): void {
+  if (!lastTarget) return;
+  const target = { ...lastTarget };
+  const video = lastVideo;
+  dismissCall();
+  void startCall(target, { video });
+}
+
+/** Session bookkeeping shared by a fresh call and a late join. */
+function enterSession(session: ActiveCall, extra: Partial<CallState> = {}): void {
+  current = session;
+  setState({
+    ...IDLE,
+    status: 'connecting',
+    callId: session.callId,
+    chatId: session.chatId,
+    title: session.title,
+    video: session.video,
+    isGroup: session.isGroup,
+    capacity: session.capacity,
+    cameraOn: session.video,
+    audioOnly: !session.video,
+    ...extra,
+  });
+  startStatsLoop();
+}
+
 /* ---------------------------------------------------------------- lifecycle */
 
 export async function startCall(
@@ -638,6 +922,9 @@ export async function startCall(
   options: { video?: boolean } = {},
 ): Promise<void> {
   if (state.status !== 'idle' && state.status !== 'ended') return;
+
+  lastTarget = { ...target };
+  lastVideo = options.video === true;
 
   // Honest caps before we even ring: a group video call above 6 people starts
   // as audio-only rather than failing later.
@@ -658,6 +945,8 @@ export async function startCall(
     setState({
       ...IDLE,
       status: 'error',
+      outcome: 'failed',
+      canRetry: Boolean(lastTarget),
       message:
         name === 'NotAllowedError'
           ? 'Microphone permission was denied. Allow it in your browser settings to make calls.'
@@ -667,30 +956,85 @@ export async function startCall(
   }
 
   const callId = newCallId();
-  current = {
-    callId,
-    chatId: target.chatId,
-    video: media.video,
-    isGroup: target.isGroup,
-    title: target.title,
-    capacity,
-  };
-  setState({
-    ...IDLE,
-    status: 'calling',
-    callId,
-    chatId: target.chatId,
-    title: target.title,
-    video: media.video,
-    isGroup: target.isGroup,
-    capacity,
-    cameraOn: media.video,
-    audioOnly: !media.video,
-    notice: media.notice ?? notice,
-  });
+  enterSession(
+    {
+      callId,
+      chatId: target.chatId,
+      video: media.video,
+      isGroup: target.isGroup,
+      title: target.title,
+      capacity,
+    },
+    {
+      status: 'calling',
+      cameraOn: media.video,
+      audioOnly: !media.video,
+      notice: media.notice ?? notice,
+    },
+  );
   armRingTimeout();
-  startStatsLoop();
   realtime.emit('call:start', { callId, chatId: target.chatId, video: media.video });
+}
+
+/**
+ * Join a room that is already running (banner / call card "Join", or a member
+ * who declined earlier). The server answers with call:joined + the peers to
+ * connect to, exactly like accepting a ring.
+ */
+export async function joinActiveCall(room: CallRoom): Promise<void> {
+  if (state.status !== 'idle' && state.status !== 'ended') return;
+  if (!room.callId) return;
+  lastTarget = { chatId: room.chatId, title: room.title, isGroup: true };
+  lastVideo = room.video;
+  const wantVideo = room.video && room.participantCount < MAX_VIDEO_PARTICIPANTS;
+  let media;
+  try {
+    media = await acquireMedia(wantVideo);
+  } catch (error) {
+    const name = error instanceof Error ? error.name : '';
+    setState({
+      ...IDLE,
+      status: 'error',
+      outcome: 'failed',
+      canRetry: Boolean(lastTarget),
+      message:
+        name === 'NotAllowedError'
+          ? 'Microphone permission was denied. Allow it to join the call.'
+          : 'Could not access your microphone or camera.',
+    });
+    return;
+  }
+  enterSession(
+    {
+      callId: room.callId,
+      chatId: room.chatId,
+      video: media.video,
+      isGroup: true,
+      title: room.title,
+      // The mesh video cap is the camera slot count; an audio-only room caps at 12.
+      capacity: room.video ? room.videoCapacity || MAX_VIDEO_PARTICIPANTS : MAX_AUDIO_PARTICIPANTS,
+    },
+    {
+      participants: room.participants.filter((participant) => participant.id !== myUserId),
+      startedAt: room.startedAt,
+      cameraOn: media.video,
+      audioOnly: !media.video,
+      notice: media.notice,
+    },
+  );
+  realtime.emit('call:join', { callId: room.callId, chatId: room.chatId, audioOnly: !media.video });
+}
+
+/** Join whatever room is live in this chat, if any. */
+export function joinRoomForChat(chatId: string): void {
+  const room = getCallRoom(chatId);
+  if (room && canJoinRoom(room)) void joinActiveCall(room);
+}
+
+/** Ask the server for the live room of a chat (e.g. right after opening it). */
+export function requestRoomState(chatId: string): void {
+  if (!chatId) return;
+  realtime.emit('call:state:get', { chatId });
 }
 
 /** Somebody is ringing me. Auto-declines when I am already in a call. */
@@ -701,7 +1045,11 @@ export function handleIncoming(payload: {
   isGroup: boolean;
   title: string;
   capacity?: number;
+  participantCount?: number;
   from: CallParticipant;
+  participants?: CallParticipant[];
+  startedAt?: number | string | null;
+  cardMessageId?: string | null;
 }): void {
   if (state.status !== 'idle' && state.status !== 'ended') {
     realtime.emit('call:decline', { callId: payload.callId });
@@ -710,14 +1058,19 @@ export function handleIncoming(payload: {
   const capacity = payload.capacity ?? (payload.video ? MAX_VIDEO_PARTICIPANTS : MAX_AUDIO_PARTICIPANTS);
   // Never offer camera in a group call that is already past the video cap.
   const video = payload.video && (payload.isGroup ? capacity > MAX_VIDEO_PARTICIPANTS - 1 : true);
+  const from = normalizeParticipant(payload.from);
+  const others = Array.isArray(payload.participants)
+    ? payload.participants.map(normalizeParticipant).filter((participant) => participant.id && participant.id !== myUserId)
+    : [];
+  const participants = others.some((participant) => participant.id === from.id) ? others : [from, ...others];
   pendingInvite = {
     callId: payload.callId,
     chatId: payload.chatId,
     video,
     isGroup: payload.isGroup === true,
-    title: payload.title || payload.from.displayName || 'Call',
+    title: payload.title || from.displayName || 'Call',
     capacity,
-    from: payload.from,
+    from,
   };
   setState({
     ...IDLE,
@@ -728,7 +1081,8 @@ export function handleIncoming(payload: {
     video,
     isGroup: pendingInvite.isGroup,
     capacity,
-    participants: [payload.from],
+    participants,
+    ringCount: payload.participantCount ?? participants.length + 1,
     cameraOn: false,
   });
   armRingTimeout();
@@ -746,54 +1100,131 @@ export async function acceptCall(options: { audioOnly?: boolean } = {}): Promise
     setState({ message: 'Could not access your microphone, so the call was declined.' });
     return;
   }
-  current = {
-    callId: invite.callId,
-    chatId: invite.chatId,
-    video: media.video,
-    isGroup: invite.isGroup,
-    title: invite.title,
-    capacity: invite.capacity,
-  };
   pendingInvite = null;
-  setState({
-    status: 'connecting',
-    video: media.video,
-    cameraOn: media.video,
-    audioOnly: !media.video,
-    participants: [invite.from],
-    notice: media.notice,
-  });
-  startStatsLoop();
+  enterSession(
+    {
+      callId: invite.callId,
+      chatId: invite.chatId,
+      video: media.video,
+      isGroup: invite.isGroup,
+      title: invite.title,
+      capacity: invite.capacity,
+    },
+    {
+      participants: state.participants.filter((participant) => participant.id !== myUserId),
+      cameraOn: media.video,
+      audioOnly: !media.video,
+      notice: media.notice,
+    },
+  );
   realtime.emit('call:accept', { callId: invite.callId, audioOnly: !media.video });
 }
 
 /* --------------------------------------------------------- signalling paths */
 
-export function handleJoined(payload: { callId: string; participants: CallParticipant[] }): void {
+export function handleJoined(payload: {
+  callId: string;
+  participants?: CallParticipant[];
+  startedAt?: number | string | null;
+  capacity?: number;
+}): void {
   if (!current || current.callId !== payload.callId) return;
-  const others = payload.participants.filter((p) => p.id && p.id !== myUserId);
-  setState({ status: others.length ? 'connecting' : 'active', participants: others, startedAt: others.length ? null : Date.now() });
+  const others = (payload.participants ?? [])
+    .map(normalizeParticipant)
+    .filter((participant) => participant.id && participant.id !== myUserId);
+  const startedAt = toEpoch(payload.startedAt);
+  setState({
+    status: others.length ? 'connecting' : 'active',
+    participants: others,
+    startedAt: startedAt ?? (others.length ? null : Date.now()),
+    capacity: payload.capacity ?? state.capacity,
+  });
   for (const participant of others) {
-    void createPeer(participant).then((handle) => (handle ? sendOffer(handle) : null));
+    void createPeer(participant).then((handle) => {
+      if (!handle) return null;
+      void sendOffer(handle);
+      emitMySignalsTo(participant.id);
+      return handle;
+    });
   }
   if (!others.length) markActive();
   void applyVideoQuality();
 }
 
-export function handleParticipantJoined(payload: { callId: string; participant: CallParticipant }): void {
+export function handleParticipantJoined(payload: {
+  callId: string;
+  participant: CallParticipant;
+  participants?: CallParticipant[];
+}): void {
   if (!current || current.callId !== payload.callId || !payload.participant?.id) return;
-  addParticipant(payload.participant);
+  const participant = normalizeParticipant(payload.participant);
+  if (Array.isArray(payload.participants)) {
+    const list = payload.participants.map(normalizeParticipant).filter((p) => p.id && p.id !== myUserId);
+    setState({ participants: list });
+  } else {
+    addParticipant(participant);
+  }
+  // The newcomer needs to know our mute/camera/screen state before any frames.
+  emitMySignalsTo(participant.id);
+  setState({ notice: `${participant.displayName || 'Someone'} joined the call.` });
   void applyVideoQuality();
 }
 
-export function handleParticipantLeft(payload: { callId: string; userId: string; reason?: string }): void {
+/** The server asked us to ring one more person after 1:1 → group conversion. */
+export function handleParticipantInvited(payload: {
+  callId?: string;
+  participant: CallParticipant;
+  participants?: CallParticipant[];
+}): void {
+  if (payload.callId && current && current.callId !== payload.callId) return;
+  if (current) {
+    current.isGroup = true;
+    current.capacity = state.video ? MAX_VIDEO_PARTICIPANTS : MAX_AUDIO_PARTICIPANTS;
+  }
+  const participant = normalizeParticipant(payload.participant);
+  setState({
+    isGroup: true,
+    capacity: current?.capacity ?? state.capacity,
+    participants: Array.isArray(payload.participants)
+      ? payload.participants.map(normalizeParticipant).filter((p) => p.id && p.id !== myUserId)
+      : state.participants,
+    notice: `${participant.displayName || 'Someone'} was invited to the call.`,
+  });
+}
+
+export function handleParticipantLeft(payload: {
+  callId: string;
+  userId: string;
+  reason?: string;
+  participants?: CallParticipant[];
+}): void {
   if (!current || current.callId !== payload.callId) return;
   const who = state.participants.find((p) => p.id === payload.userId);
   removePeer(payload.userId);
-  const participants = state.participants.filter((p) => p.id !== payload.userId);
+  const participants = Array.isArray(payload.participants)
+    ? payload.participants.map(normalizeParticipant).filter((p) => p.id !== myUserId)
+    : state.participants.filter((p) => p.id !== payload.userId);
   streamTick += 1;
   if (participants.length === 0) {
-    finish(payload.reason === 'declined' ? 'Call declined' : 'Call ended');
+    // Nobody else is left. The server ends the room when the last participant
+    // leaves, so this client must send its own call:end (otherwise the room
+    // would stay "live" for the chat and block everyone from calling again).
+    const outcome: CallOutcome =
+      payload.reason === 'declined'
+        ? 'declined'
+        : payload.reason === 'failed'
+          ? 'failed'
+          : payload.reason === 'missed'
+            ? 'missed'
+            : 'ended';
+    const callId = state.callId;
+    if (callId) {
+      realtime.emit('call:end', {
+        callId,
+        reason: outcome === 'declined' ? 'declined' : outcome === 'failed' ? 'failed' : 'hangup',
+      });
+    }
+    finish(outcome, OUTCOME_MESSAGES[outcome]);
     return;
   }
   setState({
@@ -804,35 +1235,44 @@ export function handleParticipantLeft(payload: { callId: string; userId: string;
   void applyVideoQuality();
 }
 
-export function handleParticipantDeclined(payload: { userId: string; isGroup: boolean }): void {
+export function handleParticipantDeclined(payload: {
+  userId: string;
+  isGroup: boolean;
+  participants?: CallParticipant[];
+}): void {
   if (!payload.isGroup) {
-    finish('Call declined');
+    finish('declined', OUTCOME_MESSAGES.declined);
     return;
   }
-  setState({ notice: 'Someone declined the call.' });
+  const participants = Array.isArray(payload.participants)
+    ? payload.participants.map(normalizeParticipant).filter((p) => p.id !== myUserId)
+    : state.participants;
+  setState({ participants, notice: 'Someone declined the call.' });
 }
 
 export function rejectCall(): void {
   const callId = state.callId;
   if (callId) realtime.emit('call:decline', { callId });
-  finish('Call declined');
+  finish('declined', OUTCOME_MESSAGES.declined);
 }
 
 export function hangUp(): void {
   const callId = state.callId;
-  if (callId) realtime.emit('call:end', { callId, reason: 'hangup' });
-  finish('Call ended');
+  // A call cancelled before anyone answered is "Cancelled", not "Ended".
+  const neverConnected = state.status === 'calling' && !state.startedAt;
+  if (callId) realtime.emit('call:end', { callId, reason: neverConnected ? 'cancel' : 'hangup' });
+  finish(neverConnected ? 'cancelled' : 'ended', neverConnected ? OUTCOME_MESSAGES.cancelled : OUTCOME_MESSAGES.ended);
 }
 
 /** Accept a call that arrived on another tab? No — that tab answered. */
 export function handleAnsweredElsewhere(payload: { callId: string }): void {
   if (!state.callId || state.callId !== payload.callId) return;
   if (state.status !== 'incoming') return;
-  finish('Answered on another device.', { status: 'ended' });
+  finish('answered-elsewhere', OUTCOME_MESSAGES['answered-elsewhere']);
 }
 
 export function handleBusy(payload: { message?: string }): void {
-  finish(payload?.message || 'They are on another call.');
+  finish('busy', payload?.message || OUTCOME_MESSAGES.busy);
 }
 
 export async function handleOffer(payload: {
@@ -880,21 +1320,39 @@ export async function handleOffer(payload: {
 
 function applySignal(signal: CallSignal, from: CallParticipant): void {
   if (!current) return;
-  const participant = state.participants.find((p) => p.id === from.id) ?? from;
-  if (!state.participants.some((p) => p.id === from.id)) addParticipant(from);
+  const source = normalizeParticipant(from);
+  const participant = state.participants.find((p) => p.id === source.id) ?? source;
+  const name = participant.displayName || 'The other person';
+  if (!state.participants.some((p) => p.id === source.id)) addParticipant(source);
   const patchParticipant = (patch: Partial<CallParticipant>) =>
     setState({
-      participants: state.participants.map((p) => (p.id === from.id ? { ...p, ...patch } : p)),
+      participants: state.participants.map((p) => (p.id === source.id ? { ...p, ...patch } : p)),
     });
   if (signal.kind === 'muted') {
     patchParticipant({ muted: Boolean(signal.muted) });
-    if (signal.muted) setState({ notice: `${participant.displayName || 'The other person'} is muted.` });
+    if (signal.muted) setState({ notice: `${name} is muted.` });
   } else if (signal.kind === 'camera') {
-    patchParticipant({ cameraOn: Boolean(signal.cameraOn) });
-    if (!signal.cameraOn) setState({ notice: `${participant.displayName || 'The other person'} turned their camera off.` });
+    const cameraOn = signal.cameraOn !== false;
+    patchParticipant({ cameraOn, videoOff: !cameraOn });
+    if (!cameraOn) setState({ notice: `${name} turned their camera off.` });
   } else if (signal.kind === 'screen') {
-    patchParticipant({ screenSharing: Boolean(signal.screenSharing) });
-    if (signal.screenSharing) setState({ notice: `${participant.displayName || 'The other person'} is sharing their screen.` });
+    const screenSharing = signal.screenSharing === true;
+    patchParticipant({
+      screenSharing,
+      sharingKind: signal.sharingKind ?? 'screen',
+      hasSystemAudio: signal.hasSystemAudio === true,
+    });
+    if (screenSharing) {
+      setState({
+        notice: `${name} is sharing their screen${signal.hasSystemAudio ? ' with system audio' : ''}.`,
+      });
+    }
+  } else if (signal.kind === 'incoming-video-off') {
+    const off = signal.off === true;
+    patchParticipant({ incomingVideoOff: off });
+    // They stopped receiving our video: really stop sending them frames.
+    setPeerVideoDelivery(source.id, !off);
+    setState({ notice: off ? `${name} turned off incoming video.` : `${name} turned incoming video back on.` });
   } else if (signal.kind === 'video-request') {
     setState({ videoRequest: { ...participant } });
   } else if (signal.kind === 'video-accepted') {
@@ -903,6 +1361,32 @@ function applySignal(signal: CallSignal, from: CallParticipant): void {
   } else if (signal.kind === 'video-declined') {
     setState({ videoUpgradePending: false, notice: 'The other person declined video.' });
   }
+}
+
+/** The server relays per-participant media state (call:participant-state). */
+export function handleParticipantState(payload: { callId?: string; participant: CallParticipant }): void {
+  if (!current) return;
+  if (payload.callId && payload.callId !== current.callId) return;
+  if (!payload.participant?.id) return;
+  const incoming = payload.participant;
+  const patch: Partial<CallParticipant> = {
+    muted: incoming.muted === true,
+    cameraOn: incoming.cameraOn !== false,
+    screenSharing: incoming.screenSharing === true,
+    sharingKind: incoming.sharingKind,
+    hasSystemAudio: incoming.hasSystemAudio === true,
+    incomingVideoOff: incoming.incomingVideoOff === true,
+  };
+  const existing = state.participants.find((p) => p.id === incoming.id);
+  if (!existing) {
+    addParticipant(normalizeParticipant(incoming));
+    if (patch.incomingVideoOff) setPeerVideoDelivery(incoming.id, false);
+    return;
+  }
+  setState({
+    participants: state.participants.map((p) => (p.id === incoming.id ? { ...p, ...patch } : p)),
+  });
+  if (patch.incomingVideoOff) setPeerVideoDelivery(incoming.id, false);
 }
 
 export async function handleAnswer(payload: {
@@ -918,19 +1402,36 @@ export async function handleAnswer(payload: {
       await handle.pc.addIceCandidate(candidate).catch(() => undefined);
     }
   } catch {
-    finish('Could not connect the call.');
+    failCall('Failed to connect — the media negotiation failed.');
   }
+}
+
+/** In-call state signal relayed by the server (call:signal). */
+export function handleCallSignal(payload: {
+  callId: string;
+  from?: CallParticipant;
+  signal?: CallSignal | { kind: string };
+}): void {
+  if (!current || current.callId !== payload.callId || !payload.from?.id || !payload.signal) return;
+  applySignal(payload.signal as CallSignal, payload.from);
+}
+
+/** ICE/DTLS failure is a failed call, never "Call ended". */
+function failCall(message: string): void {
+  const callId = state.callId;
+  if (callId) realtime.emit('call:failed', { callId, reason: 'ice' });
+  finish('failed', message);
 }
 
 export async function handleIce(payload: {
   callId: string;
   from?: CallParticipant;
   candidate: unknown;
-  signal?: CallSignal;
+  signal?: CallSignal | { kind: string };
 }): Promise<void> {
   if (!current || current.callId !== payload.callId) return;
   if (payload.signal && payload.from?.id) {
-    applySignal(payload.signal, payload.from);
+    applySignal(payload.signal as CallSignal, payload.from);
     return;
   }
   if (!payload.candidate) return;
@@ -948,17 +1449,42 @@ export async function handleIce(payload: {
   }
 }
 
-export function handleEnded(reason: string): void {
-  finish(reason === 'declined' ? 'Call declined' : reason === 'missed' ? 'Missed call' : 'Call ended');
+export function handleEnded(payload: { reason?: string; status?: string; durationSeconds?: number }): void {
+  const reason = String(payload?.reason ?? 'ended');
+  const status = String(payload?.status ?? '');
+  const outcome: CallOutcome =
+    status === 'declined' || reason === 'declined'
+      ? 'declined'
+      : status === 'missed' || reason === 'missed'
+        ? 'missed'
+        : status === 'busy' || reason === 'busy'
+          ? 'busy'
+          : status === 'failed' || reason === 'failed'
+            ? 'failed'
+            : status === 'cancelled' || reason === 'cancelled' || reason === 'cancel'
+              ? 'cancelled'
+              : 'ended';
+  const extra: Partial<CallState> = {};
+  if (typeof payload?.durationSeconds === 'number' && payload.durationSeconds >= 0) {
+    extra.durationSeconds = payload.durationSeconds;
+  }
+  finish(outcome, OUTCOME_MESSAGES[outcome], extra);
 }
 
 export function handleUnavailable(payload?: { isGroup?: boolean }): void {
-  finish(payload?.isGroup ? 'Nobody in this group is online right now.' : 'The person is offline right now.');
+  finish(
+    'unavailable',
+    payload?.isGroup ? 'Nobody in this group is online right now.' : 'The person is offline right now.',
+  );
 }
 
-export function handleCallError(message: string, code?: string): void {
+export function handleCallError(
+  message: string,
+  code?: string,
+  extra: { capacity?: number; audioOnlyAvailable?: boolean } = {},
+): void {
   // Video call full? Offer the audio-only way in.
-  if (code === 'CALL_FULL' && state.video && state.callId && current) {
+  if (code === 'CALL_FULL' && state.video && state.callId && current && extra.audioOnlyAvailable !== false) {
     current.video = false;
     current.capacity = MAX_AUDIO_PARTICIPANTS;
     setState({
@@ -969,36 +1495,128 @@ export function handleCallError(message: string, code?: string): void {
       notice: `${message} You can join with audio only.`,
     });
     void (async () => {
-      const audioTrack = localStream?.getVideoTracks()[0];
-      if (audioTrack) await replaceLocalTrack('video', null);
+      if (localStream?.getVideoTracks()[0]) await replaceLocalTrack('video', null);
       realtime.emit('call:accept', { callId: current?.callId, audioOnly: true });
     })();
     return;
   }
-  finish(message);
+  if (code === 'CALL_GONE') {
+    finish('ended', message || 'This call has ended.');
+    return;
+  }
+  // Errors from "Add participant" keep the current call running: they are a
+  // notice, not the end of the call.
+  if (
+    code === 'CALL_PARTY_BUSY' ||
+    code === 'CALL_PARTY_OFFLINE' ||
+    code === 'CALL_INVALID' ||
+    (code === 'CALL_FORBIDDEN' && (state.status === 'active' || state.status === 'connecting'))
+  ) {
+    setState({ notice: message || 'That person cannot be added right now.' });
+    return;
+  }
+  if (code === 'CALL_BLOCKED') {
+    finish('failed', message || 'You cannot join this call.');
+    return;
+  }
+  finish('failed', message || OUTCOME_MESSAGES.failed);
 }
 
 /* --------------------------------------------------- in-call state signals */
 /**
- * The server relays call:ice only between participants of the same call, so a
- * signal rides along with an empty candidate (handled separately from ICE).
+ * In-call state signals go through the server's call:signal event, which
+ * validates the call membership and relays to the other participants (or only
+ * to toUserId when given). Late joiners get the tracked state in snapshots.
  */
 function emitSignal(payload: CallSignal): void {
   if (!current) return;
-  for (const peerId of peers.keys()) {
-    realtime.emit('call:ice', { callId: current.callId, toUserId: peerId, signal: payload });
+  realtime.emit('call:signal', { callId: current.callId, signal: payload });
+}
+
+function emitSignalTo(peerId: string, payload: CallSignal): void {
+  if (!current) return;
+  realtime.emit('call:signal', { callId: current.callId, toUserId: peerId, signal: payload });
+}
+
+/** Tell a newly connected peer our current media state before frames arrive. */
+function emitMySignalsTo(peerId: string): void {
+  if (!current) return;
+  emitSignalTo(peerId, { kind: 'muted', muted: state.muted });
+  if (state.video) emitSignalTo(peerId, { kind: 'camera', cameraOn: state.cameraOn });
+  if (state.screenSharing) {
+    emitSignalTo(peerId, {
+      kind: 'screen',
+      screenSharing: true,
+      sharingKind: 'screen',
+      hasSystemAudio: state.screenAudio,
+    });
   }
+  emitSignalTo(peerId, { kind: 'incoming-video-off', off: state.incomingVideoOff });
+}
+
+/**
+ * Start / stop sending our camera video to one peer. Used when that person
+ * turns incoming video off: no video frames leave us towards them, which is
+ * what actually saves their data.
+ */
+function setPeerVideoDelivery(peerId: string, enabled: boolean): void {
+  const handle = peers.get(peerId);
+  if (!handle) return;
+  const sender = handle.videoSender;
+  if (!sender) return;
+  const track = enabled ? (localStream?.getVideoTracks()[0] ?? null) : null;
+  void sender.replaceTrack(track).catch(() => undefined);
 }
 
 export function toggleLowBandwidth(): void {
+  toggleIncomingVideo();
+}
+
+/** Audio-only reception: stops receiving and sending video, audio still plays. */
+export function toggleIncomingVideo(): void {
+  const next = !state.incomingVideoOff;
+  for (const handle of peers.values()) {
+    for (const track of handle.stream.getVideoTracks()) track.enabled = !next;
+  }
   setState({
-    lowBandwidth: !state.lowBandwidth,
-    notice: state.lowBandwidth ? 'Incoming video is back on.' : 'Low-bandwidth mode: incoming video hidden.',
+    incomingVideoOff: next,
+    lowBandwidth: next,
+    notice: next
+      ? 'Incoming video is off — you can still hear everyone, and your camera keeps sending unless you turn it off.'
+      : 'Incoming video is back on.',
   });
+  emitSignal({ kind: 'incoming-video-off', off: next });
+  streamTick += 1;
+  setState({ streamTick });
+}
+
+/** True inside the Capacitor Android wrapper (screen sharing is not available). */
+export function isAndroidNative(): boolean {
+  const capacitor = (window as unknown as {
+    Capacitor?: { getPlatform?: () => string; isNativePlatform?: () => boolean };
+  }).Capacitor;
+  if (!capacitor) return false;
+  const platform = capacitor.getPlatform?.();
+  if (platform === 'android') return true;
+  return capacitor.isNativePlatform?.() === true && platform === 'android';
+}
+
+export function isElectronShell(): boolean {
+  return Boolean((window as unknown as { chatgramDesktop?: unknown }).chatgramDesktop);
 }
 
 export function isScreenSharingSupported(): boolean {
+  if (isAndroidNative()) return false;
   return typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getDisplayMedia);
+}
+
+/** Honest reason when screen sharing is not available on this platform. */
+export function screenShareUnavailableReason(): string | null {
+  if (isAndroidNative()) return 'Screen sharing is not supported in the Android app yet.';
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
+    return 'This browser does not support screen sharing.';
+  }
+  return null;
 }
 
 /** Ask the other person to switch this audio call to video. */
@@ -1027,9 +1645,10 @@ async function becomeVideo(): Promise<void> {
     const track = stream.getVideoTracks()[0];
     if (!track) return;
     await replaceLocalTrack('video', track);
-    setState({ video: true, cameraOn: true, audioOnly: false, videoUpgradePending: false, notice: 'Video is on.' });
+    setState({ video: true, cameraOn: true, screenSharing: false, audioOnly: false, videoUpgradePending: false, notice: 'Video is on.' });
     void refreshDevices();
     for (const handle of peers.values()) void sendOffer(handle);
+    emitSignal({ kind: 'camera', cameraOn: true });
   } catch {
     setState({ videoUpgradePending: false, notice: 'Could not turn the camera on.' });
   }
@@ -1038,43 +1657,148 @@ async function becomeVideo(): Promise<void> {
 /** Switch a video call to audio only (stops sending camera). */
 export async function switchToAudioOnly(): Promise<void> {
   if (!state.video) return;
-  await replaceLocalTrack('video', null);
   await stopScreenShareInternal();
-  setState({ audioOnly: true, cameraOn: false, video: false, notice: 'You switched to audio only.' });
-  emitSignal({ kind: 'screen', screenSharing: false });
+  await replaceLocalTrack('video', null);
+  setState({ audioOnly: true, cameraOn: false, video: false, notice: 'You switched to audio only. Others can still hear you.' });
+  for (const handle of peers.values()) void sendOffer(handle);
+  emitSignal({ kind: 'camera', cameraOn: false });
 }
 
+/* -------------------------------------------------------------- screen share */
+
+/** The shared-screen audio track (system audio), where the browser provides it. */
+let screenAudioTrack: MediaStreamTrack | null = null;
+
+async function requestDisplayStream(): Promise<MediaStream> {
+  const withAudio: DisplayMediaStreamOptions = {
+    video: { frameRate: { ideal: 15, max: 30 } },
+    audio: true,
+  };
+  try {
+    return await navigator.mediaDevices.getDisplayMedia(withAudio);
+  } catch (error) {
+    // Older Firefox/Safari reject `audio: true` outright — retry video-only.
+    const name = error instanceof Error ? error.name : '';
+    if (name !== 'NotAllowedError' && name !== 'AbortError') {
+      return navigator.mediaDevices.getDisplayMedia({ video: true });
+    }
+    throw error;
+  }
+}
+
+/** Replace the outgoing camera track with the screen, add system audio when available. */
 export async function toggleScreenShare(): Promise<void> {
   if (!current) return;
   if (state.screenSharing) {
     await stopScreenShareInternal();
     return;
   }
+  if (!isScreenSharingSupported()) {
+    setState({ notice: screenShareUnavailableReason() ?? 'Screen sharing is not available here.' });
+    return;
+  }
+  let display: MediaStream;
   try {
-    const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-    const track = display.getVideoTracks()[0];
-    if (!track) return;
-    await replaceLocalTrack('video', track);
-    track.onended = () => void stopScreenShareInternal();
-    setState({ screenSharing: true, video: true, cameraOn: true, audioOnly: false, notice: 'You are sharing your screen.' });
-    emitSignal({ kind: 'screen', screenSharing: true });
+    display = await requestDisplayStream();
   } catch {
     setState({ notice: 'Screen sharing was cancelled.' });
+    return;
   }
+  const videoTrack = display.getVideoTracks()[0];
+  if (!videoTrack) {
+    setState({ notice: 'No screen was selected.' });
+    return;
+  }
+  screenStream = display;
+  await replaceLocalTrack('video', videoTrack);
+  videoTrack.onended = () => void stopScreenShareInternal();
+
+  // Optional system audio: add it as an extra audio track to every peer.
+  const systemAudio = display.getAudioTracks()[0] ?? null;
+  if (systemAudio && localStream) {
+    screenAudioTrack = systemAudio;
+    localStream.addTrack(systemAudio);
+    for (const handle of peers.values()) {
+      try {
+        handle.pc.addTrack(systemAudio, localStream);
+        void sendOffer(handle);
+      } catch {
+        /* one peer refusing the extra track must not break sharing */
+      }
+    }
+  }
+
+  setState({
+    screenSharing: true,
+    screenAudio: Boolean(systemAudio),
+    video: true,
+    cameraOn: false,
+    audioOnly: false,
+    notice: systemAudio
+      ? 'You are sharing your screen with system audio.'
+      : 'You are sharing your screen.',
+  });
+  emitSignal({
+    kind: 'screen',
+    screenSharing: true,
+    sharingKind: 'screen',
+    hasSystemAudio: Boolean(systemAudio),
+  });
 }
 
 async function stopScreenShareInternal(): Promise<void> {
   if (!state.screenSharing) return;
-  setState({ screenSharing: false });
+  const hadSystemAudio = Boolean(screenAudioTrack);
+  setState({ screenSharing: false, screenAudio: false });
   emitSignal({ kind: 'screen', screenSharing: false });
+  stopTracks(screenStream);
+  screenStream = null;
+  if (screenAudioTrack && localStream) {
+    const track = screenAudioTrack;
+    screenAudioTrack = null;
+    for (const handle of peers.values()) {
+      const sender = handle.pc.getSenders().find((candidate) => candidate.track === track);
+      try {
+        if (sender) handle.pc.removeTrack(sender);
+        void sendOffer(handle);
+      } catch {
+        /* peer may be gone */
+      }
+    }
+    try {
+      localStream.removeTrack(track);
+      track.stop();
+    } catch {
+      /* already stopped */
+    }
+  }
+  // Bring the camera back after the share (the camera track was replaced).
   try {
     const camera = await navigator.mediaDevices.getUserMedia({ video: mediaConstraints(true).video });
     const track = camera.getVideoTracks()[0];
-    if (track) await replaceLocalTrack('video', track);
+    if (track) {
+      await replaceLocalTrack('video', track);
+      setState({ cameraOn: true, notice: hadSystemAudio ? 'You stopped sharing your screen.' : 'You stopped sharing your screen.' });
+    }
   } catch {
     await replaceLocalTrack('video', null);
-    setState({ cameraOn: false });
+    setState({ cameraOn: false, notice: 'You stopped sharing your screen. Your camera is off.' });
   }
+  for (const handle of peers.values()) void sendOffer(handle);
+  emitSignal({ kind: 'camera', cameraOn: state.cameraOn });
+}
+
+/** Add one contact to a 1:1 call: the server converts the room to a group room. */
+export function inviteParticipant(userId: string): void {
+  if (!current || !userId || userId === myUserId) return;
+  current.isGroup = true;
+  current.capacity = state.video ? MAX_VIDEO_PARTICIPANTS : MAX_AUDIO_PARTICIPANTS;
+  setState({
+    isGroup: true,
+    capacity: current.capacity,
+    notice: 'Inviting…',
+  });
+  realtime.emit('call:add-participant', { callId: current.callId, userId });
 }
 
 /** Flip between front and back cameras on phones (cycles video inputs). */
@@ -1116,18 +1840,26 @@ export async function toggleMute(): Promise<void> {
 
 export async function toggleCamera(): Promise<void> {
   if (!state.video) return;
+  if (state.screenSharing) {
+    setState({ notice: 'Stop sharing your screen before turning the camera on or off.' });
+    return;
+  }
   if (state.cameraOn) {
+    // Privacy: stopping the track releases the camera light, and the removed
+    // sender plus the signal means nobody keeps receiving our video.
     await replaceLocalTrack('video', null);
-    setState({ cameraOn: false });
+    setState({ cameraOn: false, notice: 'Camera off — others can still hear your audio.' });
     emitSignal({ kind: 'camera', cameraOn: false });
+    for (const handle of peers.values()) void sendOffer(handle);
     return;
   }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: mediaConstraints(true).video });
     const fresh = stream.getVideoTracks()[0];
     if (fresh) await replaceLocalTrack('video', fresh);
-    setState({ cameraOn: true });
+    setState({ cameraOn: true, notice: 'Camera on.' });
     emitSignal({ kind: 'camera', cameraOn: true });
+    for (const handle of peers.values()) void sendOffer(handle);
   } catch {
     setState({ notice: 'Could not turn the camera back on.' });
   }
@@ -1187,3 +1919,47 @@ export function handlePageHide(): void {
 export function isCallActive(): boolean {
   return state.status !== 'idle' && state.status !== 'ended';
 }
+
+/* -------------------------------------------------- dev-only verification hook */
+
+/**
+ * Tiny hook for scripts/verify-calls.js only. Vite defines import.meta.env.DEV
+ * as false in production builds, so this is stripped from the shipped bundle
+ * and cannot be used to fake call outcomes in production.
+ */
+const IS_DEV_BUILD = (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
+if (IS_DEV_BUILD && typeof window !== 'undefined') {
+  (window as unknown as { __chatgramCalls?: unknown }).__chatgramCalls = {
+    getState: () => getCallState(),
+    getPeerIds: () => getPeerIds(),
+    getLocalTracks: () =>
+      (localStream?.getTracks() ?? []).map((track) => ({ kind: track.kind, readyState: track.readyState })),
+    getPeerTracks: (peerId: string) =>
+      (peers.get(peerId)?.stream.getTracks() ?? []).map((track) => ({
+        kind: track.kind,
+        readyState: track.readyState,
+        enabled: track.enabled,
+      })),
+    /** Ask the server to end the current call as failed (real signalling path). */
+    simulateFailure: () => {
+      if (!state.callId) return false;
+      realtime.emit('call:failed', { callId: state.callId, reason: 'ice' });
+      return true;
+    },
+    /** Local fallback if the server does not support call:failed yet. */
+    forceFailed: (message = 'Failed to connect — the connection dropped.') => {
+      if (!current) return false;
+      failCall(message);
+      return true;
+    },
+    /** Force the declined outcome locally (used only as a fallback). */
+    forceDeclined: () => {
+      if (!current) return false;
+      finish('declined', OUTCOME_MESSAGES.declined);
+      return true;
+    },
+    isScreenSharingSupported: () => isScreenSharingSupported(),
+    toggleScreenShare: () => toggleScreenShare(),
+  };
+}
+

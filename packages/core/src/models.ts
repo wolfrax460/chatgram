@@ -7,7 +7,8 @@
  */
 
 // 'system' rows are created by the server for group events ("Alice left").
-export type MessageType = 'text' | 'image' | 'video' | 'audio' | 'file' | 'system';
+// 'call' rows are the persisted call cards inside a conversation.
+export type MessageType = 'text' | 'image' | 'video' | 'audio' | 'file' | 'system' | 'call';
 
 /** Delivery state from the current user's perspective. */
 export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
@@ -29,6 +30,45 @@ export interface User {
 export interface MessageReaction {
   userId: string;
   emoji: string;
+}
+
+/** One participant of a persisted call card. */
+export interface CallCardParticipant {
+  id: string;
+  displayName?: string;
+  avatarUrl?: string | null;
+  audioOnly?: boolean;
+  muted?: boolean;
+  cameraOn?: boolean;
+  screenSharing?: boolean;
+}
+
+/**
+ * The persisted metadata of a group/1:1 call card message (`type: 'call'`).
+ * The server updates it live through the `call:card-updated` event.
+ */
+export interface CallCardInfo {
+  callId: string;
+  chatId: string;
+  video: boolean;
+  mode: 'voice' | 'video';
+  isGroup: boolean;
+  title: string;
+  state: 'ringing' | 'active' | 'ended';
+  status: 'ringing' | 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'cancelled';
+  startedBy: { id: string; displayName: string; avatarUrl?: string | null } | null;
+  startedAt: string | null;
+  answeredAt: string | null;
+  endedAt: string | null;
+  durationSeconds: number;
+  participantCount: number;
+  participants: CallCardParticipant[];
+  /** Total room cap (12 for both voice and video rooms). */
+  capacity: number;
+  /** Camera slots (6 for a video room, 0 for a voice room). */
+  videoCapacity?: number;
+  cameraCount?: number;
+  endReason: string | null;
 }
 
 export interface Message {
@@ -62,6 +102,8 @@ export interface Message {
   private?: boolean;
   /** For a private AI answer/notice: the asker's mention message it answers. */
   aiReplyTo?: string;
+  /** Persisted call-card metadata (only on `type: 'call'` messages). */
+  call?: CallCardInfo;
 }
 
 export interface Chat {
@@ -148,6 +190,61 @@ export function userFromJson(json: unknown): User {
   };
 }
 
+export function callCardFromJson(raw: unknown): CallCardInfo | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const j = raw as Record<string, unknown>;
+  const state = j.state === 'ringing' || j.state === 'ended' ? j.state : 'active';
+  const statusRaw = String(j.status ?? 'ringing');
+  const status =
+    statusRaw === 'completed' ||
+    statusRaw === 'missed' ||
+    statusRaw === 'declined' ||
+    statusRaw === 'busy' ||
+    statusRaw === 'failed' ||
+    statusRaw === 'cancelled'
+      ? statusRaw
+      : 'ringing';
+  const startedByRaw = (j.startedBy ?? null) as Record<string, unknown> | null;
+  const mode = j.mode === 'video' || j.video === true ? 'video' : 'voice';
+  return {
+    callId: String(j.callId ?? ''),
+    chatId: idOf(j.chatId),
+    video: j.video === true || mode === 'video',
+    mode,
+    isGroup: j.isGroup === true,
+    title: String(j.title ?? ''),
+    state,
+    status,
+    startedBy: startedByRaw
+      ? {
+          id: idOf(startedByRaw),
+          displayName: String(startedByRaw.displayName ?? ''),
+          avatarUrl: startedByRaw.avatarUrl ? String(startedByRaw.avatarUrl) : null,
+        }
+      : null,
+    startedAt: j.startedAt ? String(j.startedAt) : null,
+    answeredAt: j.answeredAt ? String(j.answeredAt) : null,
+    endedAt: j.endedAt ? String(j.endedAt) : null,
+    durationSeconds: typeof j.durationSeconds === 'number' ? j.durationSeconds : 0,
+    participantCount: typeof j.participantCount === 'number' ? j.participantCount : 0,
+    participants: Array.isArray(j.participants)
+      ? (j.participants as Record<string, unknown>[]).map((participant) => ({
+          id: idOf(participant),
+          displayName: participant.displayName ? String(participant.displayName) : undefined,
+          avatarUrl: participant.avatarUrl ? String(participant.avatarUrl) : null,
+          audioOnly: participant.audioOnly === true,
+          muted: participant.muted === true,
+          cameraOn: participant.cameraOn !== false,
+          screenSharing: participant.sharingKind ? true : participant.screenSharing === true,
+        }))
+      : [],
+    capacity: typeof j.capacity === 'number' ? j.capacity : 0,
+    videoCapacity: typeof j.videoCapacity === 'number' ? j.videoCapacity : undefined,
+    cameraCount: typeof j.cameraCount === 'number' ? j.cameraCount : undefined,
+    endReason: j.endReason ? String(j.endReason) : null,
+  };
+}
+
 export function messageFromJson(json: unknown): Message {
   const j = (json ?? {}) as Record<string, unknown>;
   const rawSender = j.senderId;
@@ -181,6 +278,7 @@ export function messageFromJson(json: unknown): Message {
     visibleTo: asStringArray(j.visibleTo),
     private: j.private === true || asStringArray(j.visibleTo).length > 0,
     aiReplyTo: j.aiReplyTo ? idOf(j.aiReplyTo) : undefined,
+    call: j.call ? callCardFromJson(j.call) : undefined,
   };
 }
 
@@ -289,6 +387,8 @@ export function messagePreview(message?: Message, fallback = 'Tap to start chatt
       return '🎤 Voice message';
     case 'file':
       return '📄 Document';
+    case 'call':
+      return '📞 Call';
     default:
       return fallback;
   }

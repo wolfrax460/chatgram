@@ -7,7 +7,7 @@
  * Security: contextIsolation on, nodeIntegration off, sandbox on. The renderer
  * gets a tiny, explicit API from preload.js and nothing else.
  */
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, Notification, session } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, Notification, session, desktopCapturer, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -326,8 +326,69 @@ if (!gotLock) {
     });
   }
 
+  /**
+   * Screen sharing for calls (`navigator.mediaDevices.getDisplayMedia`).
+   *
+   * Electron does not show Chromium's picker by default: without a handler the
+   * call fails with NotAllowedError. We list screens and windows from
+   * desktopCapturer in a small native dialog, then hand the chosen source back
+   * to the renderer. `audio: 'loopback'` adds the system audio track on Windows
+   * so the web client can share sound with the screen.
+   */
+  function setupDisplayMedia() {
+    try {
+      session.defaultSession.setDisplayMediaRequestHandler(
+        async (_request, callback) => {
+          try {
+            const sources = await desktopCapturer.getSources({
+              types: ['screen', 'window'],
+              thumbnailSize: { width: 0, height: 0 },
+              fetchWindowIcons: false,
+            });
+            const screens = sources.filter((source) => source.id.startsWith('screen'));
+            const windows = sources.filter((source) => !source.id.startsWith('screen'));
+            const ordered = [...screens, ...windows].slice(0, 9);
+            if (ordered.length === 0) {
+              callback({});
+              return;
+            }
+            const buttons = [...ordered.map((source) => source.name || 'Source'), 'Cancel'];
+            const options = {
+              type: 'question',
+              title: 'Share your screen',
+              message: 'What do you want to share in this call?',
+              detail: 'Everyone in the call sees the screen or window you pick. Sharing your whole screen shares everything on it.',
+              buttons,
+              defaultId: 0,
+              cancelId: buttons.length - 1,
+              noLink: true,
+            };
+            const result = mainWindow
+              ? await dialog.showMessageBox(mainWindow, options)
+              : await dialog.showMessageBox(options);
+            const index = result.response;
+            if (index < 0 || index >= ordered.length) {
+              callback({});
+              return;
+            }
+            callback({ video: ordered[index], audio: 'loopback' });
+          } catch (error) {
+            console.warn('Screen share picker failed', error?.message);
+            callback({});
+          }
+        },
+        { useSystemPicker: true },
+      );
+    } catch (error) {
+      // Older Electron builds do not know the handler; getDisplayMedia then
+      // reports NotAllowedError and the web client shows its honest message.
+      console.warn('Screen sharing handler unavailable', error?.message);
+    }
+  }
+
   app.whenReady().then(() => {
     configurePermissions();
+    setupDisplayMedia();
     createWindow();
     createTray();
     setupUpdater();

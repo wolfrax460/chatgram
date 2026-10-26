@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  CameraOff, ChevronDown, Grid2x2, Maximize2, MessageSquare, Mic, MicOff, Minimize2,
+  Camera, CameraOff, ChevronDown, Grid2x2, Maximize2, MessageSquare, Mic, MicOff, Minimize2,
   PhoneOff, PictureInPicture2, Pin, PinOff, ScreenShare, Settings2, Signal, SignalLow,
   SignalMedium, SwitchCamera, UserPlus, Video, VideoOff, Volume2, VolumeX, X, Users,
 } from 'lucide-react';
@@ -13,17 +13,23 @@ import {
   getLocalStream,
   getPeerStream,
   hangUp,
+  inviteParticipant,
+  isAndroidNative,
   isScreenSharingSupported,
+  outcomeLabel,
+  outcomeText,
+  retryCall,
   rejectCall,
   requestVideoUpgrade,
   respondVideoUpgrade,
+  screenShareUnavailableReason,
   setMinimised,
   setSpeaker,
   supportsSpeakerSelection,
   switchDevice,
   switchToAudioOnly,
   toggleCamera,
-  toggleLowBandwidth,
+  toggleIncomingVideo,
   toggleMute,
   toggleScreenShare,
   type CallParticipant,
@@ -46,14 +52,22 @@ function clockFor(startedAt: number | null): string {
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 }
 
+function formatDurationSeconds(totalSeconds: number): string {
+  const elapsed = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(elapsed / 3600);
+  const minutes = Math.floor((elapsed % 3600) / 60);
+  const seconds = elapsed % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
+}
+
 function statusText(call: CallState, active: boolean): string {
-  if (call.status === 'incoming') return call.title ? `${call.title} is calling…` : 'Incoming call…';
-  if (call.status === 'calling') return 'Calling…';
+  if (call.status === 'incoming') return call.isGroup ? 'Incoming group call' : call.title ? `${call.title} is calling…` : 'Incoming call…';
+  if (call.status === 'calling') return call.isGroup ? 'Calling the group…' : 'Calling…';
   if (call.status === 'connecting') return 'Connecting…';
   if (call.status === 'reconnecting') return 'Reconnecting…';
   if (call.status === 'active') return active ? `Connected · ${clockFor(call.startedAt)}` : 'Connecting…';
-  if (call.status === 'ended') return call.message || 'Call ended';
-  if (call.status === 'error') return call.message || 'Call failed';
+  if (call.status === 'ended' || call.status === 'error') return outcomeText(call);
   return '';
 }
 
@@ -177,7 +191,12 @@ function RemoteTile({
 }) {
   const video = useRef<HTMLVideoElement | null>(null);
   const stream = getPeerStream(participant.id);
-  const showVideo = videoEnabled && participant.cameraOn !== false && !participant.audioOnly;
+  const showVideo =
+    videoEnabled &&
+    participant.cameraOn !== false &&
+    !participant.audioOnly &&
+    participant.videoOff !== true;
+  const sharing = screenSharing || participant.screenSharing === true;
 
   useEffect(() => {
     const element = video.current;
@@ -214,7 +233,11 @@ function RemoteTile({
             </div>
           )}
           <span className="text-sm font-semibold">{participant.displayName ?? 'Chatgram user'}</span>
-          {participant.cameraOn === false ? (
+          {participant.incomingVideoOff ? (
+            <span className="inline-flex items-center gap-1 text-[11px] text-white/70" data-testid="remote-video-off-for-you">
+              <VolumeX className="h-3.5 w-3.5" /> Incoming video off for you
+            </span>
+          ) : participant.cameraOn === false || participant.videoOff ? (
             <span className="inline-flex items-center gap-1 text-[11px] text-white/70" data-testid="remote-camera-off">
               <CameraOff className="h-3.5 w-3.5" /> Camera off
             </span>
@@ -224,7 +247,7 @@ function RemoteTile({
       <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/70 to-transparent px-2.5 py-2">
         <span className="truncate text-xs font-medium">{participant.displayName ?? 'Chatgram user'}</span>
         {participant.muted ? <MicOff className="h-3.5 w-3.5 shrink-0 text-rose-300" aria-label="Muted" /> : null}
-        {screenSharing ? <ScreenShare className="h-3.5 w-3.5 shrink-0 text-emerald-300" aria-label="Sharing screen" /> : null}
+        {sharing ? <ScreenShare className="h-3.5 w-3.5 shrink-0 text-emerald-300" aria-label="Sharing screen" /> : null}
         <span className="flex-1" />
         <button
           type="button"
@@ -236,8 +259,11 @@ function RemoteTile({
           {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
         </button>
       </div>
-      {screenSharing ? (
-        <span className="absolute left-2 top-2 rounded-md bg-emerald-600/90 px-2 py-0.5 text-[10px] font-semibold">Sharing screen</span>
+      {sharing ? (
+        <span className="absolute left-2 top-2 rounded-md bg-emerald-600/90 px-2 py-0.5 text-[10px] font-semibold">
+          {participant.displayName ?? 'They'} is sharing their screen
+          {participant.hasSystemAudio ? ' · with audio' : ''}
+        </span>
       ) : null}
     </div>
   );
@@ -289,6 +315,9 @@ export function CallOverlay({ call }: { call: CallState }) {
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [messages, setMessages] = useState<{ id: string; senderId: string; content: string; sentAt: string }[]>([]);
   const [selfPos, setSelfPos] = useState<'br' | 'bl' | 'tr' | 'tl'>('br');
+  const [addParticipantOpen, setAddParticipantOpen] = useState(false);
+  const [participantSearch, setParticipantSearch] = useState('');
+  const [contacts, setContacts] = useState<{ id: string; displayName: string; avatarUrl: string | null }[]>([]);
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -299,7 +328,25 @@ export function CallOverlay({ call }: { call: CallState }) {
   const cap = call.video ? MAX_VIDEO_PARTICIPANTS : MAX_AUDIO_PARTICIPANTS;
   const participantIds = useMemo(() => call.participants.map((participant) => participant.id), [call.participants]);
   const speaking = useSpeaking(participantIds);
+  const android = isAndroidNative();
+  const screenShareReason = screenShareUnavailableReason();
+  const sharers = call.participants.filter((participant) => participant.screenSharing);
   useRingTone(call.status === 'calling' ? 'ringback' : call.status === 'incoming' ? 'incoming' : null);
+
+  // Contact picker for "Add participant" (turns a 1:1 call into a group room).
+  useEffect(() => {
+    if (!addParticipantOpen) return undefined;
+    let cancelled = false;
+    api
+      .callContacts()
+      .then((result) => {
+        if (!cancelled) setContacts(result.contacts ?? []);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [addParticipantOpen]);
 
   useEffect(() => {
     if (call.status !== 'active' && call.status !== 'reconnecting') return undefined;
@@ -344,6 +391,9 @@ export function CallOverlay({ call }: { call: CallState }) {
 
   const prominent = useMemo<CallParticipant | null>(() => {
     if (pinnedId) return call.participants.find((participant) => participant.id === pinnedId) ?? null;
+    // A shared screen is shown large by default: it is the main content.
+    const sharer = call.participants.find((participant) => participant.screenSharing);
+    if (sharer) return sharer;
     if (remoteCount === 1) return call.participants[0] ?? null;
     const loud = Object.entries(speaking).find(([, value]) => value);
     return call.participants.find((participant) => participant.id === loud?.[0]) ?? call.participants[0] ?? null;
@@ -371,6 +421,7 @@ export function CallOverlay({ call }: { call: CallState }) {
 
   if (call.status === 'incoming') {
     const caller = call.participants[0];
+    const others = call.participants.filter((participant) => participant.id !== caller?.id);
     return (
       <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center gap-6 bg-gradient-to-b from-ink-900 to-black p-6 text-white" role="dialog" aria-label="Incoming call" data-testid="call-incoming">
         <div className="relative">
@@ -382,17 +433,39 @@ export function CallOverlay({ call }: { call: CallState }) {
           )}
         </div>
         <div className="text-center">
-          <p className="text-sm text-white/70">{call.video ? 'Incoming video call' : 'Incoming audio call'}</p>
+          <p className="text-sm text-white/70" data-testid="incoming-call-kind">
+            {call.isGroup
+              ? `Incoming group ${call.video ? 'video' : 'voice'} call`
+              : call.video
+                ? 'Incoming video call'
+                : 'Incoming audio call'}
+          </p>
           <h2 className="mt-1 text-2xl font-bold">{call.title}</h2>
+          <p className="mt-1 text-[13px] text-white/70">
+            {call.isGroup
+              ? `${call.participants.length} ${call.participants.length === 1 ? 'person' : 'people'} on the call${
+                  call.ringCount > 1 ? ` · ${call.ringCount} invited` : ''
+                }`
+              : caller?.displayName || 'Chatgram user'}
+          </p>
+          {others.length > 0 ? (
+            <div className="mt-3 flex items-center justify-center gap-1.5" aria-hidden="true">
+              {others.slice(0, 4).map((participant) => (
+                <span key={participant.id} className="grid h-9 w-9 place-items-center overflow-hidden rounded-full bg-ink-700 text-[11px] font-bold">
+                  {participant.avatarUrl ? <img src={participant.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(participant.displayName)}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="mt-4 flex items-center gap-10">
           <button type="button" className="flex flex-col items-center gap-2" aria-label="Decline call" onClick={rejectCall}>
             <span className="grid h-16 w-16 place-items-center rounded-full bg-rose-600 hover:bg-rose-700"><PhoneOff className="h-7 w-7" /></span>
             <span className="text-xs">Decline</span>
           </button>
-          <button type="button" className="flex flex-col items-center gap-2" aria-label="Accept call" onClick={() => void acceptCall()}>
+          <button type="button" className="flex flex-col items-center gap-2" aria-label={call.isGroup ? 'Join call' : 'Accept call'} onClick={() => void acceptCall()}>
             <span className="grid h-16 w-16 place-items-center rounded-full bg-emerald-600 hover:bg-emerald-700"><Video className="h-7 w-7" /></span>
-            <span className="text-xs">Accept</span>
+            <span className="text-xs">{call.isGroup ? 'Join' : 'Accept'}</span>
           </button>
         </div>
       </div>
@@ -400,11 +473,28 @@ export function CallOverlay({ call }: { call: CallState }) {
   }
 
   if (call.status === 'ended' || call.status === 'error') {
+    const title = outcomeLabel(call.outcome);
+    const detail =
+      call.outcome === 'ended' && call.durationSeconds > 0
+        ? `Duration ${formatDurationSeconds(call.durationSeconds)}`
+        : call.message || title;
     return (
-      <div className="fixed inset-0 z-[70] grid place-items-center bg-black/70 p-6 text-white" role="dialog" aria-label="Call ended">
-        <div className="w-full max-w-sm rounded-2xl bg-ink-900 p-6 text-center shadow-2xl">
-          <p className="text-lg font-bold" data-testid="call-ended-message">{call.message || 'Call ended'}</p>
-          <button type="button" className="btn-primary mt-4" onClick={dismissCall}>Close</button>
+      <div className="fixed inset-0 z-[70] grid place-items-center bg-black/70 p-6 text-white" role="dialog" aria-label={title}>
+        <div className="w-full max-w-sm rounded-2xl bg-ink-900 p-6 text-center shadow-2xl" data-testid="call-ended">
+          <p className="text-lg font-bold" data-testid="call-ended-message">{title}</p>
+          <p className="mt-1 text-[13px] text-white/70" data-testid="call-ended-detail">
+            {detail}
+          </p>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            {call.canRetry && call.outcome !== 'ended' ? (
+              <button type="button" className="btn-primary" onClick={retryCall} data-testid="call-retry">
+                Retry
+              </button>
+            ) : null}
+            <button type="button" className={call.canRetry && call.outcome !== 'ended' ? 'btn-ghost' : 'btn-primary'} onClick={dismissCall}>
+              Close
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -479,9 +569,21 @@ export function CallOverlay({ call }: { call: CallState }) {
               <p className="mt-1 text-white/70">Status: {qualityLabel(call.quality)}</p>
               <p className="text-white/70">Latency: {call.stats.latencyMs !== null ? `${call.stats.latencyMs} ms` : 'measuring…'}</p>
               <p className="text-white/70">Packet loss: {call.stats.packetLoss !== null ? `${call.stats.packetLoss}%` : 'measuring…'}</p>
-              <button type="button" className="mt-2 w-full rounded-lg bg-white/10 px-2 py-1.5 font-semibold hover:bg-white/20" onClick={toggleLowBandwidth}>
-                {call.lowBandwidth ? 'Turn incoming video back on' : 'Low-bandwidth mode (hide incoming video)'}
+              <button
+                type="button"
+                className="mt-2 w-full rounded-lg bg-white/10 px-2 py-1.5 font-semibold hover:bg-white/20"
+                onClick={toggleIncomingVideo}
+                aria-pressed={call.incomingVideoOff}
+                data-testid="incoming-video-toggle"
+              >
+                {call.incomingVideoOff ? 'Turn incoming video back on' : 'Turn off incoming video (saves data)'}
               </button>
+              {call.incomingVideoOff ? (
+                <p className="mt-1 text-[11px] text-white/60">Audio still plays. Others can still hear you.</p>
+              ) : null}
+              {android && screenShareReason ? (
+                <p className="mt-2 rounded-lg bg-white/5 px-2 py-1.5 text-[11px] text-white/60">{screenShareReason}</p>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -503,10 +605,27 @@ export function CallOverlay({ call }: { call: CallState }) {
         ) : null}
 
         {call.screenSharing ? (
-          <div className="absolute inset-x-4 top-4 z-20 flex items-center gap-2 rounded-xl bg-emerald-600/90 px-3 py-2 text-[12.5px] font-semibold" data-testid="sharing-bar">
-            <ScreenShare className="h-4 w-4" /> You are sharing your screen
+          <div className="absolute inset-x-4 top-4 z-20 flex flex-wrap items-center gap-2 rounded-xl bg-emerald-600/90 px-3 py-2 text-[12.5px] font-semibold" data-testid="sharing-bar">
+            <ScreenShare className="h-4 w-4" />
+            <span>You are sharing your screen{call.screenAudio ? ' · with system audio' : ''}</span>
             <span className="flex-1" />
             <button type="button" className="rounded-full bg-black/20 px-3 py-1 text-[11.5px] hover:bg-black/30" onClick={() => void toggleScreenShare()}>Stop sharing</button>
+          </div>
+        ) : null}
+
+        {sharers.length > 0 && !call.screenSharing ? (
+          <div className="absolute inset-x-4 top-4 z-20 flex items-center gap-2 rounded-xl bg-emerald-600/85 px-3 py-2 text-[12.5px] font-semibold" data-testid="remote-sharing-bar">
+            <ScreenShare className="h-4 w-4" />
+            <span>
+              {sharers.map((participant) => participant.displayName || 'Someone').join(', ')} is sharing their screen
+              {sharers.some((participant) => participant.hasSystemAudio) ? ' with audio' : ''}
+            </span>
+          </div>
+        ) : null}
+
+        {call.incomingVideoOff ? (
+          <div className="absolute inset-x-4 bottom-2 z-20 rounded-xl bg-amber-500/20 px-3 py-1.5 text-center text-[12px] font-semibold text-amber-100" data-testid="incoming-video-note">
+            Incoming video is off — you can still hear everyone.
           </div>
         ) : null}
 
@@ -516,7 +635,14 @@ export function CallOverlay({ call }: { call: CallState }) {
               <div className="relative h-full min-h-0 flex-1">
                 {swapped ? (
                   <div className="relative flex h-full items-center justify-center overflow-hidden rounded-2xl bg-ink-800">
-                    <video ref={localVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${call.screenSharing ? '' : 'scale-x-[-1]'}`} aria-label="Your video" />
+                    {call.cameraOn || call.screenSharing ? (
+                      <video ref={localVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${call.screenSharing ? '' : 'scale-x-[-1]'}`} aria-label="Your video" />
+                    ) : (
+                      <div className="flex flex-col items-center gap-1.5 text-center">
+                        <CameraOff className="h-10 w-10 text-white/60" />
+                        <span className="text-[12px] text-white/70">Camera off · others can still hear you</span>
+                      </div>
+                    )}
                     <span className="absolute bottom-2 left-2 rounded-md bg-black/50 px-2 py-0.5 text-xs font-medium">You</span>
                   </div>
                 ) : mainParticipant ? (
@@ -524,7 +650,7 @@ export function CallOverlay({ call }: { call: CallState }) {
                     participant={mainParticipant}
                     speaking={Boolean(speaking[mainParticipant.id])}
                     pinned={pinnedId === mainParticipant.id}
-                    videoEnabled={!call.lowBandwidth}
+                    videoEnabled={!call.incomingVideoOff}
                     screenSharing={Boolean(mainParticipant.screenSharing)}
                     onPin={() => setPinnedId(pinnedId === mainParticipant.id ? null : mainParticipant.id)}
                     onRegisterVideo={(element) => { remoteVideoRef.current = element; }}
@@ -559,7 +685,13 @@ export function CallOverlay({ call }: { call: CallState }) {
                   title="Drag to a corner, tap to swap with the main view"
                   data-testid="self-view"
                 >
-                  <video ref={localVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${call.screenSharing ? '' : 'scale-x-[-1]'}`} aria-label="Your video" />
+                  {call.cameraOn || call.screenSharing ? (
+                    <video ref={localVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${call.screenSharing ? '' : 'scale-x-[-1]'}`} aria-label="Your video" />
+                  ) : (
+                    <div className="grid h-full w-full place-items-center bg-ink-800" data-testid="self-camera-off">
+                      <CameraOff className="h-6 w-6 text-white/60" aria-label="Your camera is off" />
+                    </div>
+                  )}
                   {call.muted ? <MicOff className="absolute right-1 top-1 h-3.5 w-3.5 text-rose-300" /> : null}
                 </div>
               </div>
@@ -571,14 +703,21 @@ export function CallOverlay({ call }: { call: CallState }) {
                     participant={participant}
                     speaking={Boolean(speaking[participant.id])}
                     pinned={pinnedId === participant.id}
-                    videoEnabled={!call.lowBandwidth}
+                    videoEnabled={!call.incomingVideoOff}
                     screenSharing={Boolean(participant.screenSharing)}
                     onPin={() => setPinnedId(pinnedId === participant.id ? null : participant.id)}
                     onRegisterVideo={() => undefined}
                   />
                 ))}
                 <div className="relative flex min-h-0 items-center justify-center overflow-hidden rounded-2xl bg-ink-800">
-                  <video ref={localVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${call.screenSharing ? '' : 'scale-x-[-1]'}`} aria-label="Your video" />
+                  {call.cameraOn || call.screenSharing ? (
+                    <video ref={localVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${call.screenSharing ? '' : 'scale-x-[-1]'}`} aria-label="Your video" />
+                  ) : (
+                    <div className="flex flex-col items-center gap-1.5 text-center" data-testid="self-camera-off-tile">
+                      <div className="grid h-16 w-16 place-items-center rounded-full bg-brand-600 text-xl font-bold">You</div>
+                      <span className="text-[11px] text-white/70">Camera off · others can still hear you</span>
+                    </div>
+                  )}
                   <span className="absolute bottom-2 left-2 rounded-md bg-black/50 px-2 py-0.5 text-xs font-medium">You</span>
                   {call.cameraOn === false ? <CameraOff className="absolute right-2 top-2 h-4 w-4" /> : null}
                 </div>
@@ -720,9 +859,18 @@ export function CallOverlay({ call }: { call: CallState }) {
             <ControlButton label={call.cameraOn ? 'Camera off' : 'Camera on'} hint="V" active={call.cameraOn === false} onClick={() => void toggleCamera()}>
               {call.cameraOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
             </ControlButton>
-            <ControlButton label={call.screenSharing ? 'Stop sharing' : 'Share screen'} hint="S" active={call.screenSharing} disabled={!isScreenSharingSupported()} onClick={() => void toggleScreenShare()}>
-              <ScreenShare className="h-5 w-5" />
-            </ControlButton>
+            {!android ? (
+              <ControlButton
+                label={call.screenSharing ? 'Stop sharing' : 'Share screen'}
+                hint="S"
+                active={call.screenSharing}
+                disabled={!isScreenSharingSupported()}
+                title={screenShareReason ?? undefined}
+                onClick={() => void toggleScreenShare()}
+              >
+                <ScreenShare className="h-5 w-5" />
+              </ControlButton>
+            ) : null}
             <ControlButton label={layout === 'speaker' ? 'Gallery view' : 'Speaker view'} onClick={() => setLayout(layout === 'speaker' ? 'gallery' : 'speaker')}>
               {layout === 'speaker' ? <Grid2x2 className="h-5 w-5" /> : <Users className="h-5 w-5" />}
             </ControlButton>
@@ -749,7 +897,24 @@ export function CallOverlay({ call }: { call: CallState }) {
           </>
         )}
 
-        <ControlButton label="Add participant" disabled title="Start a group call from the group chat to include more people" onClick={() => undefined}>
+        <ControlButton
+          label={call.incomingVideoOff ? 'Turn incoming video on' : 'Turn off incoming video'}
+          active={call.incomingVideoOff}
+          onClick={toggleIncomingVideo}
+        >
+          {call.incomingVideoOff ? <CameraOff className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
+        </ControlButton>
+
+        <ControlButton
+          label="Add participant"
+          disabled={call.isGroup}
+          title={
+            call.isGroup
+              ? 'Everyone in this group can join from the group chat'
+              : 'Add someone to this call and turn it into a group call'
+          }
+          onClick={() => setAddParticipantOpen(true)}
+        >
           <UserPlus className="h-5 w-5" />
         </ControlButton>
         <ControlButton label={participantsOpen ? 'Hide participants' : 'Participants'} active={participantsOpen} onClick={() => setParticipantsOpen((value) => !value)}>
@@ -763,6 +928,74 @@ export function CallOverlay({ call }: { call: CallState }) {
           <PhoneOff className="h-6 w-6" />
         </button>
       </div>
+
+      {call.cameraOn === false && call.video && !call.screenSharing ? (
+        <p className="relative z-10 -mt-1 pb-2 text-center text-[11.5px] text-white/65" data-testid="camera-off-note">
+          Camera off — others can still hear your audio.
+        </p>
+      ) : null}
+      {android && screenShareReason ? (
+        <p className="relative z-10 -mt-1 pb-2 text-center text-[11.5px] text-white/60" data-testid="screen-share-unsupported-note">
+          {screenShareReason}
+        </p>
+      ) : null}
+
+      {addParticipantOpen ? (
+        <div className="absolute inset-0 z-40 grid place-items-center bg-black/60 p-4" onClick={() => setAddParticipantOpen(false)}>
+          <div
+            className="flex max-h-[70vh] w-full max-w-sm flex-col overflow-hidden rounded-2xl bg-ink-800 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-label="Add a participant to this call"
+            data-testid="add-participant"
+          >
+            <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
+              <UserPlus className="h-4 w-4" />
+              <p className="flex-1 text-sm font-semibold">Add participant</p>
+              <button type="button" className="rounded p-1 hover:bg-white/10" aria-label="Close add participant" onClick={() => setAddParticipantOpen(false)}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="px-4 pt-2 text-[11.5px] text-white/60">
+              This 1:1 call becomes a group call and the person you pick is rung.
+            </p>
+            <div className="p-3">
+              <input
+                className="w-full rounded-lg bg-white/10 px-3 py-2 text-[13px] text-white placeholder:text-white/40 focus:outline-none"
+                placeholder="Search contacts"
+                value={participantSearch}
+                onChange={(event) => setParticipantSearch(event.target.value)}
+                aria-label="Search contacts to add"
+              />
+            </div>
+            <div className="max-h-64 flex-1 overflow-y-auto pb-2">
+              {contacts.filter((contact) => contact.id !== call.participants[0]?.id && contact.displayName.toLowerCase().includes(participantSearch.trim().toLowerCase())).length === 0 ? (
+                <p className="px-4 py-3 text-[12.5px] text-white/60">No contacts found.</p>
+              ) : (
+                contacts
+                  .filter((contact) => contact.id !== call.participants[0]?.id && contact.displayName.toLowerCase().includes(participantSearch.trim().toLowerCase()))
+                  .map((contact) => (
+                    <button
+                      key={contact.id}
+                      type="button"
+                      className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-white/10"
+                      onClick={() => {
+                        inviteParticipant(contact.id);
+                        setAddParticipantOpen(false);
+                        setParticipantSearch('');
+                      }}
+                    >
+                      <span className="grid h-8 w-8 place-items-center overflow-hidden rounded-full bg-ink-700 text-[11px] font-bold">
+                        {contact.avatarUrl ? <img src={contact.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(contact.displayName)}
+                      </span>
+                      <span className="truncate text-[13px]">{contact.displayName}</span>
+                    </button>
+                  ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

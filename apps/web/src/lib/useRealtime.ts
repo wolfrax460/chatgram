@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePrefs, useRealtime, useSession, type Message } from '@chatgram/core';
+import { callCardFromJson } from '@chatgram/core';
 import { playMessageSound, showNotification } from './notify';
 import { api, realtime, SOCKET_URL } from './api';
 import {
@@ -8,15 +9,20 @@ import {
   handleAnsweredElsewhere,
   handleBusy,
   handleCallError,
+  handleCallSignal,
   handleEnded,
   handleIce,
   handleIncoming,
   handleJoined,
   handleOffer,
   handleParticipantDeclined,
+  handleParticipantInvited,
   handleParticipantJoined,
   handleParticipantLeft,
+  handleParticipantState,
+  handleRoom,
   handleUnavailable,
+  seedCallRooms,
 } from './calls';
 
 /**
@@ -52,6 +58,12 @@ export function useRealtimeBridge(): void {
           // Re-sync presence snapshots after a reconnect or a cold start.
           void queryClient.invalidateQueries({ queryKey: ['chats'] });
           void queryClient.invalidateQueries({ queryKey: ['contacts'] });
+          // Seed live call banners: the server broadcasts rooms on authenticate,
+          // the REST snapshot covers a reconnect that missed that broadcast.
+          void api
+            .callState()
+            .then((result) => seedCallRooms(result.calls ?? []))
+            .catch(() => undefined);
         },
         onDisconnected: () => {
           // Presence is unknown while we are offline: drop every cached value
@@ -82,8 +94,9 @@ export function useRealtimeBridge(): void {
             void queryClient.invalidateQueries({ queryKey: ['messages', message.chatId] });
           }
           // Notify only when the window is not in the foreground, so we never
-          // interrupt someone reading the conversation.
-          if (message.senderId !== userId) {
+          // interrupt someone reading the conversation. A call card never makes
+          // a sound or raises a notification: the ring/call UI is the alert.
+          if (message.senderId !== userId && message.type !== 'call') {
             const focused = document.visibilityState === 'visible' && document.hasFocus();
             if (!focused) {
               if (sounds) playMessageSound();
@@ -187,14 +200,28 @@ export function useRealtimeBridge(): void {
         onCallParticipantJoined: (payload) => handleParticipantJoined(payload),
         onCallParticipantLeft: (payload) => handleParticipantLeft(payload),
         onCallParticipantDeclined: (payload) => handleParticipantDeclined(payload),
+        onCallParticipantInvited: (payload) => handleParticipantInvited(payload),
+        onCallParticipantState: (payload) => handleParticipantState(payload),
+        onCallSignal: (payload) => handleCallSignal(payload),
+        onCallRoom: (room) => handleRoom(room),
+        onCallCardUpdated: ({ chatId, messageId, call }) => {
+          const next = callCardFromJson(call);
+          // Patch the persisted call card message in place (never refetch).
+          queryClient.setQueryData<Message[]>(['messages', chatId], (prev) =>
+            (prev ?? []).map((message) =>
+              message.id === messageId ? { ...message, call: next ?? message.call } : message,
+            ),
+          );
+          void queryClient.invalidateQueries({ queryKey: ['chats'] });
+        },
         onCallOffer: (payload) => void handleOffer(payload),
         onCallAnswer: (payload) => void handleAnswer(payload),
         onCallIce: (payload) => void handleIce(payload),
-        onCallEnded: (payload) => handleEnded(payload.reason),
+        onCallEnded: (payload) => handleEnded(payload),
         onCallUnavailable: (payload) => handleUnavailable(payload),
         onCallBusy: (payload) => handleBusy(payload),
         onCallAnsweredElsewhere: (payload) => handleAnsweredElsewhere(payload),
-        onCallError: (payload) => handleCallError(payload.message, payload.code),
+        onCallError: (payload) => handleCallError(payload.message, payload.code, payload),
 
         onUserUpdated: (updated) => {
           // The signed-in user may have changed their own profile elsewhere.

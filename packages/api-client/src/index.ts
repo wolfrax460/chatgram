@@ -43,18 +43,51 @@ export interface AuthTokens {
 /** One entry in the Calls tab. */
 export interface CallHistoryItem {
   id: string;
+  /** The live-call id (callId) when the server recorded one. */
+  callId?: string | null;
   chatId: string | null;
   type: 'voice' | 'video';
   isGroup: boolean;
   title: string;
   direction: 'incoming' | 'outgoing';
-  status: 'completed' | 'missed' | 'declined' | 'cancelled';
+  status: 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'cancelled';
   startedAt: string;
   answeredAt: string | null;
   endedAt: string | null;
   durationSeconds: number;
+  /** Everyone who was on the call (or rung, for a missed call). */
+  participantCount?: number;
+  /** Machine-readable ending reason from the server. */
+  endReason?: string | null;
   caller: { id: string; displayName: string; avatarUrl: string | null } | null;
   participants: { id: string; displayName: string; avatarUrl: string | null }[];
+}
+
+/** A live call room snapshot (mirrors the server call:room event). */
+export interface CallRoomSnapshot {
+  chatId: string;
+  callId: string | null;
+  state: 'ringing' | 'active' | 'ended';
+  status: 'ringing' | 'completed' | 'missed' | 'declined' | 'busy' | 'failed' | 'cancelled';
+  video: boolean;
+  mode: 'voice' | 'video';
+  isGroup: boolean;
+  title: string;
+  startedBy: { id: string; displayName: string; avatarUrl?: string | null } | null;
+  startedAt: string | number | null;
+  answeredAt: string | number | null;
+  endedAt: string | number | null;
+  durationSeconds: number;
+  participants: { id: string; displayName?: string; avatarUrl?: string | null }[];
+  participantCount: number;
+  capacity: number;
+  /** Camera slots (6 for a video room, 0 for a voice room). */
+  videoCapacity?: number;
+  cameraCount?: number;
+  inviteeCount?: number;
+  cardMessageId: string | null;
+  endReason: string | null;
+  joinable: boolean;
 }
 
 /** One message in a help-widget conversation. */
@@ -506,6 +539,14 @@ export class ApiClient {
   callHistory(before?: string) {
     const query = before ? `?before=${encodeURIComponent(before)}` : '';
     return this.request<{ calls: CallHistoryItem[]; nextBefore: string | null }>(`/api/calls${query}`);
+  }
+
+  /** Live call rooms: one chat, or every live room in my chats. */
+  callState(chatId?: string) {
+    const query = chatId ? `?chatId=${encodeURIComponent(chatId)}` : '';
+    return this.request<{ call?: CallRoomSnapshot | null; calls?: CallRoomSnapshot[] }>(
+      `/api/calls/state${query}`,
+    );
   }
 
   callMissedCount() {

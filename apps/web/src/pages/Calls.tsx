@@ -12,6 +12,15 @@ import { READ_ONLY_CALL_HINT } from '../lib/readOnly';
 import { avatarGradient, formatTime, initialsFor, type TimeFormat } from '../lib/ui';
 import { usePrefs } from '@chatgram/core';
 
+function statusLabel(call: CallHistoryItem): string {
+  if (call.status === 'failed') return 'Failed to connect';
+  if (call.status === 'busy') return 'Busy';
+  if (call.status === 'cancelled') return 'Cancelled';
+  if (call.status === 'declined') return 'Declined';
+  if (call.status === 'missed') return 'Missed';
+  return 'Ended';
+}
+
 type PickerMode = null | 'single' | 'group';
 
 function durationLabel(seconds: number): string {
@@ -25,7 +34,9 @@ function statusLine(call: CallHistoryItem, timeFormat: TimeFormat): string {
   const when = formatTime(call.startedAt, timeFormat);
   if (call.status === 'missed') return `Missed · ${when}`;
   if (call.status === 'declined') return `Declined · ${when}`;
-  if (call.status === 'cancelled') return `No answer · ${when}`;
+  if (call.status === 'busy') return `Busy · ${when}`;
+  if (call.status === 'failed') return `Failed to connect · ${when}`;
+  if (call.status === 'cancelled') return `Cancelled · ${when}`;
   return `${when}${call.durationSeconds ? ` · ${durationLabel(call.durationSeconds)}` : ''}`;
 }
 
@@ -382,7 +393,7 @@ export default function Calls({
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-ink-500 dark:text-ink-300">Status</dt>
-                    <dd className="capitalize">{selected.status}</dd>
+                    <dd>{statusLabel(selected)}</dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-ink-500 dark:text-ink-300">Duration</dt>

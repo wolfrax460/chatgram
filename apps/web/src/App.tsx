@@ -29,7 +29,7 @@ import { CallOverlay } from './components/CallOverlay';
 import { CallAlerts } from './components/CallAlerts';
 import { NewChatPanel } from './components/NewChatPanel';
 import { useIsOnline } from './lib/presence';
-import { getCallState, startCall, subscribeCalls } from './lib/calls';
+import { getCallState, joinActiveCall, rejectCall, requestRoomState, startCall, subscribeCalls, subscribeCallRooms, getCallRoom, canJoinRoom } from './lib/calls';
 import Groups, { GroupInfo } from './pages/Groups';
 import Calls from './pages/Calls';
 import Status from './pages/Status';
@@ -132,6 +132,26 @@ function ChatWindow({
   const [searchOpen, setSearchOpen] = useState(false);
   const [showJump, setShowJump] = useState(false);
 
+  // Live group-call room for this chat (banner + call card "Join").
+  const callState = useSyncExternalStore(subscribeCalls, getCallState);
+  const callRoom = useSyncExternalStore(subscribeCallRooms, () => getCallRoom(chat.id));
+  const callRoomLive = Boolean(
+    callRoom && callRoom.state !== 'ended' && canJoinRoom(callRoom) && callState.callId !== callRoom.callId,
+  );
+
+  function joinThisRoom() {
+    if (!callRoom) return;
+    void joinActiveCall(callRoom);
+  }
+
+  function declineCallCard(card: { callId: string }) {
+    if (callState.status === 'incoming' && callState.callId === card.callId) {
+      rejectCall();
+      return;
+    }
+    setNotice('That call invitation is no longer ringing.');
+  }
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -158,6 +178,9 @@ function ChatWindow({
 
   useEffect(() => {
     realtime.joinChat(chat.id);
+    // Opening a chat must show a call that is already running there (banner +
+    // call card state), even if this client missed the room broadcast.
+    requestRoomState(chat.id);
     return () => realtime.leaveChat(chat.id);
   }, [chat.id]);
 
@@ -467,6 +490,10 @@ function ChatWindow({
               : undefined
         }
         onCall={() => {
+          if (callRoomLive) {
+            joinThisRoom();
+            return;
+          }
           if (chat.participants.length < 2) {
             setNotice('There is nobody else in this chat to call.');
             return;
@@ -476,11 +503,16 @@ function ChatWindow({
               chatId: chat.id,
               title: chat.type === 'group' ? chat.groupName || 'Group call' : partner?.displayName || 'Chat',
               isGroup: chat.type === 'group',
+              participantCount: chat.participants.length,
             },
             { video: false },
           );
         }}
         onVideoCall={() => {
+          if (callRoomLive) {
+            joinThisRoom();
+            return;
+          }
           if (chat.participants.length < 2) {
             setNotice('There is nobody else in this chat to call.');
             return;
@@ -490,6 +522,7 @@ function ChatWindow({
               chatId: chat.id,
               title: chat.type === 'group' ? chat.groupName || 'Group call' : partner?.displayName || 'Chat',
               isGroup: chat.type === 'group',
+              participantCount: chat.participants.length,
             },
             { video: true },
           );
@@ -528,6 +561,29 @@ function ChatWindow({
         }}
         onBack={onBack}
       />
+
+      {callRoomLive && callRoom && chat.type === 'group' ? (
+        <div
+          className="flex flex-wrap items-center gap-2 border-b border-emerald-300/50 bg-emerald-50 px-4 py-2 text-[12.5px] text-emerald-900 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100"
+          data-testid="group-call-banner"
+          role="status"
+        >
+          <Phone className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            {callRoom.state === 'ringing' ? 'Call ringing' : 'Call in progress'}, {callRoom.participantCount}{' '}
+            {callRoom.participantCount === 1 ? 'person' : 'people'}
+            {callRoom.video ? ' · video' : ' · voice'}
+          </span>
+          <button
+            type="button"
+            className="rounded-full bg-emerald-600 px-3 py-1 text-[11.5px] font-semibold text-white hover:bg-emerald-700"
+            onClick={joinThisRoom}
+            aria-label={`Join the group call, ${callRoom.participantCount} people on it`}
+          >
+            Join
+          </button>
+        </div>
+      ) : null}
 
       {chat.type !== 'group' && partner && contactsQuery.data && !partnerIsContact ? (
         <div
@@ -685,6 +741,15 @@ function ChatWindow({
                     onStar: readOnly ? undefined : (row) => void toggleStar(row),
                     onForward: readOnly ? undefined : (row) => setForwardFor(row),
                     onShareWithGroup: readOnly ? undefined : (row) => void shareWithGroup(row),
+                    onCallJoin: readOnly
+                      ? undefined
+                      : (card) => {
+                          const room = callRoom && callRoom.callId === card.callId ? callRoom : getCallRoom(chat.id);
+                          if (room && canJoinRoom(room)) void joinActiveCall(room);
+                          else setNotice('That call has already ended.');
+                        },
+                    onCallDecline: readOnly ? undefined : (card) => declineCallCard(card),
+                    activeCallId: callState.callId,
                     onReport: (row) => {
                       setReportReason('spam');
                       setReportFor(row);
@@ -1027,7 +1092,6 @@ function Shell({ features }: { features: AppFeatures | null }) {
     <GroupInfoContext.Provider value={groupInfoApi}>
     <div className="app-viewport flex flex-col overflow-hidden">
       <CallOverlay call={callState} />
-      <CallAlerts />
       <CallAlerts />
       {readOnly ? (
         <div

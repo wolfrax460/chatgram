@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Reply, Copy, Trash2, MoreVertical, Smile, Pin, Eye, Pencil, Star, Forward, Flag, Check, X, Lock, Share2 } from 'lucide-react';
-import type { Message, MessageStatus } from '@chatgram/core';
+import type { CallCardInfo, Message, MessageStatus } from '@chatgram/core';
 import { MessageMedia } from './MessageMedia';
 import { MessageTicks } from './MessageTicks';
+import { CallMessageCard } from './CallMessageCard';
 import { formatTime, type TimeFormat } from '../lib/ui';
 
 export interface BubbleActions {
@@ -25,6 +26,12 @@ export interface BubbleActions {
   onReport?: (message: Message) => void;
   /** Reveal a private group AI answer to the whole group (asker only). */
   onShareWithGroup?: (message: Message) => void;
+  /** Group call card: join the live room. */
+  onCallJoin?: (call: CallCardInfo) => void;
+  /** Group call card: decline the ring. */
+  onCallDecline?: (call: CallCardInfo) => void;
+  /** The call I am currently in (so the card hides Join for that room). */
+  activeCallId?: string | null;
 }
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -89,6 +96,20 @@ export function MessageBubble({
           {message.content}
         </span>
       </div>
+    );
+  }
+
+  // Call cards are their own centred card (live state comes from the server).
+  if (message.type === 'call' && message.call) {
+    return (
+      <CallMessageCard
+        message={message}
+        timeFormat={timeFormat}
+        meId={meId}
+        activeCallId={actions.activeCallId}
+        onJoin={actions.onCallJoin}
+        onDecline={actions.onCallDecline}
+      />
     );
   }
 

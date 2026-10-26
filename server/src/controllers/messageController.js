@@ -679,7 +679,10 @@ const forwardMessage = async (req, res) => {
     const forwarded = await Message.create({
       chatId: targetChatId,
       senderId: req.user._id,
-      type: source.type === 'system' ? 'text' : source.type,
+      // Server-generated rows (system notices, call cards) are forwarded as
+      // plain text: their metadata (group event / live call state) is meaningless
+      // in another chat and a copied 'call' type would render an empty card.
+      type: source.type === 'system' || source.type === 'call' ? 'text' : source.type,
       content: source.content || '',
       mediaUrl: source.mediaUrl || null,
       sentAt: new Date(),

@@ -1,6 +1,58 @@
 // Message model
 const mongoose = require('mongoose');
 
+/**
+ * Chunk 2: a persisted call card. One Message of type 'call' per call room,
+ * updated live (content + metadata) while the room rings / is active / ends.
+ * No media, SDP or ICE is stored — only who, when, for how long and the outcome.
+ */
+const callParticipantSchema = new mongoose.Schema(
+  {
+    id: { type: String },
+    displayName: { type: String },
+    avatarUrl: { type: String, default: null },
+    audioOnly: { type: Boolean, default: false },
+    muted: { type: Boolean, default: false },
+    cameraOn: { type: Boolean, default: false },
+    screenSharing: { type: Boolean, default: false },
+    sharingKind: { type: String, default: null },
+    trackKind: { type: String, default: null },
+    hasSystemAudio: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
+const callCardSchema = new mongoose.Schema(
+  {
+    callId: { type: String },
+    chatId: { type: String },
+    video: { type: Boolean, default: false },
+    mode: { type: String, enum: ['voice', 'video'], default: 'voice' },
+    isGroup: { type: Boolean, default: false },
+    title: { type: String, default: '' },
+    /** ringing (nobody else joined yet) | active | ended */
+    state: { type: String, default: 'ringing' },
+    /** ringing (live) | completed | missed | declined | busy | failed | cancelled */
+    status: { type: String, default: 'ringing' },
+    startedBy: {
+      id: { type: String },
+      displayName: { type: String },
+      avatarUrl: { type: String, default: null },
+    },
+    startedAt: { type: Date, default: null },
+    answeredAt: { type: Date, default: null },
+    endedAt: { type: Date, default: null },
+    durationSeconds: { type: Number, default: 0 },
+    participantCount: { type: Number, default: 0 },
+    participants: { type: [callParticipantSchema], default: [] },
+    capacity: { type: Number, default: 12 },
+    videoCapacity: { type: Number, default: 0 },
+    cameraCount: { type: Number, default: 0 },
+    endReason: { type: String, default: null },
+  },
+  { _id: false },
+);
+
 const messageSchema = new mongoose.Schema({
   chatId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -14,8 +66,10 @@ const messageSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    // 'system' rows are created by the server for group events ("X left").
-    enum: ['text', 'image', 'video', 'audio', 'file', 'system'],
+    // 'system' rows are created by the server for group events ("X left");
+    // 'call' rows are persisted, live-updating call cards (chunk 2). Older
+    // clients simply render the card's text content as a normal bubble.
+    enum: ['text', 'image', 'video', 'audio', 'file', 'system', 'call'],
     default: 'text'
   },
   content: {
@@ -86,6 +140,11 @@ const messageSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Message',
     default: null
+  },
+  // Chunk 2: call card metadata (only set on type: 'call' messages).
+  call: {
+    type: callCardSchema,
+    default: null
   }
 }, {
   timestamps: true
@@ -101,6 +160,7 @@ messageSchema.index({ 'readBy': 1 });
 messageSchema.index({ starredBy: 1 });
 messageSchema.index({ visibleTo: 1 });
 messageSchema.index({ aiReplyTo: 1 });
+messageSchema.index({ 'call.callId': 1 });
 
 // Indexes for delivery/read receipts
 messageSchema.index({ chatId: 1, 'deliveredTo': 1 });
