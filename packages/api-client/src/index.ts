@@ -535,6 +535,29 @@ export class ApiClient {
     }>('/api/calls/ice');
   }
 
+  /**
+   * Content-free call-quality report for the admin Inbox: transport facts only
+   * (ICE state, candidate types, byte counters), never message content.
+   */
+  reportCallQuality(report: {
+    callId: string;
+    video: boolean;
+    status: string;
+    iceConnectionState: string;
+    connectionState: string;
+    candidatePair: string | null;
+    audioIn: number;
+    videoIn: number;
+    audioOut: number;
+    videoOut: number;
+    remoteTracks: number;
+    remoteMuted: number;
+    stalledSeconds: number;
+    platform: string;
+  }) {
+    return this.request<{ ok?: boolean }>('/api/calls/quality', { method: 'POST', body: report });
+  }
+
   /** Call history page (newest first). */
   callHistory(before?: string) {
     const query = before ? `?before=${encodeURIComponent(before)}` : '';

@@ -28,6 +28,7 @@ import {
   outcomeLabel,
   outcomeText,
   retryCall,
+  retryCallMedia,
   rejectCall,
   requestVideoUpgrade,
   respondVideoUpgrade,
@@ -40,10 +41,36 @@ import {
   toggleIncomingVideo,
   toggleMute,
   toggleScreenShare,
+  type CallDiagnostics,
   type CallParticipant,
   type CallState,
 } from '../lib/calls';
 import { api } from '../lib/api';
+
+/** Compact byte count for the in-call diagnostics line. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} kB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * One line of real WebRTC numbers, shown when media stops arriving. This is what
+ * makes "no audio and no video" diagnosable: the ICE state and candidate-pair
+ * types separate "never connected" from "connected but nothing was attached",
+ * and the byte counters show whether anything was ever received.
+ */
+function diagnosticsLine(diagnostics: CallDiagnostics | null): string {
+  if (!diagnostics) return 'Collecting connection diagnostics…';
+  const pair = diagnostics.candidatePair ?? 'no candidate pair';
+  const relay = diagnostics.relayConfigured ? 'relay configured' : 'no relay configured';
+  return [
+    `${diagnostics.iceConnectionState.toUpperCase()} · ${pair} · ${relay}`,
+    `in ${formatBytes(diagnostics.audioIn)} audio / ${formatBytes(diagnostics.videoIn)} video`,
+    `out ${formatBytes(diagnostics.audioOut)} audio / ${formatBytes(diagnostics.videoOut)} video`,
+    `${diagnostics.remoteTracks} remote tracks (${diagnostics.remoteMuted} muted)`,
+  ].join(' · ');
+}
 
 /** Bottom-sheet / floating-tile geometry. */
 const SELF_VIEW_STORAGE_KEY = 'chatgram.call.selfView';
@@ -1117,6 +1144,26 @@ export function CallOverlay({ call }: { call: CallState }) {
       </div>
 
       {/* stage */}
+      {call.mediaStalled ? (
+        <div
+          className="mx-3 mb-1 rounded-xl border border-rose-400/40 bg-rose-600/20 px-3 py-2 text-[12.5px] text-rose-50"
+          data-testid="call-media-warning"
+          role="alert"
+        >
+          <p className="font-semibold">No audio or video is arriving</p>
+          <p className="mt-0.5 break-words text-[11px] leading-snug text-rose-100/85" data-testid="call-diagnostics">
+            {diagnosticsLine(call.diagnostics)}
+          </p>
+          <button
+            type="button"
+            onClick={() => retryCallMedia()}
+            data-testid="call-media-retry"
+            className="mt-1.5 rounded-lg bg-white/15 px-2.5 py-1 text-[11.5px] font-semibold hover:bg-white/25"
+          >
+            Retry connection
+          </button>
+        </div>
+      ) : null}
       {!showVideo ? call.participants.map((participant) => (
         <RemoteAudioSink key={participant.id} participantId={participant.id} />
       )) : null}

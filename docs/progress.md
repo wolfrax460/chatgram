@@ -489,3 +489,26 @@ CHUNK 7 version tracker + auto-update; CHUNK 4 WhatsApp-style UI + disappearing/
 6. Verified: unit aiReports 19/19; production smoke 4/4 (explicit group report -> RPT-HZV8, inbox record confirmed on Atlas, temp accounts/group/report deleted); health 200 after backend #105 (backup 20261026-111532).
 7. Not done: admin Inbox fix-prompt copy/combine/transcript UI, Telegram two-way reply, admin Telegram setting/test button, Privacy/in-app notice text, and the 1C private-visible AI replies mode; integration report tests (only unit).
 8. NEXT SESSION STARTS HERE note is at the top of this file with the remaining order and gotchas; chunks 2-7 were not started.
+
+### CALL MEDIA DIAGNOSIS (2026-10-27, measured, no device available)
+
+**Measured now (from this machine, public internet, VM 84.12.64.204):**
+- UDP 3478 STUN binding request to `turnserver` → **timeout** (no reply)
+- TCP 3478 → **timeout**; TCP 5349 → **timeout**; UDP 5349 STUN → **timeout**; TCP 49160 → **timeout**
+
+So the TURN relay is **not reachable at all** from outside the Oracle VCN. Consequence: any two phones
+that cannot reach each other directly (Wi-Fi vs mobile data, symmetric/CGNAT mobile networks, client
+isolation on a Wi-Fi AP) get **zero media in both directions** with no fallback — which matches "no audio
+and no video in calls on phones". On the same Wi-Fi, ICE host candidates are used, so a same-network call
+should still work; if it does not, the remaining cause is on the device side and needs the in-call
+getStats numbers (see next step).
+
+**To fix the relay (owner, Oracle console):** open ingress for the instance's VCN security list:
+UDP 3478, TCP 3478, TCP 5349, UDP 5349, UDP 49160-49200 (coturn relay range). Verify afterwards with a STUN
+binding request (UDP 3478) or `turnutils_uclient`.
+
+**Next (needs the phone + chrome://inspect, or the emulator):** collect real getStats for Wi-Fi↔Wi-Fi and
+Wi-Fi↔mobile-data — `iceConnectionState`, selected candidate pair local/remote type (host/srflx/relay),
+`bytesSent/bytesReceived` per audio and video, remote track count/muted — and fix from those numbers, plus
+the in-call "No audio or video is arriving" warning with an ICE-restart retry and the content-free
+call-quality event to the admin Inbox.

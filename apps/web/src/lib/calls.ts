@@ -106,6 +106,32 @@ export interface CallRoom {
 
 export type CallQuality = 'unknown' | 'good' | 'fair' | 'poor';
 
+/**
+ * Live WebRTC numbers from `getStats()`, shown in the call UI when media stops.
+ *
+ * They exist because "no audio and no video" is undiagnosable from a screenshot:
+ * the difference between "ICE never connected", "connected through a relay" and
+ * "connected but the remote stream is not attached" is one candidate-pair type and
+ * two byte counters. Nothing here is message content.
+ */
+export interface CallDiagnostics {
+  iceConnectionState: string;
+  connectionState: string;
+  /** e.g. `host→srflx`, `srflx→relay`; null until a candidate pair is selected. */
+  candidatePair: string | null;
+  audioIn: number;
+  videoIn: number;
+  audioOut: number;
+  videoOut: number;
+  remoteTracks: number;
+  remoteMuted: number;
+  /** True when the ICE server list contains a TURN url (a relay was available). */
+  relayConfigured: boolean;
+  /** Seconds since media was expected with zero bytes received. */
+  stalledSeconds: number;
+}
+
+
 export interface CallDevice {
   deviceId: string;
   label: string;
@@ -156,6 +182,10 @@ export interface CallState {
   ringCount: number;
   /** Connection indicator detail (from getStats). */
   stats: { latencyMs: number | null; packetLoss: number | null };
+  /** WebRTC numbers for the in-call warning (null before the first sample). */
+  diagnostics: CallDiagnostics | null;
+  /** True when nothing has arrived for the stall window while the call is up. */
+  mediaStalled: boolean;
 }
 
 /** Honest mesh caps, mirrored from the server. */
@@ -181,6 +211,8 @@ const IDLE: CallState = {
   startedAt: null,
   streamTick: 0,
   quality: 'unknown',
+  diagnostics: null,
+  mediaStalled: false,
   minimised: false,
   videoRequest: null,
   videoUpgradePending: false,
@@ -241,6 +273,13 @@ interface PeerHandle {
 }
 
 let current: ActiveCall | null = null;
+
+/** When media was first expected in this call (stall clock); 0 = not armed. */
+let mediaWatchStartedAt = 0;
+/** The stall was already reported to the admin Inbox for this call. */
+let stallReported = false;
+/** How long with zero received media before the in-call warning appears. */
+const MEDIA_STALL_MS = 8_000;
 let localStream: MediaStream | null = null;
 /** The display-capture stream while screen sharing (separate from the camera). */
 let screenStream: MediaStream | null = null;
@@ -583,6 +622,16 @@ async function applyVideoQuality(): Promise<void> {
   }
 }
 
+/**
+ * Read the real numbers from every peer: ICE/connection state, the selected
+ * candidate pair (`host→srflx` = direct, `…→relay` = via TURN), bytes in/out per
+ * kind and the state of the remote tracks.
+ *
+ * "No audio and no video" cannot be diagnosed from a screenshot, so these numbers
+ * are also the in-call warning's payload. When nothing has arrived for
+ * `MEDIA_STALL_MS` the overlay says so and offers an ICE-restart retry, and the
+ * first stall of a call is reported to the admin Inbox (content-free).
+ */
 async function measureQuality(): Promise<void> {
   const handles = [...peers.values()];
   if (!handles.length) {
@@ -590,55 +639,161 @@ async function measureQuality(): Promise<void> {
     return;
   }
   let worst: CallQuality = 'good';
+  let latencyMs: number | null = null;
+  let packetLoss: number | null = null;
+  let audioIn = 0;
+  let videoIn = 0;
+  let audioOut = 0;
+  let videoOut = 0;
+  let remoteTracks = 0;
+  let remoteMuted = 0;
   for (const handle of handles) {
+    for (const track of handle.stream.getTracks()) {
+      if (track.readyState !== 'live') continue;
+      remoteTracks += 1;
+      if (track.muted) remoteMuted += 1;
+    }
     try {
       const stats = await handle.pc.getStats();
-      let rtt = 0;
-      let loss = 0;
       stats.forEach((report) => {
         if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-          rtt = Math.max(rtt, (report.currentRoundTripTime || 0) * 1000);
+          latencyMs = Math.max(latencyMs ?? 0, Math.round((report.currentRoundTripTime || 0) * 1000));
         }
-        if (report.type === 'inbound-rtp' && report.kind === 'video') {
-          const received = report.packetsReceived || 0;
-          const lost = report.packetsLost || 0;
-          if (received + lost > 20) loss = Math.max(loss, lost / (received + lost));
+        if (report.type === 'inbound-rtp') {
+          const bytes = Number(report.bytesReceived || 0);
+          if (report.kind === 'video') {
+            videoIn += bytes;
+            const received = report.packetsReceived || 0;
+            const lost = report.packetsLost || 0;
+            if (received + lost > 20) {
+              const ratio = lost / (received + lost);
+              packetLoss = Math.max(packetLoss ?? 0, Math.round(ratio * 1000) / 10);
+              if (ratio > 0.12) worst = 'poor';
+              else if (worst !== 'poor' && ratio > 0.04) worst = 'fair';
+            }
+          } else if (report.kind === 'audio') {
+            audioIn += bytes;
+          }
+        }
+        if (report.type === 'outbound-rtp') {
+          const bytes = Number(report.bytesSent || 0);
+          if (report.kind === 'video') videoOut += bytes;
+          else if (report.kind === 'audio') audioOut += bytes;
         }
       });
-      if (rtt > 400 || loss > 0.12) worst = 'poor';
-      else if (worst !== 'poor' && (rtt > 220 || loss > 0.04)) worst = 'fair';
+      if ((latencyMs ?? 0) > 400) worst = 'poor';
+      else if (worst !== 'poor' && (latencyMs ?? 0) > 220) worst = 'fair';
     } catch {
       /* ignore a peer that just closed */
     }
   }
-  let latencyMs: number | null = null;
-  let packetLoss: number | null = null;
-  for (const handle of handles) {
+
+  // ICE state and the selected candidate pair from the first live peer: the mesh
+  // is symmetric, so one sample already tells direct from relayed from nothing.
+  let candidatePair: string | null = null;
+  let iceConnectionState = 'new';
+  let connectionState = 'new';
+  const primary = handles[0];
+  if (primary) {
+    iceConnectionState = primary.pc.iceConnectionState;
+    connectionState = primary.pc.connectionState;
     try {
-      const reports = await handle.pc.getStats();
-      reports.forEach((report) => {
-        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-          latencyMs = Math.max(latencyMs ?? 0, Math.round((report.currentRoundTripTime || 0) * 1000));
+      const stats = await primary.pc.getStats();
+      const types = new Map<string, string>();
+      let selectedPairId: string | null = null;
+      stats.forEach((report) => {
+        if (report.type === 'local-candidate' || report.type === 'remote-candidate') {
+          types.set(String(report.id), String(report.candidateType || '?'));
         }
-        if (report.type === 'inbound-rtp' && report.kind === 'video') {
-          const received = report.packetsReceived || 0;
-          const lost = report.packetsLost || 0;
-          if (received + lost > 20) {
-            packetLoss = Math.max(packetLoss ?? 0, Math.round((lost / (received + lost)) * 1000) / 10);
-          }
+        if (report.type === 'transport' && report.selectedCandidatePairId) {
+          selectedPairId = String(report.selectedCandidatePairId);
         }
       });
+      if (selectedPairId) {
+        const pairId = selectedPairId;
+        stats.forEach((report) => {
+          if (report.type === 'candidate-pair' && report.id === pairId) {
+            const local = types.get(String(report.localCandidateId)) ?? '?';
+            const remote = types.get(String(report.remoteCandidateId)) ?? '?';
+            candidatePair = `${local}→${remote}`;
+          }
+        });
+      }
     } catch {
-      /* peer just closed */
+      /* stats are advisory; a closed peer must not break the call UI */
     }
   }
-  setState({ quality: worst, stats: { latencyMs, packetLoss } });
+
+  const relayConfigured = (iceServersCache?.servers ?? []).some((server) =>
+    (Array.isArray(server.urls) ? server.urls : [server.urls]).some((url) => String(url).startsWith('turn')),
+  );
+  const mediaExpected = state.status === 'active' || state.status === 'connecting';
+  if (mediaExpected && !mediaWatchStartedAt) mediaWatchStartedAt = Date.now();
+  const waited = mediaWatchStartedAt ? Date.now() - mediaWatchStartedAt : 0;
+  const stalledSeconds = Math.round(waited / 1000);
+  const mediaStalled = mediaExpected && waited >= MEDIA_STALL_MS && audioIn + videoIn === 0;
+  const diagnostics: CallDiagnostics = {
+    iceConnectionState,
+    connectionState,
+    candidatePair,
+    audioIn,
+    videoIn,
+    audioOut,
+    videoOut,
+    remoteTracks,
+    remoteMuted,
+    relayConfigured,
+    stalledSeconds,
+  };
+  setState({ quality: worst, stats: { latencyMs, packetLoss }, diagnostics, mediaStalled });
+  if (mediaStalled && !stallReported) {
+    stallReported = true;
+    reportStalledCall(diagnostics, stalledSeconds);
+  }
   if (worst === 'poor' && state.video && !state.lowBandwidth) {
     setState({
       lowBandwidth: true,
       notice: 'Low bandwidth: incoming video was turned off automatically. You can turn it back on from the connection menu.',
     });
   }
+}
+
+/**
+ * Retry the media path: ICE restart on every peer plus a fresh stall clock.
+ * Wired to the "Retry connection" button of the in-call warning.
+ */
+export function retryCallMedia(): void {
+  mediaWatchStartedAt = Date.now();
+  stallReported = false;
+  setState({ mediaStalled: false, quality: 'unknown', notice: 'Retrying the connection…' });
+  for (const handle of peers.values()) void restartIce(handle);
+}
+
+/**
+ * Report a stalled call to the admin Inbox. Content-free by construction: only
+ * transport facts (states, candidate types, byte counters) leave the device.
+ */
+function reportStalledCall(diagnostics: CallDiagnostics, stalledSeconds: number): void {
+  const callId = state.callId;
+  if (!callId) return;
+  void api
+    .reportCallQuality({
+      callId,
+      video: state.video,
+      status: state.status,
+      iceConnectionState: diagnostics.iceConnectionState,
+      connectionState: diagnostics.connectionState,
+      candidatePair: diagnostics.candidatePair,
+      audioIn: diagnostics.audioIn,
+      videoIn: diagnostics.videoIn,
+      audioOut: diagnostics.audioOut,
+      videoOut: diagnostics.videoOut,
+      remoteTracks: diagnostics.remoteTracks,
+      remoteMuted: diagnostics.remoteMuted,
+      stalledSeconds,
+      platform: isAndroidNative() ? 'android' : 'browser',
+    })
+    .catch(() => undefined);
 }
 
 /* -------------------------------------------------------------- peer setup */
@@ -681,6 +836,8 @@ function cleanup(): void {
   current = null;
   pendingInvite = null;
   streamTick = 0;
+  mediaWatchStartedAt = 0;
+  stallReported = false;
 }
 
 /**
