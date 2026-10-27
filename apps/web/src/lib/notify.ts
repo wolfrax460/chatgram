@@ -12,14 +12,18 @@
  * only decides *whether* one should be raised.
  */
 import {
+  inAppShell,
   nativeNotificationsAvailable,
   nativeNotify,
   nativePermissionState,
   requestNativePermission,
+  syncNativePermission,
 } from './nativeNotifications';
 
 export function notificationsSupported(): boolean {
-  if (nativeNotificationsAvailable()) return true;
+  // Inside the app shells the OS owns notifications, so the page always reports
+  // support — an older APK without the plugin must never look "unsupported".
+  if (inAppShell()) return true;
   return typeof window !== 'undefined' && 'Notification' in window;
 }
 
@@ -35,14 +39,20 @@ function mapNativePermission(): PermissionState {
 }
 
 export function notificationPermission(): PermissionState {
-  if (nativeNotificationsAvailable()) return mapNativePermission();
+  if (inAppShell()) {
+    if (nativeNotificationsAvailable()) return mapNativePermission();
+    // The Android/Windows app without the notification bridge (an old build):
+    // still "not granted yet", never "unsupported".
+    return 'default';
+  }
   if (!notificationsSupported()) return 'unsupported';
   return Notification.permission;
 }
 
 export async function requestNotificationPermission(): Promise<PermissionState> {
-  if (nativeNotificationsAvailable()) {
+  if (inAppShell()) {
     // Windows needs no page permission; Android 13+ shows the system prompt here.
+    if (!nativeNotificationsAvailable()) return 'default';
     await requestNativePermission();
     return mapNativePermission();
   }
@@ -51,6 +61,35 @@ export async function requestNotificationPermission(): Promise<PermissionState> 
     return await Notification.requestPermission();
   } catch {
     return 'denied';
+  }
+}
+
+/**
+ * Re-read the native permission (the OS can change it while the app is in the
+ * background, e.g. the user allowed notifications from Android settings).
+ */
+export async function refreshNotificationPermission(): Promise<PermissionState> {
+  if (inAppShell()) await syncNativePermission();
+  return notificationPermission();
+}
+
+/**
+ * Raise one notification immediately, so the user can prove the whole chain
+ * (permission → channel → banner) without waiting for a real message. The Do
+ * not disturb schedule is deliberately ignored for this one.
+ */
+export type TestNotificationResult = 'native' | 'web' | 'blocked';
+
+export function sendTestNotification(): TestNotificationResult {
+  const title = 'Chatgram';
+  const body = 'Notifications are working on this device.';
+  if (nativeNotify({ title, body })) return 'native';
+  if (notificationPermission() !== 'granted') return 'blocked';
+  try {
+    new Notification(title, { body, icon: '/web/assets/favicon.png', tag: 'chatgram-test' });
+    return 'web';
+  } catch {
+    return 'blocked';
   }
 }
 

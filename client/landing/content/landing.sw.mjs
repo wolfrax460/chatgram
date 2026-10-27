@@ -243,6 +243,17 @@ export default {
       },
       {
         platform: "android",
+        version: "1.1.6",
+        date: "27 Oktoba 2026",
+        items: [
+          "Mipangilio ya arifa inayoonyesha hali halisi ya idhini, inafungua mipangilio ya Android na kutuma arifa ya jaribio",
+          "Ombi la kuzima uboreshaji wa betri ili Android isicheleweshe arifa",
+          "Chaneli ya simu yenye mlio wa simu na kitufe cha spika / kipokea sauti / Bluetooth",
+          "Simu: video ya mtu mwingine huanza yenyewe (avatar inaonekana badala ya kitufe cha play), « Inapiga… » inakuwa muda, na skrini ya simu inayoingia inaonyesha anayepiga",
+        ],
+      },
+      {
+        platform: "android",
         version: "1.1.5",
         date: "27 Oktoba 2026",
         items: [

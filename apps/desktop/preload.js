@@ -43,6 +43,16 @@ contextBridge.exposeInMainWorld('chatgramDesktop', {
   /** Report call state so the tray/badge can announce an incoming call. */
   callState: (payload) => ipcRenderer.send('chatgram:call', payload),
 
+  /**
+   * Notification state + the Windows notification settings page. The Settings
+   * screen cannot read or open the OS setting from the page itself, so the shell
+   * does it (without this the "Notifications" row had no working action).
+   */
+  notifications: {
+    getState: () => ipcRenderer.invoke('chatgram:notification-support'),
+    openSettings: () => ipcRenderer.invoke('chatgram:open-notification-settings'),
+  },
+
   /** Ask the shell for its version. */
   appVersion: () => ipcRenderer.invoke('chatgram:appVersion'),
 

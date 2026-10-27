@@ -243,6 +243,17 @@ export default {
       },
       {
         platform: "android",
+        version: "1.1.6",
+        date: "27 Ukwakira 2026",
+        items: [
+          "Igenamiterere ry'ubutumwa ryerekana uko uburenganzira buhari, rifungura igenamiterere rya Android kandi ryohereza ubutumwa bwo kugerageza",
+          "Ubutumwa burabaza ko porogaramu itazabuzwa no kuzigama batteri",
+          "Umuyoboro w'uhamagara ufite ijwi rya ringtone n'igenzura rya speaker / earpiece / Bluetooth",
+          "Uhamagara: videwo y'undi muntu itangira yonyine (avatar igaragara aho gukanda play), « Turashyira… » ihinduka igihe, kandi ikiganiro kigaragaza uhamagara",
+        ],
+      },
+      {
+        platform: "android",
         version: "1.1.5",
         date: "27 Ukwakira 2026",
         items: [

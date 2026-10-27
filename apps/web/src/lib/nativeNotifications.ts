@@ -26,13 +26,27 @@ export type NativePermission = 'granted' | 'denied' | 'prompt' | 'unsupported';
 interface DesktopBridge {
   notify?: (payload: NotificationPayload) => Promise<boolean>;
   onOpenChat?: (callback: (chatId: string) => void) => () => void;
+  notifications?: {
+    getState?: () => Promise<{ supported?: boolean; platform?: string }>;
+    openSettings?: () => Promise<boolean>;
+  };
 }
 
 interface AndroidNotifierPlugin {
   getPermission?: () => Promise<{ granted?: boolean; status?: string }>;
   requestPermission?: () => Promise<{ granted?: boolean; status?: string }>;
-  notify?: (options: { title: string; body: string; chatId?: string; tag?: string }) => Promise<void>;
+  notify?: (options: {
+    title: string;
+    body: string;
+    chatId?: string;
+    tag?: string;
+    channel?: 'messages' | 'calls' | 'general';
+    ongoing?: boolean;
+  }) => Promise<void>;
   consumePending?: () => Promise<{ chatId?: string | null }>;
+  openSettings?: () => Promise<{ opened?: boolean }>;
+  batteryOptimization?: () => Promise<{ ignoring?: boolean }>;
+  requestBatteryExemption?: () => Promise<{ opened?: boolean }>;
 }
 
 interface CapacitorLike {
@@ -77,6 +91,88 @@ export function isAndroidShell(): boolean {
 /** True when a native shell will handle notifications (so the page must not). */
 export function nativeNotificationsAvailable(): boolean {
   return isDesktopShell() || isAndroidShell();
+}
+
+/** Which shell hosts this page. */
+export type AppShell = 'android' | 'windows' | 'browser';
+
+/**
+ * Detect the shell WITHOUT requiring the notification plugin, because an older
+ * APK still is the Android app: telling its user "this browser does not support
+ * notifications" (the old Settings banner) is wrong and unfixable-looking. The
+ * Capacitor bridge is injected only by the native shell, so it is the honest
+ * signal; the `chatgramDesktop` bridge is the Electron one.
+ */
+export function appShell(): AppShell {
+  const cap = capacitor();
+  if (cap && cap.isNativePlatform?.() === true) return 'android';
+  if (isDesktopShell()) return 'windows';
+  return 'browser';
+}
+
+/** True inside the Android or Windows app (so no browser-only copy anywhere). */
+export function inAppShell(): boolean {
+  return appShell() !== 'browser';
+}
+
+/**
+ * Open the operating system's notification settings for Chatgram.
+ * Android: the app's own notification page. Windows: the Windows notification
+ * settings page. Browsers: not possible from the page, returns false.
+ */
+export async function openNotificationSettings(): Promise<boolean> {
+  if (appShell() === 'android') {
+    const notifier = androidNotifier();
+    if (!notifier?.openSettings) return false;
+    try {
+      const result = await notifier.openSettings();
+      return result?.opened !== false;
+    } catch {
+      return false;
+    }
+  }
+  const bridge = desktop();
+  if (!bridge?.notifications?.openSettings) return false;
+  try {
+    return (await bridge.notifications.openSettings()) === true;
+  } catch {
+    return false;
+  }
+}
+
+export interface BatteryOptimizationState {
+  /** True when Android is already allowed to keep Chatgram in the background. */
+  ignoring: boolean;
+  /** True when the app can show the system exemption dialog itself. */
+  canAsk: boolean;
+}
+
+/** Battery-optimisation state (Android only; null elsewhere / older builds). */
+export async function batteryOptimization(): Promise<BatteryOptimizationState | null> {
+  if (appShell() !== 'android') return null;
+  const notifier = androidNotifier();
+  if (!notifier?.batteryOptimization) return null;
+  try {
+    const result = await notifier.batteryOptimization();
+    return {
+      ignoring: result?.ignoring === true,
+      canAsk: typeof notifier.requestBatteryExemption === 'function',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Ask Android to exempt the app from battery optimisation. */
+export async function requestBatteryExemption(): Promise<boolean> {
+  const notifier = androidNotifier();
+  if (!notifier?.requestBatteryExemption) return false;
+  try {
+    const result = await notifier.requestBatteryExemption();
+    return result?.opened !== false;
+  } catch {
+    return false;
+  }
 }
 
 /** Cached answer so `notificationPermission()` can stay synchronous. */

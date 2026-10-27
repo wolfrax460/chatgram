@@ -1,3 +1,86 @@
+## NOTIFICATIONS + CALL SCREEN (web live 2026-10-27, APK 1.1.6/7)
+
+**Settings → Notifications is now real on every platform.** The old row was a switch wired to
+`Notification.requestPermission()`: the Android WebView has no web notification permission to grant, so
+it showed the red *"This browser does not support notifications."* banner and the switch did nothing, and
+in the Windows app the same control had no OS-level action at all. Replaced by a `NotificationSetup` card
+that reads the shell's own state (allowed / blocked / not asked yet), offers the action that can actually
+change it (Android 13+ system prompt, the app's notification settings page, the Windows notification
+settings page) and a **Send test notification** button that proves the whole chain.
+- `appShell()` (in `nativeNotifications.ts`) detects the Capacitor/Electron bridge itself, so an older APK
+  reports "notifications are off — allow them" instead of "this browser does not support notifications";
+  the unsupported sentence can only appear in a real browser now.
+- New native surface (APK 1.1.6): `Notifier.openSettings()`, `Notifier.batteryOptimization()`,
+  `Notifier.requestBatteryExemption()` (+ `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`), notification channels
+  `messages` / `calls` / `general`, and `notify({ channel, ongoing })`. Settings shows an Android-only
+  battery card until the app is exempt.
+- Windows: `chatgram:notification-support` + `chatgram:open-notification-settings`
+  (`ms-settings:notifications`) behind `window.chatgramDesktop.notifications`. **This needs installer
+  1.1.2 to be live** — on the current 1.1.1 installer the button degrades to written instructions, it is
+  never dead.
+
+**Calls (web build — the state fixes reach every platform without a new APK).**
+- No more grey play triangle: remote autoplay retries with a 250 ms backoff (×8) plus `onCanPlay` /
+  `onPause` retries, falls back to muted autoplay with the existing "Tap to enable sound" button, and an
+  opaque avatar overlay (`remote-video-waiting`) covers the element until frames really play.
+- "X joined the call" can no longer sit next to "Calling…": `handleParticipantJoined` moves
+  `calling → connecting`, and `markActive()` now also fires on the first live remote track, so the timer
+  starts when media flows (the ICE-connected path is unchanged).
+- Incoming screen shows who is calling: explicit `incoming-caller-name` line, avatar always falls back to
+  initials, group calls add the group name and head count.
+- **Audio-only calls were silent** (found while fixing this): with no remote `<video>` mounted for a voice
+  call or a camera-off peer, nothing played the remote microphone. `RemoteAudioSink` (audio-only stage)
+  and a hidden `<audio>` inside the tile (camera off) are now the single remote audio sink in exactly the
+  state where the video element is missing.
+- Speaker: new native `AudioRoute` plugin (`AudioManager`: earpiece / speaker / Bluetooth with
+  `MODE_IN_COMMUNICATION` + SCO, reset on destroy). The control is never greyed on Android, defaults to
+  speaker for video calls and earpiece for voice calls; browsers keep the `setSinkId` path. An older APK
+  gets "Speaker switching needs the latest app update".
+
+**Android 1.1.6 (versionCode 7) published.** 1,305,449 bytes, SHA-256
+`fb44eaaa9152372542d237b8b244385a4eb096898f3d11245d769480b6ab42e0`, same debug keystore
+(`8a67642f…0152f`), so it updates in place over 1.1.5. Built with `build-apk.ps1` (versionCode/versionName
+guard, launcher activity, dex, hosted URL and signer verified). Feed: `latestVersion 1.1.6`,
+`versionCode 7`, `updateAvailable true`; `/downloads/chatgram-android.apk?v=1.1.6` serves exactly
+1,305,449 bytes. `checksums.txt`, the `android` AppRelease row, landing constants, guides and
+`scripts/validate.mjs` moved to 1.1.6.
+
+**Crosses (blocked, not code)**
+- FCM push for a killed Android process was **not built** this round, but it is no longer blocked on
+  credentials: the owner supplied `firebase/google-services.json` and the Firebase service-account JSON.
+  The app copy is `apps/mobile/android/app/google-services.json` and the VM has
+  `/home/ubuntu/chatgram/firebase-service-account.json` (mode 600) with `FIREBASE_SERVICE_ACCOUNT` in the
+  server `.env` pointing at it. Both paths are gitignored — never commit or print them. What remains is
+  the code: `@capacitor/push-notifications` + `firebase-admin`, token register/unregister, the send path
+  and the call data message.
+- Oracle VCN still blocks the TURN relay (UDP+TCP 3478, TCP/UDP 5349, UDP 49160-49200) — calls between two
+  different networks have no relay fallback until those ingress rules exist
+  (`docs/reports/calling-permissions.md`).
+- Windows installer 1.1.2 (the notification-settings IPC) is code-complete but **not published**; 1.1.1 is
+  live and already does toasts, tap-to-open-chat and the taskbar badge.
+- On-device verification of this round was not run (no phone attached): autoplay, speaker switching,
+  incoming caller identity and the test notification must be checked on 1.1.6.
+
+### NEXT SESSION STARTS HERE
+
+Order of work:
+1. **Credentials are ready — do not re-ask and do not commit them**: `firebase/google-services.json` is
+   copied to `apps/mobile/android/app/google-services.json`, the service-account JSON is on the VM at
+   `/home/ubuntu/chatgram/firebase-service-account.json` (600) with `FIREBASE_SERVICE_ACCOUNT` in
+   `server/.env`; `firebase/` and the app `google-services.json` are gitignored. Still needed from the
+   owner: the Oracle VCN ingress rules for TURN (UDP+TCP 3478, TCP/UDP 5349, UDP 49160-49200).
+2. Then the push round: `@capacitor/push-notifications` + `firebase-admin`, per-device token
+   register/unregister, send on offline/background with sender name + preview (privacy setting), collapse
+   per chat, invalid-token cleanup, mute/DND, rate limit, admin-Inbox failure log, and the high-priority
+   call data message with full-screen intent + a `phoneCall` foreground service.
+3. Publish Windows installer 1.1.2 (`npm run dist -w @chatgram/desktop` → upload → `make-latest-yml.mjs` →
+   AppRelease `windows` row + landing constants + deploy).
+4. Web Push for plain browsers (service worker + VAPID keys in the server env; the permission button only
+   there).
+5. Test 1.1.6 on the phone: test notification, remote video starts alone, "Connecting…" → timer on the
+   caller side, speaker toggle, incoming caller name and an audio-only call (sound). Then a Wi-Fi ↔
+   mobile-data call once the TURN ports are open.
+
 ## AI AS A NORMAL CHAT + STATUS VIEWERS (web live 2026-10-27, backend #121)
 
 **Chatgram AI is no longer pinned (all platforms)**

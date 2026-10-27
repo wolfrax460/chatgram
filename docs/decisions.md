@@ -1009,3 +1009,49 @@ three paths share `UpdateFinalizer`, so verification cannot be skipped.
 **Why not WorkManager for the download itself:** DownloadManager survives process death, handles
 retries/resume and shows system progress; WorkManager is used only for the periodic check and the
 finalisation pass.
+
+## D62 - Notification state comes from the shell, never from the page (2026-10-27)
+
+The Settings "Desktop notifications" row asked the **page** for permission. That is a dead end in both
+native shells: the Android WebView has no Web Notification permission to grant (so the row showed the red
+"This browser does not support notifications." banner and the switch silently did nothing), and in
+Electron the page-level answer never reaches the OS. The row is now a state card whose source of truth is
+the shell: `appShell()` identifies Android / Windows / browser from the Capacitor or `chatgramDesktop`
+bridge (not from the notification plugin, because an older APK is still the Android app and must not be
+told it is an unsupported browser), the state is read from the native plugin (Android) or reported as
+allowed-by-OS (Windows), and the action is the one that can actually change it: the Android 13+ prompt,
+`ACTION_APP_NOTIFICATION_SETTINGS`, or `ms-settings:notifications`. A "Send test notification" button
+exists because "it should work" was untestable before.
+
+**Why the preference switch is separate:** `prefs.notifications` is the user's intent, permission is the
+OS's. Mixing them is what made the old toggle inert — turning it on could not grant anything. The switch
+now only stores intent; the card owns permission.
+
+**Cost to reverse:** low — one component plus two helpers; the native method names are additive.
+
+## D63 - A call is "connected" from media facts, and every remote peer needs exactly one audio sink (2026-10-27)
+
+Three call bugs shared a root cause: the UI trusted things that were not evidence of media.
+
+**Status.** "Calling…" persisted after the server told us somebody joined, because `handleParticipantJoined`
+only appended to the participant list. Status now follows facts: a participant joining moves
+`calling → connecting`, and `markActive()` (the timer) fires on the first live remote track or an
+ICE-connected peer — never from the ring timer. A ring-back timer still decides "no answer".
+
+**Autoplay.** Chrome/WebView rejects `play()` with `AbortError` when `srcObject` is reassigned during a
+re-render — the old code only handled `NotAllowedError`, so the element stayed paused and the OS drew its
+own grey play button. Retries are now event-driven (`canplay`, `pause`, every render) plus a short backoff,
+with a muted-autoplay fallback and a one-tap unmute; an avatar overlay covers the element until frames
+play, so the native play control is never what the user sees.
+
+**Audio.** With no remote `<video>` mounted (audio-only call, camera-off peer) nothing played the remote
+microphone at all: every remote audio sink was a side effect of a video element. There is now one explicit
+sink in exactly the state where the video element is absent (a hidden `<audio>` in the tile, plus a
+per-peer sink on the audio-only stage) — never both, so audio cannot double.
+
+**Speaker.** `setSinkId` does not exist in the Android WebView, so the Speaker button was disabled. Native
+`AudioRoute` (AudioManager, `MODE_IN_COMMUNICATION`, SCO for Bluetooth) is the Android path; the video/setSinkId
+path stays for browsers. The button is never greyed on Android: an old APK gets an explanation instead.
+
+**Cost to reverse:** low — the changes are additive and platform-gated; the only irreversible part is
+shipping 1.1.6 to installs older than it.

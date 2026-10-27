@@ -36,6 +36,9 @@ public class MainActivity extends BridgeActivity {
         // Chunk 8: Android local notifications for new messages while the app is
         // backgrounded (the WebView and its Socket.IO connection are still alive).
         registerPlugin(NotifierPlugin.class);
+        // Chunk 8: call audio routing (earpiece / speaker / bluetooth / headset)
+        // for the 1:1 call UI, which the WebView cannot control itself.
+        registerPlugin(AudioRoutePlugin.class);
 
         super.onCreate(savedInstanceState);
 

@@ -12,6 +12,7 @@ import android.media.AudioAttributes;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
+import android.provider.Settings;
 import android.service.notification.StatusBarNotification;
 
 import androidx.core.app.NotificationCompat;
@@ -20,7 +21,8 @@ import androidx.core.content.ContextCompat;
 import java.util.UUID;
 
 /**
- * Local (in-process) message notifications for Chatgram.
+ * Local (in-process) notifications for Chatgram: messages, calls and general
+ * notices.
  *
  * <p><b>Scope:</b> these are Android local notifications posted by our own app
  * process while the WebView/Capacitor bridge (and therefore the Socket.IO
@@ -28,11 +30,21 @@ import java.util.UUID;
  * the foreground. REAL push for "the app process was killed" needs FCM (a server
  * push through Google Play services), which is a later round because no Firebase
  * credentials exist yet — there is deliberately no FCM dependency here.
+ *
+ * <p>Three channels are created when the plugin is loaded: {@code messages}
+ * (high, vibration, default sound), {@code calls} (high, ringtone, call
+ * vibration, public on the lock screen) and {@code general} (default, for
+ * non-message notices).
  */
 final class NotifierNotifications {
 
-    /** The one channel for new messages. Created when the plugin is loaded. */
+    /** High-importance new-message channel. */
     static final String CHANNEL_ID = "messages";
+    /** High-importance incoming/ongoing-call channel. */
+    static final String CHANNEL_CALLS = "calls";
+    /** Default-importance channel for notices that are neither a message nor a call. */
+    static final String CHANNEL_GENERAL = "general";
+
     static final String CHANNEL_NAME = "Messages";
 
     /** Base key; per-chat notifications add the chat/tag so each chat groups itself. */
@@ -50,12 +62,22 @@ final class NotifierNotifications {
     private NotifierNotifications() {
     }
 
-    /** Creates the "messages" channel if it does not exist yet (API 26+). */
-    static void ensureChannel(Context context) {
+    /**
+     * Creates the {@code messages}, {@code calls} and {@code general} channels if
+     * they do not exist yet (API 26+), so every channel exists before the first
+     * notification is posted.
+     */
+    static void ensureChannels(Context context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager == null) return;
 
+        manager.createNotificationChannel(buildMessagesChannel());
+        manager.createNotificationChannel(buildCallsChannel());
+        manager.createNotificationChannel(buildGeneralChannel());
+    }
+
+    private static NotificationChannel buildMessagesChannel() {
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
@@ -75,10 +97,44 @@ final class NotifierNotifications {
                     .build();
             channel.setSound(sound, audioAttributes);
         }
+        return channel;
+    }
 
-        // Re-creating an existing channel only refreshes name/description;
-        // importance and sound set by the user are preserved by the platform.
-        manager.createNotificationChannel(channel);
+    private static NotificationChannel buildCallsChannel() {
+        NotificationChannel channel = new NotificationChannel(
+                CHANNEL_CALLS,
+                "Calls",
+                NotificationManager.IMPORTANCE_HIGH
+        );
+        channel.setDescription("Incoming and ongoing Chatgram calls.");
+        channel.enableVibration(true);
+        // A call should keep ringing, not just buzz once.
+        channel.setVibrationPattern(new long[] { 0, 1000, 800, 1000, 800, 1000 });
+        channel.setShowBadge(true);
+        // Calls are the one notification that may be seen on a locked screen even
+        // when the user hides notification content elsewhere.
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+        channel.setBypassDnd(false);
+
+        Uri ringtone = Settings.System.DEFAULT_RINGTONE_URI;
+        if (ringtone != null) {
+            AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .build();
+            channel.setSound(ringtone, audioAttributes);
+        }
+        return channel;
+    }
+
+    private static NotificationChannel buildGeneralChannel() {
+        NotificationChannel channel = new NotificationChannel(
+                CHANNEL_GENERAL,
+                "General",
+                NotificationManager.IMPORTANCE_DEFAULT
+        );
+        channel.setDescription("Other Chatgram notices.");
+        channel.setShowBadge(true);
+        return channel;
     }
 
     /**
@@ -100,20 +156,45 @@ final class NotifierNotifications {
     }
 
     /**
-     * Posts (or replaces) one message notification.
+     * Maps the JS {@code channel} argument onto a known channel id.
+     * Unknown/missing values fall back to {@code messages}, so the original
+     * {@code notify({...})} call keeps working unchanged.
+     */
+    static String normalizeChannel(String channel) {
+        if (CHANNEL_CALLS.equals(channel) || CHANNEL_GENERAL.equals(channel)) return channel;
+        return CHANNEL_ID;
+    }
+
+    /**
+     * Posts (or replaces) one notification.
      *
      * <p>Identity follows Android's own rule: the (tag, id) pair. With the web
      * layer's defaults that means the same chat replaces its previous
      * notification ({@code tag = chatId}, {@code id = 0}), while a per-message
      * {@code id} keeps several messages of one chat. Every notification is also
      * put in a per-chat group so Android can bundle them.
+     *
+     * @param channel  {@code messages}, {@code calls} or {@code general}; unknown
+     *                 values map to {@code messages}.
+     * @param ongoing  true = non-dismissible and no auto-cancel (e.g. an active
+     *                 call); it can only be removed with {@code cancel()}.
      */
-    static void post(Context context, int id, String title, String body, String chatId, String tag) {
-        ensureChannel(context);
+    static void post(
+            Context context,
+            int id,
+            String title,
+            String body,
+            String chatId,
+            String tag,
+            String channel,
+            boolean ongoing
+    ) {
+        ensureChannels(context);
         if (!canPost(context)) return;
 
+        String resolvedChannel = normalizeChannel(channel);
         String resolvedTag = firstNonEmpty(tag, chatId);
-        String groupKey = groupKey(chatId, resolvedTag);
+        String groupKey = groupKey(chatId, resolvedTag, resolvedChannel);
 
         Intent intent = new Intent(context, MainActivity.class);
         // The manifest already uses launchMode="singleTask"; these flags make the
@@ -136,19 +217,24 @@ final class NotifierNotifications {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, resolvedChannel)
                 .setSmallIcon(SMALL_ICON)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setDefaults(NotificationCompat.DEFAULT_SOUND | NotificationCompat.DEFAULT_VIBRATE)
-                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-                .setAutoCancel(true)
+                .setPriority(priorityFor(resolvedChannel))
+                .setDefaults(defaultsFor(resolvedChannel))
+                .setCategory(categoryFor(resolvedChannel))
+                .setAutoCancel(!ongoing)
+                .setOngoing(ongoing)
                 .setOnlyAlertOnce(false)
                 .setGroup(groupKey)
                 .setGroupSummary(false)
                 .setContentIntent(contentIntent);
+
+        if (CHANNEL_CALLS.equals(resolvedChannel)) {
+            builder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
+        }
 
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager == null) return;
@@ -165,7 +251,7 @@ final class NotifierNotifications {
         }
     }
 
-    /** Removes one message notification, using the same (tag, id) identity as {@link #post}. */
+    /** Removes one notification, using the same (tag, id) identity as {@link #post}. */
     static void cancel(Context context, int id, String tag) {
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager == null) return;
@@ -182,7 +268,8 @@ final class NotifierNotifications {
     }
 
     /**
-     * Removes every notification this notifier posted.
+     * Removes every notification this notifier posted (messages, calls and
+     * general).
      *
      * <p>On API 26+ the channel id is the filter, so the updater's "Update ready"
      * notification (a different channel) is untouched. API 24/25 have no
@@ -195,7 +282,7 @@ final class NotifierNotifications {
         try {
             for (StatusBarNotification active : manager.getActiveNotifications()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                        && !CHANNEL_ID.equals(active.getNotification().getChannelId())) {
+                        && !isOwnChannel(active.getNotification().getChannelId())) {
                     continue;
                 }
                 String tag = active.getTag();
@@ -210,10 +297,33 @@ final class NotifierNotifications {
         }
     }
 
-    private static String groupKey(String chatId, String tag) {
-        if (chatId != null) return GROUP_KEY + ".chat." + chatId;
-        if (tag != null) return GROUP_KEY + ".tag." + tag;
-        return GROUP_KEY;
+    private static boolean isOwnChannel(String channelId) {
+        return CHANNEL_ID.equals(channelId) || CHANNEL_CALLS.equals(channelId) || CHANNEL_GENERAL.equals(channelId);
+    }
+
+    private static String groupKey(String chatId, String tag, String channel) {
+        String base = CHANNEL_ID.equals(channel) ? GROUP_KEY : GROUP_KEY + "." + channel;
+        if (chatId != null) return base + ".chat." + chatId;
+        if (tag != null) return base + ".tag." + tag;
+        return base;
+    }
+
+    private static int priorityFor(String channel) {
+        return CHANNEL_GENERAL.equals(channel)
+                ? NotificationCompat.PRIORITY_DEFAULT
+                : NotificationCompat.PRIORITY_HIGH;
+    }
+
+    private static int defaultsFor(String channel) {
+        return CHANNEL_GENERAL.equals(channel)
+                ? NotificationCompat.DEFAULT_SOUND
+                : NotificationCompat.DEFAULT_SOUND | NotificationCompat.DEFAULT_VIBRATE;
+    }
+
+    private static String categoryFor(String channel) {
+        if (CHANNEL_CALLS.equals(channel)) return NotificationCompat.CATEGORY_CALL;
+        if (CHANNEL_GENERAL.equals(channel)) return NotificationCompat.CATEGORY_EVENT;
+        return NotificationCompat.CATEGORY_MESSAGE;
     }
 
     private static int requestCode(String chatId, String tag, int id) {

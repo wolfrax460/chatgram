@@ -807,6 +807,9 @@ async function createPeer(info: CallParticipant): Promise<PeerHandle | null> {
     }
     streamTick += 1;
     setState({ streamTick });
+    // A live remote track means media is negotiated: the call is genuinely
+    // connected, so never keep showing "Calling…"/"Connecting…" while frames flow.
+    if (handle.stream.getTracks().some((track) => track.readyState === 'live')) markActive();
   };
 
   pc.onicecandidate = (event) => {
@@ -1119,7 +1122,10 @@ export function handleIncoming(payload: {
   const others = Array.isArray(payload.participants)
     ? payload.participants.map(normalizeParticipant).filter((participant) => participant.id && participant.id !== myUserId)
     : [];
-  const participants = others.some((participant) => participant.id === from.id) ? others : [from, ...others];
+  // The caller is always first: the incoming screen treats participants[0] as
+  // the person who is calling (see CallOverlay), even when the snapshot already
+  // lists them somewhere else in the roster.
+  const participants = [from, ...others.filter((participant) => participant.id !== from.id)];
   pendingInvite = {
     callId: payload.callId,
     chatId: payload.chatId,
@@ -1226,7 +1232,18 @@ export function handleParticipantJoined(payload: {
   }
   // The newcomer needs to know our mute/camera/screen state before any frames.
   emitMySignalsTo(participant.id);
-  setState({ notice: `${participant.displayName || 'Someone'} joined the call.` });
+  // "X joined the call" must never sit next to a stale "Calling…": once somebody
+  // is in the room we are at least connecting, and when their peer connection is
+  // already up (or tracks are live) the call is really active.
+  const patch: Partial<CallState> = { notice: `${participant.displayName || 'Someone'} joined the call.` };
+  if (state.status === 'calling') patch.status = 'connecting';
+  setState(patch);
+  const joinedHandle = peers.get(participant.id);
+  if (joinedHandle) {
+    const peerConnected = joinedHandle.pc.connectionState === 'connected';
+    const mediaLive = joinedHandle.stream.getTracks().some((track) => track.readyState === 'live');
+    if (peerConnected || mediaLive) markActive();
+  }
   void applyVideoQuality();
 }
 

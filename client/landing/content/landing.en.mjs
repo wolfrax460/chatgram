@@ -242,6 +242,17 @@ export default {
       },
       {
         platform: 'android',
+        version: '1.1.6',
+        date: '27 October 2026',
+        items: [
+          'Notification settings that show the real permission state, open the Android notification settings and send a test notification',
+          'A battery-optimisation prompt, so Android stops delaying background notifications',
+          'A ringtone call channel and a native speaker / earpiece / Bluetooth switch for calls',
+          'Calls: the other person\x27s video starts by itself (an avatar shows instead of a play button), "Calling…" becomes the timer once someone joins, and the incoming screen shows who is calling',
+        ],
+      },
+      {
+        platform: 'android',
         version: '1.1.5',
         date: '27 October 2026',
         items: [

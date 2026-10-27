@@ -385,13 +385,16 @@ D:\androidstudio\cmdline-tools\latest\bin\apkanalyzer.bat dex packages $apk | Se
    and allow "install unknown apps" once). Do this once by hand; later versions can update over it.
 3. Publish the new APK for the landing page: copy `release-artifacts/chatgram-android.apk` to the
    server's `/downloads/` (the `/downloads/*` route is proxied to the VM), then update
-   `client/landing/content/site.mjs` (Android `version`, `sizeBytes`, SHA-256 if present) and
-   `client/landing/content/guides.mjs` (the 4,127,661-byte/1.1.0 text), plus
-   `client/landing/scripts/validate.mjs` (it hard-codes size 4127661 and version 1.1.0), and redeploy
-   the landing/web build. **Not done in this session** - it needs the production deploy + the
-   upload, and publishing a checksum for a file that is not on the server yet would be a lie.
-   Values to publish for **1.1.2**: version **1.1.2**, versionCode **3**, size **1116911** bytes,
-   SHA-256 `03812cb5ecdc64b343860d7ded4f08b3c54ddad24be63673529e0517d72a1ceb`.
+   `client/landing/content/site.mjs` (Android `version`, `sizeBytes`, SHA-256 if present),
+   `client/landing/content/guides.mjs` (version, size and checksum text — but keep that guide under
+   **700 visible words**, the landing build rejects it otherwise), `client/landing/content/landing.*.mjs`
+   ("What's new" entry) and `client/landing/scripts/validate.mjs` (it hard-codes the size and version),
+   then upload the APK, update `/var/www/downloads/checksums.txt` and the `android` AppRelease row, and
+   redeploy the web.
+   **Done for 1.1.6**: size **1305449** bytes, versionCode **7**, SHA-256
+   `fb44eaaa9152372542d237b8b244385a4eb096898f3d11245d769480b6ab42e0`, feed `latestVersion 1.1.6`,
+   `updateAvailable true`, download serves exactly 1,305,449 bytes. Backup of the 1.1.5 file:
+   `/var/www/downloads/chatgram-android-1.1.5.apk.bak`.
 4. Test the authenticated flows on your phone (sign-in, chat list, send a message, voice note, 1:1
    call with permissions, group join, Chatgram AI) and report anything that fails with a
    `adb logcat` excerpt.
@@ -403,7 +406,17 @@ D:\androidstudio\cmdline-tools\latest\bin\apkanalyzer.bat dex packages $apk | Se
 - **No remote push (FCM).** 1.1.5 ships local new-message notifications (see section 14): while the
   app process is alive — backgrounded or screen locked — a message raises a system notification and
   a tap opens that chat. If Android has killed the process, nothing can wake it without FCM
-  (Firebase project + device tokens + a server-side sender), which is still to do. iOS has no shell.
+  (Firebase project + device tokens + a server-side sender), which is still to do. **Blocked on the
+  owner**: `apps/mobile/android/app/google-services.json` does not exist, and no Firebase
+  service-account JSON is on the VM, so the push plugin, the server sender, the high-priority call data
+  message and the full-screen incoming-call intent could not be built in the 1.1.6 round. Once that
+  file exists, the round is: `@capacitor/push-notifications` + `firebase-admin` (service-account
+  **path** in an env var), token register/unregister per device, FCM send on offline/background,
+  `USE_FULL_SCREEN_INTENT` + `POST_NOTIFICATIONS` + a `phoneCall`/`microphone`/`camera` foreground
+  service for calls. iOS has no shell.
+- **No incoming-call notification while the app is alive either**: the in-app incoming screen works
+  (caller name/avatar, ringtone), but a `calls`-channel notification with Accept/Decline needs the
+  push/call-session work above.
 - **No safe-area handling yet**, which is why targetSdk stays 34; see D59/D60.
 - **Bundled/offline app is not built**: needs a Vite relative base + root router basename in
   `apps/web` (out of scope here).
@@ -455,3 +468,49 @@ The Android WebView cannot raise Web Notifications, so the app owns them:
   the first Play Store release.
 - Limits: local only (a killed process needs FCM); no per-chat mute handling in the channel itself
   (the web layer already suppresses muted chats/DND before calling `notify`).
+
+## 15. Notification settings, channels and call audio routing (shipped in 1.1.6, versionCode 7)
+
+Published file: **1,305,449 bytes**, SHA-256
+`fb44eaaa9152372542d237b8b244385a4eb096898f3d11245d769480b6ab42e0`, same debug keystore
+(`8a67642f91beb7183f1a3b2b5ed48e8278bfb1da1cfc7fa4594855068bc0152f`), so it updates in place over 1.1.5.
+`GET /api/app/version?platform=android` returns `latestVersion 1.1.6`, `versionCode 7`,
+`updateAvailable true`.
+
+What 1.1.6 adds to the native surface (all inside the `Notifier` / new `AudioRoute` plugins, registered
+in `MainActivity` **before** `super.onCreate()`):
+
+- `Notifier.openSettings()` → `{ opened }`: `ACTION_APP_NOTIFICATION_SETTINGS` +
+  `EXTRA_APP_PACKAGE` (API 26+), falling back to `ACTION_APPLICATION_DETAILS_SETTINGS`. The Settings
+  screen's "Android settings" button calls this; without it the row had no way to recover from a denial.
+- `Notifier.batteryOptimization()` → `{ ignoring }` and `Notifier.requestBatteryExemption()` →
+  `{ opened }` (`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, plus the manifest permission
+  `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`). Settings shows an Android-only card until the app is exempt,
+  because aggressive battery saving delays or drops background notifications.
+- Three channels: `messages` (unchanged), `calls` (`IMPORTANCE_HIGH`, ringtone via
+  `DEFAULT_RINGTONE_URI` + `USAGE_NOTIFICATION_RINGTONE`, vibration pattern, `CATEGORY_CALL`,
+  lockscreen `PUBLIC`) and `general`. `notify()` accepts `channel` and `ongoing`; unknown channel names
+  fall back to `messages`, so an older web build keeps working.
+- `AudioRoute` plugin (`@capacitorPlugin(name = "AudioRoute")`): `getRoute()` →
+  `{ route: 'earpiece'|'speaker'|'bluetooth'|'headset', bluetoothAvailable }`, `setRoute({ route })`
+  and `reset()` (also called from `handleOnDestroy()`). `setRoute` switches to `MODE_IN_COMMUNICATION`,
+  toggles `setSpeakerphoneOn`, and uses `startBluetoothSco`/`setBluetoothScoOn` on API < 31 (a missing
+  `BLUETOOTH_CONNECT` on API 31+ leaves the route unchanged instead of crashing). The web call overlay
+  detects `window.Capacitor.Plugins.AudioRoute`; when it is present the Speaker control is always
+  enabled, defaults to speaker for video calls and earpiece for voice calls, and never greys out. On
+  1.1.5 and older the button stays enabled and explains that the update is needed.
+
+Verification used for this build: `powershell -ExecutionPolicy Bypass -File apps/mobile/build-apk.ps1`
+(exit 0), which itself checks `versionCode`/`versionName` against `app/build.gradle`, the launcher
+activity, `MainActivity` in the dex, the hosted `server.url` and the signer; plus
+`aapt2 dump badging` (`versionCode='7' versionName='1.1.6'`) and `apkanalyzer dex packages` for
+`AudioRoutePlugin` (`getRoute`/`setRoute`/`reset`) and `NotifierPlugin`
+(`openSettings`/`batteryOptimization`/`requestBatteryExemption`).
+
+Not in 1.1.6: FCM and the full-screen incoming-call intent / `phoneCall` foreground service. The Firebase
+credentials now exist (owner-supplied): the app copy is `apps/mobile/android/app/google-services.json`
+(gitignored, source kept in `firebase/`), and the VM holds the service-account JSON at
+`/home/ubuntu/chatgram/firebase-service-account.json` (mode 600) with `FIREBASE_SERVICE_ACCOUNT` in
+`server/.env` pointing at it. Never commit or print either file. The push round is the next Android step:
+`@capacitor/push-notifications` + the Google Services Gradle plugin, token register/unregister, the server
+sender (`firebase-admin`) and the call data message with `USE_FULL_SCREEN_INTENT`.

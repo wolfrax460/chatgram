@@ -243,6 +243,17 @@ export default {
       },
       {
         platform: "android",
+        version: "1.1.6",
+        date: "27 octobre 2026",
+        items: [
+          "Réglages de notifications qui affichent le vrai état de l'autorisation, ouvrent les réglages Android et envoient une notification de test",
+          "Une invite pour désactiver l'optimisation de la batterie, afin qu'Android ne retarde plus les notifications",
+          "Un canal d'appel avec sonnerie et un sélecteur natif haut-parleur / écouteur / Bluetooth",
+          "Appels : la vidéo de l'autre personne démarre seule (un avatar remplace le bouton lecture), « Appel en cours… » devient le chrono dès que quelqu'un rejoint, et l'écran d'appel entrant affiche qui appelle",
+        ],
+      },
+      {
+        platform: "android",
         version: "1.1.5",
         date: "27 octobre 2026",
         items: [

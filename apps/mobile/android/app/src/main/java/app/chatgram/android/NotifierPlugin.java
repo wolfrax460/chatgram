@@ -1,8 +1,13 @@
 package app.chatgram.android;
 
 import android.Manifest;
+import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
 
 import androidx.core.content.ContextCompat;
 
@@ -17,11 +22,11 @@ import com.getcapacitor.annotation.PermissionCallback;
 import org.json.JSONObject;
 
 /**
- * {@code Notifier} — Android local notifications for new chat messages.
+ * {@code Notifier} — Android local notifications for new messages and calls.
  *
  * <p>The web client already holds the Socket.IO connection, so it decides when a
- * message is "new while not in the foreground" and calls this plugin. The
- * notification is posted by this app process; there is no remote push.
+ * notification is due and calls this plugin. The notification is posted by this
+ * app process; there is no remote push.
  *
  * <p><b>Not FCM:</b> a notification while the app process is dead (force-stopped,
  * swiped away or killed by the system) is impossible this way. That needs a
@@ -33,10 +38,15 @@ import org.json.JSONObject;
  * <pre>
  *   requestPermission() -> { granted: boolean, status: string }
  *   getPermission()     -> { granted: boolean, status: string }
- *   notify({ id?, title, body, chatId?, tag? }) -> void
+ *   openSettings()      -> { opened: boolean }   system notification settings
+ *   notify({ id?, title, body, chatId?, tag?, channel?, ongoing? }) -> void
+ *        channel: 'messages' | 'calls' | 'general' (default 'messages')
+ *        ongoing: boolean (default false; non-dismissible, no auto-cancel)
  *   cancel({ id?, tag? }) -> void
  *   cancelAll() -> void
  *   consumePending() -> { chatId: string | null }
+ *   batteryOptimization() -> { ignoring: boolean }
+ *   requestBatteryExemption() -> { opened: boolean }
  * </pre>
  * {@code notify} resolves without posting when notifications are not allowed.
  */
@@ -55,9 +65,10 @@ public class NotifierPlugin extends Plugin {
 
     @Override
     public void load() {
-        // Create the "messages" channel when the bridge starts, so it exists
-        // before the first notification (and shows up in Android Settings).
-        NotifierNotifications.ensureChannel(getContext());
+        // Create the "messages", "calls" and "general" channels when the bridge
+        // starts, so they exist before the first notification (and show up in
+        // Android Settings).
+        NotifierNotifications.ensureChannels(getContext());
     }
 
     /**
@@ -89,12 +100,101 @@ public class NotifierPlugin extends Plugin {
     }
 
     /**
+     * Opens the system notification settings for this app, where the user can
+     * switch notifications (and each channel) back on.
+     *
+     * <p>API 26+ opens the app's notification settings directly; anything older
+     * (or a device without that screen) falls back to the app's details page.
+     */
+    @PluginMethod
+    public void openSettings(PluginCall call) {
+        Context context = getContext();
+        boolean opened = false;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                intent.putExtra(Settings.EXTRA_APP_PACKAGE, context.getPackageName());
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(intent);
+                opened = true;
+            } catch (Exception ignored) {
+                opened = false;
+            }
+        }
+
+        if (!opened) {
+            opened = openAppDetails(context);
+        }
+
+        JSObject result = new JSObject();
+        result.put("opened", opened);
+        call.resolve(result);
+    }
+
+    /** Fallback settings screen: "App info" for this package. */
+    private boolean openAppDetails(Context context) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + context.getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /** Is this app currently exempt from battery optimization (Doze)? */
+    @PluginMethod
+    public void batteryOptimization(PluginCall call) {
+        boolean ignoring = false;
+        try {
+            PowerManager powerManager = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            if (powerManager != null) {
+                ignoring = powerManager.isIgnoringBatteryOptimizations(getContext().getPackageName());
+            }
+        } catch (Exception ignored) {
+            ignoring = false;
+        }
+
+        JSObject result = new JSObject();
+        result.put("ignoring", ignoring);
+        call.resolve(result);
+    }
+
+    /**
+     * Asks Android for the battery-optimization exemption. Shows the system
+     * dialog; the user can still refuse, so callers should re-check with
+     * {@link #batteryOptimization(PluginCall)} afterwards.
+     */
+    @PluginMethod
+    public void requestBatteryExemption(PluginCall call) {
+        boolean opened = false;
+        try {
+            Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            opened = true;
+        } catch (Exception ignored) {
+            opened = false;
+        }
+
+        JSObject result = new JSObject();
+        result.put("opened", opened);
+        call.resolve(result);
+    }
+
+    /**
      * Posts or replaces one notification.
      *
      * <p>Arguments: {@code id} (default 0), {@code title} (default "New
-     * message"), {@code body} (default ""), {@code chatId}, {@code tag}. The
-     * same (tag, id) pair replaces the previous notification; the default
-     * identity is per chat ({@code tag = chatId}, {@code id = 0}).
+     * message"), {@code body} (default ""), {@code chatId}, {@code tag},
+     * {@code channel} ({@code messages}/{@code calls}/{@code general}, default
+     * {@code messages}), {@code ongoing} (default false). The same (tag, id)
+     * pair replaces the previous notification; the default identity is per chat
+     * ({@code tag = chatId}, {@code id = 0}).
      */
     @PluginMethod
     public void notify(PluginCall call) {
@@ -105,11 +205,13 @@ public class NotifierPlugin extends Plugin {
             String body = call.getString("body", "");
             String chatId = trimToNull(call.getString("chatId"));
             String tag = trimToNull(call.getString("tag"));
+            String channel = NotifierNotifications.normalizeChannel(trimToNull(call.getString("channel")));
+            boolean ongoing = Boolean.TRUE.equals(call.getBoolean("ongoing", false));
 
             if (title == null) title = "New message";
             if (body == null) body = "";
 
-            NotifierNotifications.post(getContext(), id, title, body, chatId, tag);
+            NotifierNotifications.post(getContext(), id, title, body, chatId, tag, channel, ongoing);
         } catch (Exception ignored) {
             // A notification must never reject into the web layer: not posting is
             // the only acceptable failure mode.
@@ -131,7 +233,7 @@ public class NotifierPlugin extends Plugin {
         call.resolve();
     }
 
-    /** Removes every message notification posted by this plugin. */
+    /** Removes every notification this plugin posted (messages, calls, general). */
     @PluginMethod
     public void cancelAll(PluginCall call) {
         try {

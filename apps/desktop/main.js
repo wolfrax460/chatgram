@@ -559,6 +559,33 @@ ipcMain.handle('chatgram:notify', (_event, payload = {}) => {
 
 ipcMain.handle('chatgram:appVersion', () => app.getVersion());
 
+// --- notification state and the Windows settings screen -------------------
+//
+// Windows has no per-app permission prompt to query: a toast is shown unless the
+// user turned Chatgram off in Settings → System → Notifications (or Focus
+// assist is on). So the honest answer is "the OS will show it" plus a way to
+// reach that page, which is exactly what the Settings screen needs; without this
+// the row was dead because the page cannot open ms-settings itself.
+ipcMain.handle('chatgram:notification-support', () => ({
+  supported: Notification.isSupported(),
+  platform: process.platform,
+}));
+
+ipcMain.handle('chatgram:open-notification-settings', async () => {
+  try {
+    // Windows 10/11 notification settings page (per-app toggles live here).
+    await shell.openExternal('ms-settings:notifications');
+    return true;
+  } catch {
+    try {
+      await shell.openExternal('ms-settings:');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+});
+
 // --- updates (Settings -> About and the required-update screen) ---
 ipcMain.handle('chatgram:update-state', () => updateState);
 ipcMain.handle('chatgram:update-check', async () => {

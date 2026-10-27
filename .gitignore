@@ -72,3 +72,7 @@ backups/
 
 # Locally built installers (published via the VM download route, not git)
 /release-artifacts/
+
+# ---- Firebase credentials (owner-supplied, never commit) --------------------
+firebase/
+apps/mobile/android/app/google-services.json
