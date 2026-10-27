@@ -243,12 +243,12 @@ export default {
       },
       {
         platform: "android",
-        version: "1.1.0",
-        date: "25 Ukwakira 2026",
+        version: "1.1.2",
+        date: "27 Ukwakira 2026",
         items: [
-          "Ubwubatsi bwa mbere bwa Android bukururwa ku buryo butaziguye (umukono w'igerageza, gushyira ku buryo bwo kwikora)",
-          "Application id app.chatgram.android, Android 7.0 cyangwa hejuru",
-          "Kameta na mikoro bisabwa gusa iyo ikiganiro cyangwa ubutumwa bw'amajwi bikeneye",
+          "Gukemura guhagarara ku tangira (\"Chatgram irahagarara\"): class yo gutangira na config iri mu porogaramu bihuye ubu",
+          "Ubwubatsi bworoshye (1.1 MB) n'umukono umwe, bwinjira hejuru ya 1.1.0",
+          "Klavye ntisubizwa mu mwanya wo kwandika; paji y'itumanaho idahari isobanura iyo seriveri itabonetse",
         ],
       },
     ],

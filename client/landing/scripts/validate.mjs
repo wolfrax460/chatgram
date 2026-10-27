@@ -124,7 +124,7 @@ export async function validateSite({ distDir, siteUrl, locales, guideContents, g
     const android = findNode(nodes, 'MobileApplication');
     check(android && android.operatingSystem, `${label} MobileApplication needs operatingSystem`);
     check(android && android.downloadUrl === `${siteUrl}/downloads/chatgram-android.apk`, `${label} MobileApplication downloadUrl must be the APK`);
-    check(android && android.fileSize === '4127661', `${label} MobileApplication fileSize must be 4127661`);
+    check(android && android.fileSize === '1116911', `${label} MobileApplication fileSize must be 1116911`);
     check(android && android.softwareVersion, `${label} MobileApplication needs softwareVersion`);
     check(android && android.offers && String(android.offers.price) === '0', `${label} MobileApplication offers.price must be 0`);
 
@@ -169,13 +169,13 @@ export async function validateSite({ distDir, siteUrl, locales, guideContents, g
         'Install unknown apps',
         'Chatgram AI',
         'Windows and Android apps',
-        'v1.1.0',
+        'v1.1.2',
         '#download',
       ]) {
         check(html.includes(needle), `[en] missing expected copy "${needle}" for the existing Playwright landing spec`);
       }
       check(html.includes('81,824,358'), '[en] Windows size must state the real 81,824,358 bytes');
-      check(html.includes('4,127,661'), '[en] Android size must state the real 4,127,661 bytes');
+      check(html.includes('1,116,911'), '[en] Android size must state the real 1,116,911 bytes');
     }
 
     // FAQ parity: every visible question/answer is present as text in the page.

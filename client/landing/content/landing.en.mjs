@@ -240,12 +240,12 @@ export default {
       },
       {
         platform: 'android',
-        version: '1.1.0',
-        date: '25 October 2026',
+        version: '1.1.2',
+        date: '27 October 2026',
         items: [
-          'First direct-download Android build (debug-signed, sideload only)',
-          'Application id app.chatgram.android, Android 7.0 or newer',
-          'Camera and microphone permission only when a call or voice note needs them',
+          'Fixed the crash on launch ("Chatgram keeps stopping") — the launcher class and the packaged config now match',
+          'Smaller optimised build (1.1 MB) with the same signing key, so it installs in place over 1.1.0',
+          'The keyboard no longer covers the message box, and a friendly offline page explains when the server cannot be reached',
         ],
       },
     ],

@@ -26,8 +26,11 @@ android {
         applicationId "app.chatgram.android"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.1.1"
+        // Every published APK MUST increase versionCode, otherwise Android
+        // refuses the update ("App not installed"). 1.1.1/2 was the broken
+        // launch build; 1.1.2/3 is the first published-fixed build.
+        versionCode 3
+        versionName "1.1.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

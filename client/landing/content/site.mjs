@@ -76,31 +76,32 @@ export const RELEASES = {
   },
   android: {
     platform: 'android',
-    version: '1.1.0',
+    version: '1.1.2',
     fileName: 'chatgram-android.apk',
     fileUrl: '/downloads/chatgram-android.apk',
-    sizeBytes: 4127661,
-    sizeMB: '3.9',
-    shaShort: '1dfe75cb…eb0da',
-    shaFull: '1dfe75cb8ac6475fcc29d81a667114a41fe9cc2f1b95379cb92ce693662eb0da',
-    releasedText: '25 October 2026',
-    releasedISO: '2026-10-25',
+    sizeBytes: 1116911,
+    sizeMB: '1.1',
+    shaShort: '03812cb5…a1ceb',
+    shaFull: '03812cb5ecdc64b343860d7ded4f08b3c54ddad24be63673529e0517d72a1ceb',
+    releasedText: '27 October 2026',
+    releasedISO: '2026-10-27',
     requirements: 'Android 7.0+ (API 24)',
   },
   web: {
     platform: 'web',
-    version: '1.1.0',
+    version: '1.1.2',
     fileName: '',
     fileUrl: '/web/',
     sizeBytes: 0,
-    releasedText: '25 October 2026',
-    releasedISO: '2026-10-25',
+    releasedText: '27 October 2026',
+    releasedISO: '2026-10-27',
   },
 };
 
 /** Feed rows that still describe the previous installers must not overwrite the
- * verified size/checksum above. These prefixes belong to the 2026-10-25 builds. */
-export const STALE_FEED_HASH_PREFIXES = ['1943d51a', 'a5891a58'];
+ * verified size/checksum above. These prefixes belong to the 2026-10-25 builds
+ * (and the broken 1.1.0 Android APK, replaced by 1.1.2 on 2026-10-27). */
+export const STALE_FEED_HASH_PREFIXES = ['1943d51a', 'a5891a58', '1dfe75cb'];
 
 export const OG_IMAGE = {
   path: '/assets/og-image-1200x630.png',

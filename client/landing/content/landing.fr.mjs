@@ -243,12 +243,12 @@ export default {
       },
       {
         platform: "android",
-        version: "1.1.0",
-        date: "25 octobre 2026",
+        version: "1.1.2",
+        date: "27 octobre 2026",
         items: [
-          "Première version Android en téléchargement direct (signature de test, installation manuelle)",
-          "Identifiant d'application app.chatgram.android, Android 7.0 ou plus récent",
-          "Caméra et microphone demandés uniquement pour un appel ou une note vocale",
+          "Correction du plantage au démarrage (« Chatgram s'arrête ») : la classe de lancement et la configuration embarquée correspondent maintenant",
+          "Version optimisée plus légère (1,1 Mo) avec la même clé de signature, elle s'installe par-dessus la 1.1.0",
+          "Le clavier ne masque plus la zone de message et une page hors connexion explique quand le serveur est injoignable",
         ],
       },
     ],

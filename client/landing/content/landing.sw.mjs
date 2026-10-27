@@ -243,12 +243,12 @@ export default {
       },
       {
         platform: "android",
-        version: "1.1.0",
-        date: "25 Oktoba 2026",
+        version: "1.1.2",
+        date: "27 Oktoba 2026",
         items: [
-          "Toleo la kwanza la Android la upakuaji wa moja kwa moja (sahihi ya majaribio, usakinishaji wa moja kwa moja)",
-          "Kitambulisho cha programu app.chatgram.android, Android 7.0 au mpya zaidi",
-          "Kamera na maikrofoni huombwa tu simu au ujumbe wa sauti unapohitaji",
+          "Kurekebisha kuanguka wakati wa kufungua (\"Chatgram inasimama\"): darasa la kuanzisha na usanidi uliowekwa sasa vinalingana",
+          "Toleo dogo lililoboreshwa (MB 1.1) lenye ufunguo uleule wa sahihi, husakinisha juu ya 1.1.0",
+          "Kibodi haifuniki tena sehemu ya ujumbe; ukurasa wa nje ya mtandao unaeleza seva inaposhindwa kufikiwa",
         ],
       },
     ],

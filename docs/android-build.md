@@ -1,6 +1,6 @@
 # Chatgram for Android - build, test and troubleshooting notes
 
-Last updated **2026-10-26**, build **1.1.1 (versionCode 2)**, app id `app.chatgram.android`,
+Last updated **2026-10-27**, build **1.1.2 (versionCode 3)**, app id `app.chatgram.android`,
 minSdk 24, targetSdk 34, compileSdk 36.
 
 The Android app is a **thin Capacitor 6 shell** (`apps/mobile`) that loads the hosted web client
@@ -16,7 +16,7 @@ The React/Flutter leftovers in `client/android/` are **not** the Android app; do
 The 4,127,661-byte 1.1.0 APK could never show the app. Found three independent fatal faults, plus
 five defects that would have made the app nearly unusable even after the crash was fixed.
 
-| # | Cause | Evidence | Fix in 1.1.1 |
+| # | Cause | Evidence | Fix (1.1.1, shipped in 1.1.2) |
 |---|-------|----------|--------------|
 | 1 | **Launcher activity did not exist.** The merged manifest launches `app.chatgram.android.MainActivity`, but the dex only contained `com.chatgram.app.MainActivity` (the app id/namespace was renamed but the Java package was not). | On an Android 14 emulator: `FATAL EXCEPTION: main ... java.lang.RuntimeException: Unable to instantiate activity ComponentInfo{app.chatgram.android/app.chatgram.android.MainActivity}: java.lang.ClassNotFoundException: Didn't find class "app.chatgram.android.MainActivity"`. Also visible offline: `apkanalyzer dex packages` lists only `com.chatgram.app.MainActivity`. | Moved the activity to `android/app/src/main/java/app/chatgram/android/MainActivity.java` with `package app.chatgram.android`. The build script now fails if the manifest class is not in the dex. |
 | 2 | **Stale `cap copy`.** `capacitor.config.json` was edited on 2026-10-25 (app id + `server.url`) but `cap copy` was never re-run, so the APK packaged the 2026-10-20 config: `appId: com.chatgram.app`, **no `server.url`**. Capacitor therefore loaded bundled local assets instead of the hosted client. | APK `assets/capacitor.config.json` (mtime 2026-10-20) vs repo config (mtime 2026-10-25). | `apps/mobile/build-apk.ps1` always runs `cap copy`, then refuses to build unless the **packaged** `assets/capacitor.config.json` has the right appId + `server.url`. |
@@ -24,7 +24,7 @@ five defects that would have made the app nearly unusable even after the crash w
 | 4 | **Keyboard covered the composer** - no `windowSoftInputMode`, so Android used the default pan/nothing instead of resize. | Manifest inspection. | `android:windowSoftInputMode="adjustResize"` added to `MainActivity`. |
 | 5 | **White flash / white screen on network failure** - the post-splash window background was `@null` (white) and there was no `server.errorPath`. | Manifest/styles inspection; the 1.1.0 app showed nothing at all offline. | `android:windowBackground` = branded `#0B141A`, `android.backgroundColor` = `#0B141A`, `server.errorPath = error.html`, plus a local offline page with auto-retry. |
 | 6 | **Android 15/16 layout breakage** - targetSdk 36 forces edge-to-edge; the web client does not use `env(safe-area-inset-*)`, so the header sat under the status bar and the composer under the gesture bar, and adjustResize stopped working. | Android 15 edge-to-edge enforcement for targetSdk 35+. | `targetSdkVersion = 34` (compileSdk stays 36). Do not raise it until the web client handles safe areas; see D60. |
-| 7 | **Updates would be refused** - `versionCode` stayed 1 for every build, and Gradle would silently generate a NEW debug keystore if the file ever went missing, changing the signature. | Gradle build file inspection. | `versionCode 2` for 1.1.1, and the build **fails** if `~/.android/debug.keystore` is missing. |
+| 7 | **Updates would be refused** - `versionCode` stayed 1 for every build, and Gradle would silently generate a NEW debug keystore if the file ever went missing, changing the signature. | Gradle build file inspection. | `versionCode` 2 (then 3 for the published 1.1.2), and the build **fails** if `~/.android/debug.keystore` is missing. |
 | 8 | **No shrinking / dead weight** - `assembleDebug`, `minifyEnabled false`, unused storage permissions, a stale 0.5 MB web snapshot, no R8. | Build file + APK contents. | Release build with R8 + resource shrinking, unused `READ_MEDIA_*` / `READ_EXTERNAL_STORAGE` permissions removed, web snapshot dropped, no unused Capacitor plugins (the plugin list was already empty). Result: **4.13 MB -> 1.07 MB**. |
 
 **Size is not the bug.** A thin wrapper is normally 4-6 MB; 1.1.0's 4.13 MB was normal. The 1.1.1
@@ -224,6 +224,9 @@ D:\androidstudio\emulator\emulator.exe -avd chatgram_api34 `
 ```
 
 - `-no-snapshot-save` keeps a clean state and avoids corrupt snapshots; `-memory 2048` caps the guest.
+  (On this 11.7 GB PC the emulator logs `Increasing RAM size to 2560MB` - it raises the value itself
+  when it thinks the host can spare it; that is normal, not an error.)
+- Cold boot on this machine takes about **50 s** (`Boot completed in 50856 ms` in the emulator log).
 - Only boot one emulator. Close Chrome, Slack, Docker and Android Studio while testing.
 - The emulator **boots but is very slow with software graphics**: on this PC the Android system UI
   and `system_server` repeatedly show *"Process system isn't responding"* while the Chatgram app
@@ -245,8 +248,9 @@ foreach ($p in 'com.google.android.gms','com.google.android.googlequicksearchbox
 & $adb shell getprop sys.boot_completed   # 1 = booted
 ```
 
-Install + launch exactly as on a phone. Cold-start measurement on this emulator for 1.1.1:
-**2.3 s** with a warm WebView cache, 5.1 s after `force-stop` (software graphics). The < 3 s target is
+Install + launch exactly as on a phone. Cold-start measurement on this emulator for 1.1.2:
+**3.9 s COLD** right after `force-stop` (`am start -W` TotalTime; 2.3 s in an earlier 1.1.1 run with
+a warm WebView cache). The < 3 s target is
 for a mid-range phone, which cannot be measured here.
 
 **Command-line only path (no Android Studio at all):** everything above uses only
@@ -269,34 +273,42 @@ Software (`-gpu swiftshader_indirect`). **Hyper-V / Windows Hypervisor Platform*
 
 ---
 
-## 8. This build (1.1.1)
+## 8. This build (1.1.2)
 
 | | |
 | --- | --- |
-| Version | **1.1.1**, `versionCode` **2** |
+| Version | **1.1.2**, `versionCode` **3** (1.1.1 was `versionCode` 2; 1.1.0 was 1) |
 | File | `release-artifacts/chatgram-android.apk` |
-| Size | **1,116,723 bytes (1.07 MB)** - 1.1.0 was 4,127,661 bytes |
-| SHA-256 | `defe6b4eb18dc3994e2cbcdd31860efa2113b1268797b4314d5cdf678e2c1149` |
+| Size | **1,116,911 bytes (1.07 MB)** - 1.1.0 was 4,127,661 bytes |
+| SHA-256 | `03812cb5ecdc64b343860d7ded4f08b3c54ddad24be63673529e0517d72a1ceb` |
 | applicationId | `app.chatgram.android` |
 | minSdk / targetSdk / compileSdk | 24 / 34 / 36 |
 | Signing | debug key (`C:\Users\mugis\.android\debug.keystore`), cert SHA-256 `8a67642f...152f` |
 | Loads | `https://chatgram-xi.vercel.app/web/` (verified in logcat) |
+| Built by | `apps/mobile/build-apk.ps1` (runs a FRESH `cap copy`) on 2026-10-27 |
 
-Verified with the emulator (Android 14 / API 34, Google APIs x86_64):
+`versionCode` was bumped to 3 for this build because a clean rebuild changes the APK bytes
+(non-reproducible build + timestamps), and Android requires an increasing versionCode for updates:
+any 1.1.1 (`versionCode 2`) test build already on a phone still updates in place to 1.1.2.
 
-- Installed **as an in-place update** over the 1.1.0 APK (`adb install -r` -> `Success`, same key).
-- 1.1.0 (for comparison): `FATAL EXCEPTION ... ClassNotFoundException: app.chatgram.android.MainActivity`
-  - the app closed before drawing anything.
-- 1.1.1: `Capacitor: Loading app at https://chatgram-xi.vercel.app/web/`, `App started`, the Chatgram
-  sign-in screen rendered (logo, "Welcome back", email/phone field, Continue with Google, Create
-  account, Privacy/Terms/Help, version footer).
-- Cold start `am start -W`: **TotalTime 2264 ms** (warm WebView cache), 5107 ms right after
-  `force-stop` on the software-rendered emulator.
-- Offline behaviour: with Wi-Fi and mobile data off the app shows the local `error.html`
-  ("Can't reach Chatgram", auto-retry, Try again) instead of a blank screen - logcat shows
-  `Capacitor: Handling local request: https://localhost/error.html`.
-- `adb shell dumpsys package app.chatgram.android` -> `versionCode=2 versionName=1.1.1
+Verified with the emulator (Android 14 / API 34 Google APIs x86_64, 720x1600, software graphics):
+
+- `adb install -r` over the installed 1.1.1 build -> **Success** (same key, in-place update).
+- 1.1.0 (for comparison, historical): `FATAL EXCEPTION: main ... ClassNotFoundException:
+  app.chatgram.android.MainActivity` - the app closed before drawing anything.
+- 1.1.2 logcat: `Capacitor: Loading app at https://chatgram-xi.vercel.app/web/`, `App started`,
+  **no FATAL / no ClassNotFoundException**; `topResumedActivity=app.chatgram.android/.MainActivity`.
+- Rendering: the Chatgram sign-in screen (logo, "Welcome back", email/phone, password, Sign in,
+  Continue with Google, Create account, Privacy/Terms/Help, version footer) - screenshot
+  `docs/reports/android-1.1.2-launch.png`.
+- Cold start `am start -W`: **Status ok, LaunchState COLD, TotalTime 3887 ms** on this
+  software-rendered emulator (the very first launch after install timed out at ~12.8 s because the
+  WebView initialises cold; a mid-range phone should be faster).
+- `adb shell dumpsys package app.chatgram.android` -> `versionCode=3 versionName=1.1.2
   minSdk=24 targetSdk=34`.
+- Offline behaviour (verified for 1.1.1, unchanged code): with Wi-Fi and mobile data off the app
+  shows the local `error.html` ("Can't reach Chatgram", auto-retry, Try again) instead of a blank
+  screen - logcat shows `Capacitor: Handling local request: https://localhost/error.html`.
 
 **Not tested (needs a real phone or a second device):** sign-in with a real account, chat list,
 sending a message, voice note, a 1:1 call with camera/mic permission prompts, joining a group,
@@ -306,7 +318,7 @@ hardware.
 
 ---
 
-## 9. What 1.1.1 changed for performance / size / usability
+## 9. What 1.1.1 (carried into 1.1.2) changed for performance / size / usability
 
 - **R8 (`minifyEnabled true`) + `shrinkResources true`** on a release build signed with the debug key
   - no `debuggable`, smaller dex. Kept classes in `app/proguard-rules.pro` (Capacitor runtime,
@@ -378,8 +390,8 @@ D:\androidstudio\cmdline-tools\latest\bin\apkanalyzer.bat dex packages $apk | Se
    `client/landing/scripts/validate.mjs` (it hard-codes size 4127661 and version 1.1.0), and redeploy
    the landing/web build. **Not done in this session** - it needs the production deploy + the
    upload, and publishing a checksum for a file that is not on the server yet would be a lie.
-   Values to publish: version **1.1.1**, size **1116723** bytes, SHA-256
-   `defe6b4eb18dc3994e2cbcdd31860efa2113b1268797b4314d5cdf678e2c1149`.
+   Values to publish for **1.1.2**: version **1.1.2**, versionCode **3**, size **1116911** bytes,
+   SHA-256 `03812cb5ecdc64b343860d7ded4f08b3c54ddad24be63673529e0517d72a1ceb`.
 4. Test the authenticated flows on your phone (sign-in, chat list, send a message, voice note, 1:1
    call with permissions, group join, Chatgram AI) and report anything that fails with a
    `adb logcat` excerpt.
@@ -396,3 +408,4 @@ D:\androidstudio\cmdline-tools\latest\bin\apkanalyzer.bat dex packages $apk | Se
 - **Bundled/offline app is not built**: needs a Vite relative base + root router basename in
   `apps/web` (out of scope here).
 - Cold start on a real mid-range phone, and every authenticated flow, is unverified (see 8).
+

@@ -14,7 +14,7 @@ export const GUIDES_CONTENT = [
       {
         h2: 'What you need to get started',
         html: `<p>You need an email address or a Google account. Chatgram runs on Android 7.0 or newer, on 64-bit Windows 10 or newer, and in any current Chrome, Edge, Firefox or Safari. The same account works on all three, so you can start on your phone and continue on your PC.</p>
-<p>Install it here: the <a href="/downloads/chatgram-android.apk">Android APK</a> is 4,127,661 bytes (3.9 MB) and the <a href="/downloads/chatgram-windows-setup.exe">Windows installer</a> is 81,824,358 bytes (78.0 MB). Or open the <a href="/web/">web app</a> and sign in there; it is the same account.</p>`,
+<p>Install it here: the <a href="/downloads/chatgram-android.apk">Android APK</a> is 1,116,911 bytes (1.1 MB) and the <a href="/downloads/chatgram-windows-setup.exe">Windows installer</a> is 81,824,358 bytes (78.0 MB). Or open the <a href="/web/">web app</a> and sign in there; it is the same account.</p>`,
       },
       {
         h2: 'Create your account',
@@ -68,10 +68,10 @@ export const GUIDES_CONTENT = [
     sections: [
       {
         h2: 'Check the file before you download',
-        html: `<p>The current Android build is version 1.1.0, package ID <strong>app.chatgram.android</strong>, and requires Android 7.0 (API 24) or newer. It is a debug-signed build intended for direct installation.</p>
+        html: `<p>The current Android build is version 1.1.2, package ID <strong>app.chatgram.android</strong>, and requires Android 7.0 (API 24) or newer. It is a debug-signed build intended for direct installation.</p>
 <ul>
 <li><strong>File:</strong> chatgram-android.apk</li>
-<li><strong>Size:</strong> 4,127,661 bytes (3.9 MB)</li>
+<li><strong>Size:</strong> 1,116,911 bytes (1.1 MB)</li>
 <li><strong>Download link:</strong> <a href="/downloads/chatgram-android.apk">download chatgram-android.apk</a></li>
 </ul>
 <p>Download it only from this site or from the Chatgram download page, and never from a message someone sent you. The published file is served over HTTPS from /downloads/.</p>`,
@@ -97,8 +97,12 @@ export const GUIDES_CONTENT = [
       {
         h2: 'Verify the SHA-256 checksum (optional, recommended)',
         html: `<p>A checksum proves the file you downloaded is exactly the file that was published. The SHA-256 for this build is:</p>
-<p><code>1dfe75cb8ac6475fcc29d81a667114a41fe9cc2f1b95379cb92ce693662eb0da</code></p>
+<p><code>03812cb5ecdc64b343860d7ded4f08b3c54ddad24be63673529e0517d72a1ceb</code></p>
 <p>On a PC, run <code>Get-FileHash chatgram-android.apk -Algorithm SHA256</code> in PowerShell or <code>sha256sum chatgram-android.apk</code> on Linux, and compare the result. If the values differ, delete the file and download it again.</p>`,
+      },
+      {
+        h2: 'Already installed an earlier build?',
+        html: `<p>Early 1.1.0 APKs could crash with “Chatgram keeps stopping” because of a packaging error; 1.1.2 fixes it. Install 1.1.2 over the old app — the signing key is the same, so Android updates it in place and your account is untouched. If the crashing app still opens afterwards, uninstall it once and install 1.1.2 again.</p>`,
       },
       {
         h2: 'First launch and permissions',
@@ -212,7 +216,7 @@ export const GUIDES_CONTENT = [
       },
       {
         h2: 'Get the app',
-        html: `<p>Chatgram AI is part of the free app on every platform: <a href="/downloads/chatgram-android.apk">download the Android APK</a> (4,127,661 bytes), <a href="/downloads/chatgram-windows-setup.exe">download the Windows installer</a> (81,824,358 bytes), or <a href="/web/">open Chatgram in your browser</a>. The account and the conversations are the same everywhere.</p>`,
+        html: `<p>Chatgram AI is part of the free app on every platform: <a href="/downloads/chatgram-android.apk">download the Android APK</a> (1,116,911 bytes), <a href="/downloads/chatgram-windows-setup.exe">download the Windows installer</a> (81,824,358 bytes), or <a href="/web/">open Chatgram in your browser</a>. The account and the conversations are the same everywhere.</p>`,
       },
     ],
   },
