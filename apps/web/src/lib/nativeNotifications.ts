@@ -55,6 +55,22 @@ interface AndroidNotifierPlugin {
   requestBatteryExemption?: () => Promise<{ opened?: boolean }>;
 }
 
+/** Capacitor's PushNotifications event carrying a freshly minted FCM token. */
+interface PushRegistrationEvent {
+  value?: string | null;
+}
+
+interface PluginListenerHandle {
+  remove: () => void | Promise<void>;
+}
+
+interface PushNotificationsPlugin {
+  addListener?: (
+    event: 'registration',
+    listener: (event: PushRegistrationEvent) => void,
+  ) => PluginListenerHandle | Promise<PluginListenerHandle>;
+}
+
 interface CapacitorLike {
   getPlatform?: () => string;
   isNativePlatform?: () => boolean;
@@ -84,6 +100,13 @@ export function androidNotifier(): AndroidNotifierPlugin | null {
   const native = cap.isNativePlatform ? cap.isNativePlatform() === true : true;
   const platform = cap.getPlatform?.();
   return native && (platform === undefined || platform === 'android') ? plugin : null;
+}
+
+/** The `PushNotifications` Capacitor plugin (Android shell only). */
+function pushNotificationsPlugin(): PushNotificationsPlugin | null {
+  const plugin = capacitor()?.Plugins?.PushNotifications as PushNotificationsPlugin | undefined;
+  if (!plugin || typeof plugin.addListener !== 'function') return null;
+  return plugin;
 }
 
 export function isDesktopShell(): boolean {
@@ -261,6 +284,40 @@ export function nativePermissionState(): NativePermission {
 }
 
 const PUSH_TOKEN_KEY = 'chatgram.push.token';
+/** Coming back to the foreground re-syncs the token at most this often. */
+const PUSH_SYNC_INTERVAL_MS = 60_000;
+
+/** The token the server already accepted during this app session. */
+let registeredPushToken: string | null = null;
+
+/**
+ * POST one FCM token to the server once per app session (again only when the
+ * shell rotates it). Best effort: registration must never break the UI.
+ */
+async function registerPushToken(token: string): Promise<void> {
+  if (!token || token === registeredPushToken) return;
+  try {
+    let remembered: string | null = null;
+    try {
+      remembered = window.localStorage.getItem(PUSH_TOKEN_KEY);
+    } catch {
+      remembered = null;
+    }
+    if (remembered === token) {
+      registeredPushToken = token;
+      return;
+    }
+    await api.registerDevice(token, 'android');
+    registeredPushToken = token;
+    try {
+      window.localStorage.setItem(PUSH_TOKEN_KEY, token);
+    } catch {
+      /* private mode: the token is simply registered again next launch */
+    }
+  } catch {
+    /* push registration is best effort */
+  }
+}
 
 /**
  * Register this device's FCM token with the server (Android only).
@@ -270,25 +327,13 @@ const PUSH_TOKEN_KEY = 'chatgram.push.token';
  * best effort: a failure must never block sign-in or the UI.
  */
 export async function syncPushToken(): Promise<void> {
+  if (appShell() !== 'android' && !isAndroidShell()) return;
   const notifier = androidNotifier();
   if (!notifier?.getFcmToken) return;
   try {
     const result = await notifier.getFcmToken();
     const token = typeof result?.token === 'string' ? result.token : '';
-    if (!token) return;
-    let remembered: string | null = null;
-    try {
-      remembered = window.localStorage.getItem(PUSH_TOKEN_KEY);
-    } catch {
-      remembered = null;
-    }
-    if (remembered === token) return;
-    await api.registerDevice(token, 'android');
-    try {
-      window.localStorage.setItem(PUSH_TOKEN_KEY, token);
-    } catch {
-      /* private mode: the token is simply registered again next launch */
-    }
+    if (token) await registerPushToken(token);
   } catch {
     /* push registration is best effort */
   }
@@ -309,6 +354,7 @@ export async function unregisterPushToken(): Promise<void> {
   } catch {
     /* signing out must always work */
   }
+  registeredPushToken = null;
   try {
     window.localStorage.removeItem(PUSH_TOKEN_KEY);
   } catch {
@@ -330,6 +376,45 @@ export function initNativeNotifications(openChat: (chatId: string) => void): () 
   void syncPushToken();
   const disposers: Array<() => void> = [];
 
+  if (appShell() === 'android' || isAndroidShell()) {
+    // Coming back to a foregrounded app: retry registration (it may have failed
+    // before sign-in or on a flaky network), at most once a minute.
+    let lastPushSyncAt = Date.now();
+    const syncPushWhenVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastPushSyncAt < PUSH_SYNC_INTERVAL_MS) return;
+      lastPushSyncAt = now;
+      void syncPushToken();
+    };
+    document.addEventListener('visibilitychange', syncPushWhenVisible);
+    window.addEventListener('focus', syncPushWhenVisible);
+    disposers.push(() => {
+      document.removeEventListener('visibilitychange', syncPushWhenVisible);
+      window.removeEventListener('focus', syncPushWhenVisible);
+    });
+
+    // FCM can rotate the token while the app is open; the shell emits
+    // `registration` with the fresh token, so the server gets it immediately
+    // instead of waiting for the next app launch.
+    const push = pushNotificationsPlugin();
+    if (push?.addListener) {
+      try {
+        const added = push.addListener('registration', (event) => {
+          const token = typeof event?.value === 'string' ? event.value : '';
+          if (token) void registerPushToken(token);
+        });
+        disposers.push(() => {
+          void Promise.resolve(added)
+            .then((handle) => handle.remove())
+            .catch(() => undefined);
+        });
+      } catch {
+        /* older shells without the event must not break notifications */
+      }
+    }
+  }
+
   const bridge = desktop();
   if (bridge?.onOpenChat) {
     disposers.push(
@@ -340,23 +425,27 @@ export function initNativeNotifications(openChat: (chatId: string) => void): () 
   }
 
   const notifier = androidNotifier();
-  if (notifier?.consumePending) {
+  if (notifier && (notifier.consumePending || notifier.consumePushOpened)) {
     const drain = () => {
-      void notifier
-        .consumePending?.()
-        .then((pending) => {
-          const chatId = pending?.chatId;
-          if (chatId) openChat(chatId);
-        })
-        .catch(() => undefined);
+      if (notifier.consumePending) {
+        void notifier
+          .consumePending()
+          .then((pending) => {
+            const chatId = pending?.chatId;
+            if (chatId) openChat(chatId);
+          })
+          .catch(() => undefined);
+      }
       // A push tap (message notification or accepted call) stores the chat too.
-      void notifier
-        .consumePushOpened?.()
-        .then((pending) => {
-          const chatId = pending?.chatId;
-          if (chatId) openChat(chatId);
-        })
-        .catch(() => undefined);
+      if (notifier.consumePushOpened) {
+        void notifier
+          .consumePushOpened()
+          .then((pending) => {
+            const chatId = pending?.chatId;
+            if (chatId) openChat(chatId);
+          })
+          .catch(() => undefined);
+      }
     };
     // Launch-from-notification and back-from-background both end here.
     drain();
