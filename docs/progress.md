@@ -1,3 +1,62 @@
+## CHUNK 7C COMPLETE — Android in-app updates (deployed 2026-10-27)
+
+**Live:** Android **1.1.4 (versionCode 5)** published at `/downloads/chatgram-android.apk`
+(`1,274,365 B`, SHA-256 `ec079765…f9f825`, same debug keystore), web `chatgram-gu051kewm`.
+The old 1.1.2 APK is kept on the VM as `chatgram-android-1.1.2.apk.bak`.
+
+### What the app does now
+- **Checks**: at launch, on resume (`visibilitychange`), and roughly every 12 h through a
+  WorkManager job (so a check happens within 24 h even when the app is closed).
+- **Network policy (owner decision)**: updates download over **Wi-Fi or mobile data — whichever is
+  available**. "Wi-Fi only" exists only as an opt-in data-saving switch (default **off**), and when
+  it is on the download waits for Wi-Fi instead of failing. Roaming stays off.
+- **Download**: `DownloadManager`, app-specific external storage, cache-busted per version.
+- **Verify**: the SHA-256 published by `/api/app/version` is checked before anything is offered;
+  a mismatch deletes the file and records an error.
+- **Install**: never silent (Android forbids it outside Play). "Update ready: tap to install"
+  (in-app banner + notification) opens Android's installer; the one-time
+  "install unknown apps → Chatgram" approval is requested via `REQUEST_INSTALL_PACKAGES` +
+  `ACTION_MANAGE_UNKNOWN_APP_SOURCES`.
+- **Required updates**: `minSupportedVersion` / `forceUpdate` show a blocking screen that cannot be
+  dismissed until the update is installed.
+- **Settings → About**: installed version, update state/progress, "Check for updates", install,
+  release notes and the Wi-Fi-only switch.
+
+### Files
+`apps/mobile/android/app/src/main/java/app/chatgram/android/`: `AppUpdaterPlugin` (JS bridge),
+`VersionClient` (endpoint + decision), `UpdatePrefs` (state), `UpdateDownloader`,
+`UpdateFinalizer`, `UpdateFinalizeWorker`, `UpdateDownloadReceiver` (legacy broadcast),
+`UpdateNotifier`, `UpdatePaths`, `UpdateFile`, `AppVersion`; manifest gains
+`REQUEST_INSTALL_PACKAGES` + the receiver; `file_paths.xml` gains the updates path;
+`androidx.work:work-runtime` added. Web: `lib/androidUpdates.ts`,
+`AndroidUpdateBanner`, `AndroidUpdateGate`, `AndroidUpdateCard` (About).
+
+### Verified on the API-34 emulator (`chatgram_api34`)
+1. Installed **1.1.4**; launch check wrote `lastCheckedAt` and `state=idle` (up to date).
+2. Staged a temporary feed version 1.1.5 (same bytes) → cleared app data → launched:
+   check → **download → SHA-256 verify → `state=ready`**, file `chatgram-1.1.5.apk`
+   **1,274,365 B on device with the exact expected SHA-256**, banner
+   **"Update ready (1.1.5): tap to install."** and the `chatgram_updates` notification channel.
+3. The "tap to install" button opens the installer path (manual step on a phone, as documented).
+4. Temporary feed row reverted to the real **1.1.4** afterwards (verified via the public API).
+
+### Bugs found by that test (all fixed in 1.1.4)
+- **`ACTION_DOWNLOAD_COMPLETE` is not delivered to manifest receivers on Android 8+**, so the first
+  build downloaded the file but never finalised it. Now: context-registered receiver while the app
+  runs **+** a WorkManager finalisation job **+** lazy finalisation in `getState()`.
+- **The CDN served the previous APK for the same URL** (1 h `max-age`), which the checksum correctly
+  refused. Fixed by a per-version cache-bust query in the app and in the published feed URL
+  (`…chatgram-android.apk?v=1.1.4`). This also means the **checksum-mismatch refusal was observed
+  for real**: mismatched file deleted, error recorded, nothing offered for install.
+- A periodic check could pull the state back from `downloading`/`ready` to `available`; it now
+  leaves an in-flight or finished update alone.
+- Two downloads could start for one update; enqueueing now refuses when one is running.
+
+**Still manual (owner):** install the published APK once by hand on a real phone, sign in, and
+confirm the update banner + install prompt there; 1.1.2 installs have no updater and need that one
+manual install (same rule as the Windows 1.1.0 builds). Real Wi-Fi↔mobile-data switching and
+mid-range-device cold start are not tested.
+
 ## ANDROID 1.1.2 PUBLISHED — user-facing "Chatgram keeps stopping" fixed for downloads (2026-10-27)
 
 **Root cause of what users still saw:** `/downloads/chatgram-android.apk` was still the **old broken 1.1.0 build** (4,127,661 B, launcher ClassNotFoundException) — the fixed APK existed locally but had never been uploaded/published. (The clean rebuild superseded 1.1.1: 1,116,723 B / `defe6b4e…` → 1.1.2, 1,116,911 B / `03812cb5…`.)

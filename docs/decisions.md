@@ -981,3 +981,31 @@ The web client has no safe-area CSS yet. Bump targetSdk only together with safe-
 
 **Cost to reverse:** a one-line targetSdk change; R8 can be disabled per build type; the keystore
 decision is irreversible in practice (changing it breaks installed users' updates).
+
+## D61 - Android updates are honest, user-confirmed, and work on either network (2026-10-27)
+
+Chunk 7C adds in-app updates to the sideloaded APK. Three constraints shaped it.
+
+**1. No silent installs.** Android refuses background APK installs outside the Play Store, so the
+app does the closest safe thing: download → verify → notify → the user taps Install in the system
+installer (one-time "install unknown apps" approval). Claiming "auto-update" anywhere in the UI
+would be a lie, so the wording is "Update ready: tap to install".
+
+**2. Any network is enough.** The owner decision is that updates must not be Wi-Fi-only by default:
+the download runs over **Wi-Fi or mobile data, whichever is available**. "Wi-Fi only" remains an
+opt-in data-saving switch (default off); with it on, the download waits for Wi-Fi instead of
+failing. Roaming stays off so travel cannot quietly cost money.
+
+**3. Integrity is mandatory.** The APK is only offered for install after its SHA-256 matches the
+value published by `/api/app/version`; a mismatch deletes the file. Downloads are cache-busted per
+version (`?v=<version>`) because the CDN served the previous APK for an unchanged URL during
+testing - the checksum caught it, which is exactly the behaviour we want.
+
+**Finalisation is deliberately redundant**, because `ACTION_DOWNLOAD_COMPLETE` is not delivered to
+manifest receivers on Android 8+: a context receiver covers the app-open case, a WorkManager job
+covers the app-closed case, and `getState()` finalises lazily when the app is merely opened. All
+three paths share `UpdateFinalizer`, so verification cannot be skipped.
+
+**Why not WorkManager for the download itself:** DownloadManager survives process death, handles
+retries/resume and shows system progress; WorkManager is used only for the periodic check and the
+finalisation pass.

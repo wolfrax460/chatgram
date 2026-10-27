@@ -36,6 +36,17 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- Chunk 7C: finishes the update download even when the app was closed.
+             The system delivers DOWNLOAD_COMPLETE here; exported=false is enough
+             (system broadcasts still arrive) and keeps other apps out. -->
+        <receiver
+            android:name=".UpdateDownloadReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- Permissions -->
@@ -52,6 +63,10 @@
     <!-- Kept for the update notifications in CHUNK 7 and for call alert
          notifications; Android 13+ only shows them after a runtime prompt. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Chunk 7C: the in-app updater hands the verified APK to Android's package
+         installer. This permission lets the system offer that flow; the user
+         still approves "install unknown apps" once and taps Install. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- The photo/file picker inside the WebView uses the Storage Access
          Framework (ACTION_GET_CONTENT), which needs no storage permission on
          Android 7+, so READ_MEDIA_* / READ_EXTERNAL_STORAGE are intentionally

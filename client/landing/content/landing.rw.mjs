@@ -243,6 +243,16 @@ export default {
       },
       {
         platform: "android",
+        version: "1.1.4",
+        date: "27 Ukwakira 2026",
+        items: [
+          "Amavugurura mu porogaramu: Chatgram ureba niba hari APK nshya, ayikurura kuri Wi-Fi cyangwa data ya telefone (bishingiye ku kuboneka), agenzura checksum, hanyuma agatanga � Amavugurura yiteguye: kanda ushyireho �",
+          "Paji isaba kuvugurura iyo verisiyo iri mu porogaramu itakibyemewe",
+          "Nta kwishyiraho mu buryo bwihishe: Android isaba uburenganzira bwa installer rimwe, kandi nta kintu gishyirwaho utakanze",
+        ],
+      },
+      {
+        platform: "android",
         version: "1.1.2",
         date: "27 Ukwakira 2026",
         items: [

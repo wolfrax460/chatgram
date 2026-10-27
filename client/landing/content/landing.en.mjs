@@ -242,6 +242,16 @@ export default {
       },
       {
         platform: 'android',
+        version: '1.1.4',
+        date: '27 October 2026',
+        items: [
+          'In-app updates: Chatgram checks for a newer APK, downloads it over Wi-Fi or mobile data (whichever is available), verifies the checksum and offers "Update ready: tap to install"',
+          'An update-required screen when the installed version is no longer supported',
+          'No silent installs: Android asks for the installer approval once, and nothing installs without a tap',
+        ],
+      },
+      {
+        platform: 'android',
         version: '1.1.2',
         date: '27 October 2026',
         items: [

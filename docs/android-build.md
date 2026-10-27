@@ -409,3 +409,24 @@ D:\androidstudio\cmdline-tools\latest\bin\apkanalyzer.bat dex packages $apk | Se
   `apps/web` (out of scope here).
 - Cold start on a real mid-range phone, and every authenticated flow, is unverified (see 8).
 
+## In-app updates (chunk 7C, shipped in 1.1.4)
+
+The APK updates itself without the Play Store:
+
+1. **Check** at launch, on resume and ~every 12 h (WorkManager) against
+   `GET /api/app/version?platform=android`.
+2. **Decision** in `VersionClient`: never a downgrade, never a withdrawn release; `minSupportedVersion`
+   or `forceUpdate` make it blocking.
+3. **Download** with `DownloadManager` over **Wi-Fi or mobile data** (Wi-Fi-only is an optional
+   switch, default off). The URL is cache-busted with `?v=<version>` because `/downloads/` sits
+   behind a CDN with a 1 h TTL and once served the previous APK for the same URL.
+4. **Verify** the SHA-256 from the feed; a mismatch deletes the file and records an error.
+5. **Install**: "Update ready: tap to install" opens Android's installer; the app requests the
+   one-time "install unknown apps" approval. Nothing installs without that tap.
+
+Publishing a new APK therefore means:
+- bump `versionCode` **and** `versionName` in `app/build.gradle` (the build script checks the code),
+- `powershell -ExecutionPolicy Bypass -File apps\mobile\build-apk.ps1` (same debug keystore!),
+- upload the APK to `/var/www/downloads/` (the file is owned by ubuntu) and update the `android`
+  AppRelease row (version, versionCode, sha256, size, fileUrl **with** `?v=<version>`),
+- update `checksums.txt`, the landing constants and `scripts/validate.mjs`, then deploy the web.

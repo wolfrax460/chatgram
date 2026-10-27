@@ -27,6 +27,12 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Local (in-app) Capacitor plugin for chunk 7C: check, download with
+        // DownloadManager, verify the SHA-256, then hand off to Android's
+        // installer. Must be registered before super.onCreate() so the bridge
+        // knows about it when the WebView starts.
+        registerPlugin(AppUpdaterPlugin.class);
+
         super.onCreate(savedInstanceState);
 
         WebSettings settings = getBridge().getWebView().getSettings();
@@ -38,5 +44,12 @@ public class MainActivity extends BridgeActivity {
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         // The app talks HTTPS only; never let a page downgrade to HTTP.
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+
+        // Update checks: ~12 h in the background, plus one now when the last
+        // check is older than 6 h (so a fresh release is seen without waiting).
+        UpdateWorker.schedulePeriodic(this);
+        if (UpdatePrefs.lastCheckedAt(this) < System.currentTimeMillis() - 6 * 60 * 60 * 1000L) {
+            UpdateWorker.checkNow(this);
+        }
     }
 }

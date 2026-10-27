@@ -243,6 +243,16 @@ export default {
       },
       {
         platform: "android",
+        version: "1.1.4",
+        date: "27 octobre 2026",
+        items: [
+          "Mises à jour dans l'application : Chatgram vérifie s'il existe un APK plus récent, le télécharge en Wi-Fi ou en données mobiles (selon la disponibilité), vérifie la somme de contrôle et propose « Mise à jour prête : touchez pour installer »",
+          "Un écran « mise à jour requise » lorsque la version installée n'est plus prise en charge",
+          "Aucune installation silencieuse : Android demande une fois l'autorisation de l'installateur, et rien ne s'installe sans un appui",
+        ],
+      },
+      {
+        platform: "android",
         version: "1.1.2",
         date: "27 octobre 2026",
         items: [

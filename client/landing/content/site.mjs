@@ -76,13 +76,13 @@ export const RELEASES = {
   },
   android: {
     platform: 'android',
-    version: '1.1.2',
+    version: '1.1.4',
     fileName: 'chatgram-android.apk',
     fileUrl: '/downloads/chatgram-android.apk',
-    sizeBytes: 1116911,
-    sizeMB: '1.1',
-    shaShort: '03812cb5…a1ceb',
-    shaFull: '03812cb5ecdc64b343860d7ded4f08b3c54ddad24be63673529e0517d72a1ceb',
+    sizeBytes: 1274365,
+    sizeMB: '1.2',
+    shaShort: 'ec079765…9f825',
+    shaFull: 'ec07976581a36291bdef0182b9e181980e2cc3efc6bee6dad728800860f9f825',
     releasedText: '27 October 2026',
     releasedISO: '2026-10-27',
     requirements: 'Android 7.0+ (API 24)',
@@ -100,7 +100,8 @@ export const RELEASES = {
 
 /** Feed rows that still describe the previous installers must not overwrite the
  * verified size/checksum above. These prefixes belong to the 2026-10-25 builds
- * (and the broken 1.1.0 Android APK, replaced by 1.1.2 on 2026-10-27). */
+ * (the broken 1.1.0 Android APK was replaced by 1.1.2, then by 1.1.3 with in-app
+ * updates, on 2026-10-27). */
 export const STALE_FEED_HASH_PREFIXES = ['1943d51a', 'a5891a58', '1dfe75cb', 'c9882047'];
 
 export const OG_IMAGE = {
