@@ -47,7 +47,7 @@ import { ProfilePanel } from './components/ProfilePanel';
 import { AndroidUpdateGate } from './components/AndroidUpdateGate';
 import { AppUpdateDialog } from './components/AppUpdateDialog';
 import { MediaPermissionDialog } from './components/MediaPermissionDialog';
-import { initNativeNotifications } from './lib/nativeNotifications';
+import { initNativeNotifications, unregisterPushToken } from './lib/nativeNotifications';
 import { takeRefreshDraft } from './lib/appUpdate';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, sameDay, statusOf } from './lib/ui';
@@ -1411,6 +1411,8 @@ function Shell({ features }: { features: AppFeatures | null }) {
                 type="button"
                 className="btn-primary"
                 onClick={async () => {
+                  // Stop pushes for this account before the session is cleared.
+                  await unregisterPushToken();
                   await api.logout().catch(() => {});
                   setUser(null);
                 }}
