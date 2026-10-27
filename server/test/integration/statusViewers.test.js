@@ -160,6 +160,16 @@ async function main() {
   check('feed viewedBy is still populated with user objects', feedStatus?.viewedBy?.some((v) => v && typeof v === 'object' && v.displayName), JSON.stringify(feedStatus?.viewedBy));
   check('feed does not expose per-view timestamps', feedStatus?.viewedAt === undefined, JSON.stringify(feedStatus?.viewedAt));
 
+  // Privacy: where the author sees names, everybody else must see bare ids — a
+  // contact must never learn who viewed someone else's status from the feed.
+  const otherFeed = await api('GET', '/api/status', { token: viewerTwo.token });
+  const otherView = (otherFeed.body || []).find((s) => s._id === statusId);
+  check(
+    'non-authors only get viewer ids from the feed',
+    !otherView || (otherView.viewedBy || []).every((v) => v && typeof v === 'object' && !v.displayName),
+    JSON.stringify(otherView?.viewedBy),
+  );
+
   // -------------------------------------------------- deleted status is 404
   const doomed = await api('POST', '/api/status', { token: owner.token, body: { text: 'Deleted status' } });
   const doomedId = doomed.body?._id;

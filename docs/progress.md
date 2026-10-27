@@ -1,3 +1,17 @@
+## AI AS A NORMAL CHAT + STATUS VIEWERS (web live 2026-10-27, backend #121)
+
+**Chatgram AI is no longer pinned (all platforms)**
+- The banner-style "Chatgram AI" row above the chat list is gone. The same `ChatList` component is used by the web app, the Android shell and the Windows shell, so this fixes all three at once.
+- AI is now a normal row: own avatar with the verified badge, a small "AI" chip, the last answer as preview, unread count and its timestamp, inserted at its real position in the recency sort (top of a fresh list because it has no history yet, then wherever its last message belongs). `data-testid="ai-chat-row"` replaced `ai-pinned-entry` in the e2e and layout scripts.
+- Phones: the AI tab left the bottom bar (now Chats / Calls / Status / Groups / Settings) and became a Meta-AI style floating sparkle button above the tab bar (`data-testid="ai-fab"`, unread badge, hidden while a conversation or the AI screen is open). The desktop rail keeps its own AI button.
+
+**Status viewers ("who saw my status")**
+- `GET /api/status/:id/viewers` (author only): `{ count, viewers: [{ id, displayName, avatarUrl, viewedAt, isContact }], truncated }`, newest first, capped at 200, one row per person; 404 for missing/expired (checked before the ownership test, so an expired status leaks nothing), 403 for a non-author.
+- `viewedBy` is a bare id array, so a new `select:false` `viewedAt` map records the per-user time; a repeat view refreshes the time instead of duplicating the row, and the feed still populates the same fields as before (no view times exposed).
+- Privacy fix found on the way: the feed used to populate `viewedBy` with names and avatars for **everybody's** statuses, so a contact could read who viewed someone else's status. `getStatuses` now returns names only for your own statuses and bare ids for the rest (the "seen" ring still works).
+- Web: "Viewed by N" under My status opens a bottom sheet with avatar/initials, name, relative time and a Contact badge, plus loading, empty and quiet 403/404 states; scrollable inside 85vh on a 360 px phone and centred on desktop.
+- Tests: `statusViewers` 36/36 (incl. the new non-author privacy assertion), `statusMedia` 45/45, `statusCleanup` 13/13. Backend restarted as #121, health 200, unauthenticated `/viewers` returns 401.
+
 ## CALLING FIXES + NATIVE NOTIFICATIONS (web live 2026-10-27, APK 1.1.5/6)
 
 **Microphone/camera permission (A1)**

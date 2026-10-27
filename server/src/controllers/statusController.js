@@ -129,6 +129,16 @@ const getStatuses = async (req, res) => {
     const shaped = statuses.map((status) => {
       const json = status.toJSON();
       if (json.mediaUrl && !json.mediaType) json.mediaType = 'image';
+      // Who viewed a status is private to its author. The populate above is only
+      // needed so the owner can see names; for anybody else's status the feed
+      // must expose bare ids (the "seen" ring only needs to know IF I viewed it),
+      // otherwise a contact could read viewer identities from this JSON.
+      const authorId = String(json.userId?._id ?? json.userId ?? '');
+      if (authorId !== String(req.user._id)) {
+        json.viewedBy = (json.viewedBy || []).map((viewer) => ({
+          id: String(viewer?._id ?? viewer?.id ?? viewer ?? ''),
+        }));
+      }
       return json;
     });
 
