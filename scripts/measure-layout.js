@@ -102,7 +102,7 @@ async function setupChat(a) {
     for (let attempt = 0; attempt < 4 && !ready; attempt += 1) {
       await page.goto(APP, { waitUntil: 'networkidle' });
       try {
-        await page.getByTestId('ai-pinned-entry').waitFor({ timeout: 8_000 });
+        await page.getByTestId('ai-chat-row').waitFor({ timeout: 8_000 });
         ready = true;
       } catch {
         await page.waitForTimeout(1_500);

@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useS
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Moon, Sun, Monitor, MessageCircle, LogOut, Users, CircleDashed, Phone,
-  Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy, Sparkles, BadgeCheck,
+  Settings as SettingsIcon, ChevronDown, X, Search, LifeBuoy, Sparkles,
   UserRoundPlus, Plus, Download, Share2, FolderUp, FileText, Camera, Lock,
 } from 'lucide-react';
 import {
@@ -50,7 +50,7 @@ import { MediaPermissionDialog } from './components/MediaPermissionDialog';
 import { initNativeNotifications } from './lib/nativeNotifications';
 import { takeRefreshDraft } from './lib/appUpdate';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
-import { dateSeparatorLabel, formatTime, sameDay, statusOf } from './lib/ui';
+import { dateSeparatorLabel, sameDay, statusOf } from './lib/ui';
 
 type Tab = 'chats' | 'calls' | 'status' | 'groups' | 'settings' | 'ai';
 
@@ -1238,41 +1238,6 @@ function Shell({ features }: { features: AppFeatures | null }) {
             ) : (
               <>
             <AnnouncementBanner />
-            <button
-              type="button"
-              onClick={() => setTab('ai')}
-              aria-current={tab === 'ai' ? 'page' : undefined}
-              className={`flex w-full shrink-0 items-center gap-3 border-b border-ink-200 px-3 py-2.5 text-left dark:border-white/10 ${
-                tab === 'ai' ? 'bg-ink-100/80 dark:bg-white/[.06]' : 'hover:bg-ink-100/70 dark:hover:bg-white/[.04]'
-              }`}
-              data-testid="ai-pinned-entry"
-            >
-              <span className="relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-brand-600 text-white">
-                <img src="/web/assistant-avatar.svg" alt="" className="h-full w-full object-cover" />
-                <BadgeCheck className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-white text-brand-600 dark:bg-ink-800 dark:text-brand-300" aria-label="Official Chatgram AI" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-baseline gap-2">
-                  <span className="min-w-0 flex-1 truncate font-semibold">Chatgram AI</span>
-                  {aiPreviewAt ? (
-                    <span className="shrink-0 text-[10.5px] font-medium text-ink-500 dark:text-ink-400">{formatTime(aiPreviewAt, timeFormat)}</span>
-                  ) : null}
-                </span>
-                <span className="mt-0.5 flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-500 dark:text-ink-400">
-                    {aiPreview || 'Official · Ask anything'}
-                  </span>
-                  {aiUnread > 0 ? (
-                    <span
-                      className="grid h-5 min-w-[20px] shrink-0 place-items-center rounded-full bg-brand-600 px-1.5 text-[10.5px] font-bold text-white"
-                      data-testid="ai-unread-badge"
-                    >
-                      {aiUnread > 9 ? '9+' : aiUnread}
-                    </span>
-                  ) : null}
-                </span>
-              </span>
-            </button>
             <ChatList
               onAskAi={(text: string) => {
                 setAiPendingQuestion(text);
@@ -1286,6 +1251,8 @@ function Shell({ features }: { features: AppFeatures | null }) {
               onSelect={setSelectedId}
               onNewChat={() => setNewChatOpen(true)}
               onOpenProfile={(userId, chatId) => profileApi.openProfile(userId, chatId)}
+              aiChat={{ preview: aiPreview ?? '', at: aiPreviewAt, unread: aiUnread }}
+              onOpenAi={() => setTab('ai')}
             />
               </>
             )}
@@ -1396,6 +1363,26 @@ function Shell({ features }: { features: AppFeatures | null }) {
         </div>
       )}
 
+      {/* Phones: Chatgram AI is a floating button above the tab bar (Meta-AI
+          style) instead of a tab or a pinned row in the list. */}
+      {!selected && tab !== 'ai' ? (
+        <button
+          type="button"
+          onClick={() => setTab('ai')}
+          aria-label={aiUnread > 0 ? `Chatgram AI, ${aiUnread} new` : 'Chatgram AI'}
+          data-testid="ai-fab"
+          className="fixed right-3 z-40 grid h-14 w-14 place-items-center rounded-full bg-brand-600 text-white shadow-[0_8px_24px_rgba(0,0,0,.35)] transition active:scale-95 md:hidden"
+          style={{ bottom: 'calc(64px + env(safe-area-inset-bottom))' }}
+        >
+          <Sparkles className="h-6 w-6" />
+          {aiUnread > 0 ? (
+            <span className="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-rose-600 px-1 text-[10px] font-bold">
+              {aiUnread > 9 ? '9+' : aiUnread}
+            </span>
+          ) : null}
+        </button>
+      ) : null}
+
       {!selected ? (
         <MobileNav
           tab={tab}
@@ -1403,7 +1390,6 @@ function Shell({ features }: { features: AppFeatures | null }) {
           badges={{
             chats: (chats.data ?? []).reduce((total, row) => total + (row.unreadCount ?? 0), 0),
             calls: missedCalls.data?.count ?? 0,
-            ai: aiUnread,
           }}
           hasStatus={false}
         />

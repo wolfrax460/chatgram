@@ -1,6 +1,6 @@
 import { onlineNow, usePresenceView } from '../lib/presence';
-import { useMemo, useState } from 'react';
-import { Search, UserRoundPlus, Check, CheckCheck, Sparkles } from 'lucide-react';
+import { Fragment, useMemo, useState } from 'react';
+import { Search, UserRoundPlus, Check, CheckCheck, Sparkles, BadgeCheck } from 'lucide-react';
 import type { Chat } from '@chatgram/core';
 import { chatTitle, chatPartner } from '@chatgram/core';
 import { avatarGradient, formatTime, initialsFor, previewText, type TimeFormat } from '../lib/ui';
@@ -8,6 +8,10 @@ import { avatarGradient, formatTime, initialsFor, previewText, type TimeFormat }
 /**
  * Conversation list: search, compose button, unread badges, "You:"/tick
  * previews, stable per-contact avatar colours and recency sorting.
+ *
+ * Chatgram AI is a normal row here, sorted by its own last activity like every
+ * other conversation — it used to be a pinned banner above the list, which made
+ * it look like a promoted feature instead of a chat.
  */
 export function ChatList({
   chats,
@@ -19,6 +23,8 @@ export function ChatList({
   onNewChat,
   onOpenProfile,
   onAskAi,
+  aiChat,
+  onOpenAi,
 }: {
   chats: Chat[];
   meId: string;
@@ -31,6 +37,9 @@ export function ChatList({
   onOpenProfile?: (userId: string, chatId: string) => void;
   /** Send the search text to Chatgram AI (WhatsApp-style "Ask Meta AI" row). */
   onAskAi?: (text: string) => void;
+  /** The Chatgram AI conversation, placed by its own recency. */
+  aiChat?: { preview: string; at: string | null; unread: number } | null;
+  onOpenAi?: () => void;
 }) {
   const presenceView = usePresenceView();
   const [query, setQuery] = useState('');
@@ -45,6 +54,62 @@ export function ChatList({
     if (!q) return sorted;
     return sorted.filter((c) => chatTitle(c, meId).toLowerCase().includes(q));
   }, [chats, meId, query]);
+
+  // Where does the AI row belong? Match the search first, then insert by recency.
+  // With no history yet it has no timestamp: treat it as "now" so it still sits at
+  // the top of a fresh list instead of being buried at the bottom.
+  const q = query.trim().toLowerCase();
+  const showAi = Boolean(aiChat && onOpenAi && (!q || 'chatgram ai'.includes(q)));
+  const aiAt = aiChat?.at ? new Date(aiChat.at).getTime() : Number.POSITIVE_INFINITY;
+  const aiInsertAt = showAi
+    ? (() => {
+        const index = visible.findIndex((chat) => {
+          const at = new Date(chat.lastMessage?.sentAt ?? chat.updatedAt ?? 0).getTime();
+          return at < aiAt;
+        });
+        return index === -1 ? visible.length : index;
+      })()
+    : -1;
+
+  const aiRow = showAi && aiChat && onOpenAi ? (
+    <div
+      key="chatgram-ai"
+      className="flex w-full items-center gap-3 px-3 py-2.5 transition hover:bg-ink-100/70 dark:hover:bg-white/[.04]"
+    >
+      <button type="button" onClick={onOpenAi} className="relative shrink-0 rounded-full" aria-label="Open Chatgram AI" data-testid="ai-row-avatar">
+        <div className="grid h-11 w-11 place-items-center overflow-hidden rounded-full bg-brand-600 text-white">
+          <img src="/web/assistant-avatar.svg" alt="" className="h-full w-full object-cover" />
+        </div>
+        <BadgeCheck className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-white text-brand-600 dark:bg-ink-800 dark:text-brand-300" aria-label="Official Chatgram AI" />
+      </button>
+      <button type="button" onClick={onOpenAi} className="min-w-0 flex-1 text-left" data-testid="ai-chat-row">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate font-semibold">Chatgram AI</span>
+            <span className="shrink-0 rounded bg-brand-600/10 px-1 py-px text-[9.5px] font-bold uppercase tracking-wide text-brand-700 dark:bg-brand-400/15 dark:text-brand-300">
+              AI
+            </span>
+          </span>
+          <span className="shrink-0 text-[11px] text-ink-600 dark:text-ink-300">
+            {aiChat.at ? formatTime(aiChat.at, timeFormat) : ''}
+          </span>
+        </div>
+        <div className="mt-0.5 flex items-center gap-1">
+          <span className="truncate text-[12.5px] text-ink-600 dark:text-ink-300">
+            {aiChat.preview || 'Official · Ask anything'}
+          </span>
+          {aiChat.unread > 0 ? (
+            <span
+              className="ml-auto grid h-5 min-w-[20px] shrink-0 place-items-center rounded-full bg-brand-600 px-1.5 text-[11px] font-bold text-white"
+              data-testid="ai-unread-badge"
+            >
+              {aiChat.unread > 9 ? '9+' : aiChat.unread}
+            </span>
+          ) : null}
+        </div>
+      </button>
+    </div>
+  ) : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -89,7 +154,7 @@ export function ChatList({
           </p>
         ) : null}
 
-        {visible.map((chat) => {
+        {visible.map((chat, index) => {
           const partner = chatPartner(chat, meId);
           const isGroup = chat.type === 'group';
           const avatarUrl = isGroup ? chat.groupAvatarUrl : partner?.avatarUrl;
@@ -105,6 +170,8 @@ export function ChatList({
           const read = last ? last.readBy.some((id) => others.includes(id)) : false;
 
           return (
+            <Fragment key={chat.id}>
+              {index === aiInsertAt ? aiRow : null}
             <div
               key={chat.id}
               className={`flex w-full items-center gap-3 px-3 py-2.5 transition ${
@@ -175,8 +242,10 @@ export function ChatList({
                 </div>
               </button>
             </div>
+            </Fragment>
           );
         })}
+        {aiInsertAt === visible.length ? aiRow : null}
       </div>
     </div>
   );

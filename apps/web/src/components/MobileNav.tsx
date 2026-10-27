@@ -1,4 +1,4 @@
-import { CircleDashed, MessageCircle, Phone, Settings as SettingsIcon, Sparkles, Users } from 'lucide-react';
+import { CircleDashed, MessageCircle, Phone, Settings as SettingsIcon, Users } from 'lucide-react';
 
 type Tab = 'chats' | 'calls' | 'status' | 'groups' | 'settings' | 'ai';
 
@@ -7,7 +7,6 @@ const ITEMS: { key: Tab; label: string; Icon: typeof MessageCircle }[] = [
   { key: 'calls', label: 'Calls', Icon: Phone },
   { key: 'status', label: 'Status', Icon: CircleDashed },
   { key: 'groups', label: 'Groups', Icon: Users },
-  { key: 'ai', label: 'AI', Icon: Sparkles },
   { key: 'settings', label: 'Settings', Icon: SettingsIcon },
 ];
 
@@ -15,7 +14,7 @@ const ITEMS: { key: Tab; label: string; Icon: typeof MessageCircle }[] = [
  * Bottom tab bar for phones (< 768 px).
  *
  * The desktop rail is hidden below `md`, so without this the mobile app had no
- * way to reach Calls / Status / Groups / AI / Settings at all. It is fixed to the
+ * way to reach Calls / Status / Groups / Settings at all. Chatgram AI is reachable from its own floating button above this bar (Meta-AI style) rather than a tab. It is fixed to the
  * bottom, respects the Android gesture bar via safe-area insets, shows unread
  * badges and is hidden while a conversation is open (the chat header's back arrow
  * takes over). Tailwind `md:hidden` keeps the desktop layout untouched.
@@ -28,7 +27,7 @@ export function MobileNav({
 }: {
   tab: Tab;
   onSelect: (tab: Tab) => void;
-  badges: { chats: number; calls: number; ai: number };
+  badges: { chats: number; calls: number };
   hasStatus: boolean;
 }) {
   return (
@@ -40,7 +39,7 @@ export function MobileNav({
     >
       <div className="mx-auto flex max-w-xl items-stretch justify-around px-1">
         {ITEMS.map(({ key, label, Icon }) => {
-          const badge = key === 'chats' ? badges.chats : key === 'calls' ? badges.calls : key === 'ai' ? badges.ai : 0;
+          const badge = key === 'chats' ? badges.chats : key === 'calls' ? badges.calls : 0;
           const dot = key === 'status' && hasStatus;
           const active = tab === key;
           return (

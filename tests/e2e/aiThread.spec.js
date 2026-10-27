@@ -32,8 +32,8 @@ test.describe('Chatgram AI thread', () => {
   });
 
   async function openAiThread(page) {
-    await expect(page.locator('[data-testid="ai-pinned-entry"]')).toBeVisible({ timeout: 30_000 });
-    await page.locator('[data-testid="ai-pinned-entry"]').click();
+    await expect(page.locator('[data-testid="ai-chat-row"]')).toBeVisible({ timeout: 30_000 });
+    await page.locator('[data-testid="ai-chat-row"]').click();
     await expect(page.locator('[data-testid="ai-thread"]')).toBeVisible({ timeout: 20_000 });
   }
 
@@ -47,7 +47,7 @@ test.describe('Chatgram AI thread', () => {
     const user = await registerUser('ai-thread');
     await signIn(page, user);
 
-    const pinned = page.locator('[data-testid="ai-pinned-entry"]');
+    const pinned = page.locator('[data-testid="ai-chat-row"]');
     await expect(pinned).toBeVisible({ timeout: 30_000 });
     await expect(pinned).toContainText('Chatgram AI');
     await expect(pinned).toContainText('Official');
@@ -180,7 +180,7 @@ test.describe('Chatgram AI thread', () => {
 
     // Back to the normal chat list: the pinned row shows the last answer.
     await page.getByRole('button', { name: 'Chats', exact: true }).click();
-    const pinned = page.locator('[data-testid="ai-pinned-entry"]');
+    const pinned = page.locator('[data-testid="ai-chat-row"]');
     await expect(pinned).toBeVisible();
     await expect(pinned).not.toContainText('Official · Ask anything');
   });
