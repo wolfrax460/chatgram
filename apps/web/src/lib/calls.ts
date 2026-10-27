@@ -13,6 +13,14 @@
  *   decline, error, page unload and missed ring, so the camera light goes out.
  */
 import { api, realtime } from './api';
+import {
+  hasMediaCapture,
+  isSecureMediaContext,
+  mediaKindOf,
+  queryMediaPermission,
+  reportMediaFailure,
+  type MediaKind,
+} from './mediaPermissions';
 
 export type CallStatus =
   | 'idle'
@@ -419,6 +427,35 @@ function mediaConstraints(video: boolean): MediaStreamConstraints {
 }
 
 /**
+ * Preflight for capture.
+ *
+ * Browsers answer a hard "denied" with the same NotAllowedError as a transient
+ * failure, and inside the Android WebView a denied permission is remembered per
+ * origin — so asking getUserMedia again just fails again with no explanation.
+ * When the Permissions API says "denied" (or the page is not a secure context)
+ * we stop before the prompt and publish the fix-it dialog instead.
+ *
+ * Returns false when the caller must not continue.
+ */
+async function mediaPreflight(kind: MediaKind, retry?: () => void): Promise<boolean> {
+  if (!isSecureMediaContext() || !hasMediaCapture()) {
+    reportMediaFailure(new DOMException('Capture is unavailable on this page.', 'SecurityError'), kind, retry);
+    return false;
+  }
+  const permission = await queryMediaPermission(kind === 'camera' ? 'camera' : 'microphone');
+  if (permission === 'denied') {
+    reportMediaFailure(new DOMException('Permission denied.', 'NotAllowedError'), kind, retry);
+    return false;
+  }
+  return true;
+}
+
+/** Report a capture failure with the right platform instructions + retry. */
+function reportCaptureFailure(error: unknown, constraints: MediaStreamConstraints, retry?: () => void): void {
+  reportMediaFailure(error, mediaKindOf(constraints), retry);
+}
+
+/**
  * Acquire media with a clear failure mode: if the camera fails but the mic
  * works we continue audio-only instead of dropping the call.
  */
@@ -690,8 +727,14 @@ function startReconnectWindow(): void {
   if (state.status === 'incoming' || state.status === 'calling') return;
   setState({ status: 'reconnecting' });
   reconnectTimer = window.setTimeout(() => {
-    // A dropped connection is a failed call, never "Call ended".
-    finish('failed', 'Failed to connect — the connection dropped.');
+    // A dropped connection is a failed call, never "Call ended" — and the copy
+    // says what to check instead of leaving a vague "connection dropped".
+    finish(
+      'failed',
+      state.startedAt
+        ? 'Connection lost — the call could not reconnect. Check your network and call again.'
+        : 'Failed to connect — check your network and try again.',
+    );
   }, RECONNECT_WINDOW_MS);
 }
 
@@ -730,17 +773,37 @@ async function createPeer(info: CallParticipant): Promise<PeerHandle | null> {
   };
   peers.set(info.id, handle);
 
+  // Always negotiate one audio and one video m-line. With addTrack() an
+  // audio-only participant answers with a single m-line, which rejects the
+  // video section of the offer — that is exactly why a caller's camera stayed
+  // invisible to somebody who joined without a camera. Explicit transceivers
+  // keep the answer compatible (recvonly video is still a video m-line), so
+  // either side can switch its camera on later without a broken SDP.
+  handle.audioSender = pc.addTransceiver('audio', { direction: 'sendrecv' }).sender;
+  handle.videoSender = pc.addTransceiver('video', { direction: 'sendrecv' }).sender;
   for (const track of localStream.getTracks()) {
-    const sender = pc.addTrack(track, localStream);
-    if (track.kind === 'video' && !handle.videoSender) handle.videoSender = sender;
-    if (track.kind === 'audio' && !handle.audioSender) handle.audioSender = sender;
+    const sender = track.kind === 'video' ? handle.videoSender : handle.audioSender;
+    try {
+      await sender.replaceTrack(track);
+    } catch {
+      /* an unsupported track kind keeps the m-line without a source */
+    }
   }
   // If this person told us they stopped receiving video, do not send them any.
   if (info.incomingVideoOff) setPeerVideoDelivery(info.id, false);
 
   pc.ontrack = (event) => {
-    for (const incoming of event.streams[0]?.getTracks() ?? [event.track]) {
-      if (!handle.stream.getTracks().some((track) => track.id === incoming.id)) handle.stream.addTrack(incoming);
+    // With explicit transceivers an incoming track carries no stream id, so
+    // fall back to the track itself instead of trusting streams[0].
+    const incoming = event.streams[0]?.getTracks() ?? [event.track];
+    for (const track of incoming) {
+      if (handle.stream.getTracks().some((existing) => existing.id === track.id)) continue;
+      // A camera that was switched off leaves an ended track behind; drop it so
+      // the tile does not keep a dead video element alive.
+      for (const dead of handle.stream.getTracks()) {
+        if (dead.kind === track.kind && dead.readyState === 'ended') handle.stream.removeTrack(dead);
+      }
+      handle.stream.addTrack(track);
     }
     streamTick += 1;
     setState({ streamTick });
@@ -770,12 +833,14 @@ async function createPeer(info: CallParticipant): Promise<PeerHandle | null> {
     if (connection === 'disconnected') {
       handle.disconnectedAt = Date.now();
       startReconnectWindow();
-      // Give ICE a moment, then restart it.
+      // ICE usually recovers on its own within a few seconds (a Wi-Fi ↔ mobile
+      // handover, a NAT rebind). Restarting too early tears down a connection
+      // that was about to fix itself, so wait 6 s first.
       if (!handle.restartTimer) {
         handle.restartTimer = window.setTimeout(() => {
           handle.restartTimer = null;
           void restartIce(handle);
-        }, 2_000);
+        }, 6_000);
       }
       return;
     }
@@ -939,19 +1004,15 @@ export async function startCall(
 
   let media;
   try {
+    if (!(await mediaPreflight(wantVideo ? 'camera+microphone' : 'microphone', () => void startCall(target, options)))) {
+      return;
+    }
     media = await acquireMedia(wantVideo);
   } catch (error) {
-    const name = error instanceof Error ? error.name : '';
-    setState({
-      ...IDLE,
-      status: 'error',
-      outcome: 'failed',
-      canRetry: Boolean(lastTarget),
-      message:
-        name === 'NotAllowedError'
-          ? 'Microphone permission was denied. Allow it in your browser settings to make calls.'
-          : 'Could not access your microphone or camera.',
-    });
+    // No half-started call: the dialog explains what to fix and its "Try again"
+    // runs startCall() again from a real tap.
+    setState({ ...IDLE });
+    reportCaptureFailure(error, mediaConstraints(wantVideo), () => void startCall(target, options));
     return;
   }
 
@@ -989,19 +1050,15 @@ export async function joinActiveCall(room: CallRoom): Promise<void> {
   const wantVideo = room.video && room.participantCount < MAX_VIDEO_PARTICIPANTS;
   let media;
   try {
+    if (
+      !(await mediaPreflight(wantVideo ? 'camera+microphone' : 'microphone', () => void joinActiveCall(room)))
+    ) {
+      return;
+    }
     media = await acquireMedia(wantVideo);
   } catch (error) {
-    const name = error instanceof Error ? error.name : '';
-    setState({
-      ...IDLE,
-      status: 'error',
-      outcome: 'failed',
-      canRetry: Boolean(lastTarget),
-      message:
-        name === 'NotAllowedError'
-          ? 'Microphone permission was denied. Allow it to join the call.'
-          : 'Could not access your microphone or camera.',
-    });
+    setState({ ...IDLE });
+    reportCaptureFailure(error, mediaConstraints(wantVideo), () => void joinActiveCall(room));
     return;
   }
   enterSession(
@@ -1092,12 +1149,15 @@ export async function acceptCall(options: { audioOnly?: boolean } = {}): Promise
   if (!pendingInvite) return;
   const invite = pendingInvite;
   const wantVideo = invite.video && !options.audioOnly;
+  const retry = () => void acceptCall(options);
   let media;
   try {
+    if (!(await mediaPreflight(wantVideo ? 'camera+microphone' : 'microphone', retry))) return;
     media = await acquireMedia(wantVideo);
-  } catch {
-    rejectCall();
-    setState({ message: 'Could not access your microphone, so the call was declined.' });
+  } catch (error) {
+    // Keep ringing: declining here would silently lose the call. The retry
+    // button answers it once the permission is granted.
+    reportCaptureFailure(error, mediaConstraints(wantVideo), retry);
     return;
   }
   pendingInvite = null;

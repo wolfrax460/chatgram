@@ -26,6 +26,14 @@ if (!app || typeof app.getPath !== 'function') {
 const WEB_ORIGIN = 'https://chatgram-xi.vercel.app';
 const DOWNLOAD_PAGE = WEB_ORIGIN + '/docs#downloads';
 
+/**
+ * Windows toast notifications are attributed to an Application User Model ID.
+ * Without one the toast says "electron.exe", ignores our icon and — worse — the
+ * click handler is not delivered, so tapping a message notification did nothing
+ * in a packaged build. Must match build.appId in package.json.
+ */
+app.setAppUserModelId('com.chatgram.desktop');
+
 let mainWindow = null;
 let tray = null;
 let unreadCount = 0;
@@ -512,11 +520,40 @@ function startUpdateScheduler() {
 
 /* ------------------------------------------------------------------ ipc */
 
+/**
+ * Bring the window back from the tray / taskbar and, when the notification was
+ * about a chat, tell the page which conversation to open.
+ */
+function focusMainWindow(chatId) {
+  if (!mainWindow) createWindow();
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
+  if (chatId) {
+    try {
+      mainWindow.webContents.send('chatgram:open-chat', String(chatId));
+    } catch {
+      /* the page may still be loading; the tray badge is enough */
+    }
+  }
+}
+
 ipcMain.on('chatgram:unread', (_event, count) => setUnread(count));
 
-ipcMain.handle('chatgram:notify', (_event, { title, body }) => {
+ipcMain.handle('chatgram:notify', (_event, payload = {}) => {
+  const title = String(payload.title || 'Chatgram');
+  const body = String(payload.body || '');
+  const chatId = payload.chatId ? String(payload.chatId) : '';
   if (!Notification.isSupported()) return false;
-  new Notification({ title: String(title), body: String(body), icon: windowIcon(false) }).show();
+  const notification = new Notification({
+    title,
+    body,
+    icon: windowIcon(false),
+    silent: payload.silent === true,
+  });
+  notification.on('click', () => focusMainWindow(chatId));
+  notification.show();
   return true;
 });
 

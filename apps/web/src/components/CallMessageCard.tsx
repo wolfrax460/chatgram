@@ -1,5 +1,6 @@
-import { Phone, PhoneCall, Video, PhoneMissed, PhoneOff, Users } from 'lucide-react';
+import { Phone, PhoneMissed, PhoneOff, Video } from 'lucide-react';
 import type { CallCardInfo, Message } from '@chatgram/core';
+import { startCall } from '../lib/calls';
 import { formatTime, type TimeFormat } from '../lib/ui';
 
 function formatDuration(seconds: number): string {
@@ -11,57 +12,40 @@ function formatDuration(seconds: number): string {
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${pad(minutes)}:${pad(rest)}`;
 }
 
-const STATUS_LABELS: Record<CallCardInfo['status'], string> = {
-  ringing: 'Ringing',
-  completed: 'Ended',
-  missed: 'Missed',
-  declined: 'Declined',
-  busy: 'Busy',
-  failed: 'Failed to connect',
-  cancelled: 'Cancelled',
-};
-
-function callKind(call: CallCardInfo): string {
+/** The compact one-liner's leading label: what kind of call it was. */
+function callLabel(call: CallCardInfo): string {
   const mode = call.video ? 'video' : 'voice';
-  if (call.isGroup) return `Group ${mode} call`;
-  return call.video ? 'Video call' : 'Voice call';
+  const group = call.isGroup ? 'group ' : '';
+  if (call.status === 'missed') return `Missed ${group}${mode} call`;
+  if (call.status === 'declined') return `Declined ${group}${mode} call`;
+  return `${group ? 'Group ' : ''}${call.video ? 'Video' : 'Voice'} call`;
 }
 
-function headline(call: CallCardInfo): string {
-  const starter = call.startedBy?.displayName || 'Someone';
-  if (call.isGroup) {
-    if (call.state === 'ringing') return `${starter} started a ${call.video ? 'video' : 'voice'} call`;
-    if (call.state === 'active') return `Ongoing · ${call.participantCount} ${call.participantCount === 1 ? 'person' : 'people'}`;
-    if (call.status === 'completed') {
-      return `Ended · ${call.participantCount} ${call.participantCount === 1 ? 'person' : 'people'}${
-        call.durationSeconds > 0 ? ` · ${formatDuration(call.durationSeconds)}` : ''
-      }`;
-    }
-    return STATUS_LABELS[call.status];
-  }
-  if (call.state === 'ringing') return `${call.video ? 'Video' : 'Voice'} call started`;
-  if (call.state === 'active') return `Ongoing${call.durationSeconds > 0 ? ` · ${formatDuration(call.durationSeconds)}` : ''}`;
-  if (call.status === 'completed') {
-    return `Ended${call.durationSeconds > 0 ? ` · ${formatDuration(call.durationSeconds)}` : ''}`;
-  }
-  return STATUS_LABELS[call.status];
+/** The secondary segment after the dot: state, duration or the failure reason. */
+function callDetail(call: CallCardInfo): string | null {
+  if (call.state === 'active') return call.durationSeconds > 0 ? `Ongoing · ${formatDuration(call.durationSeconds)}` : 'Ongoing';
+  if (call.status === 'completed') return call.durationSeconds > 0 ? formatDuration(call.durationSeconds) : 'Ended';
+  if (call.status === 'ringing') return 'Ringing';
+  if (call.status === 'busy') return 'Busy';
+  if (call.status === 'failed') return 'Failed to connect';
+  if (call.status === 'cancelled') return 'Cancelled';
+  return null;
 }
 
 function StatusIcon({ call }: { call: CallCardInfo }) {
-  const className = 'h-4 w-4 shrink-0';
+  const className = 'h-[18px] w-[18px] shrink-0';
   if (call.status === 'missed' || call.status === 'declined') return <PhoneMissed className={`${className} text-rose-500`} aria-hidden="true" />;
   if (call.status === 'failed') return <PhoneOff className={`${className} text-rose-500`} aria-hidden="true" />;
   if (call.status === 'cancelled' || call.status === 'busy') return <PhoneOff className={`${className} text-amber-500`} aria-hidden="true" />;
-  if (call.state === 'ringing') return <PhoneCall className={`${className} text-brand-500`} aria-hidden="true" />;
   return call.video ? <Video className={`${className} text-brand-500`} aria-hidden="true" /> : <Phone className={`${className} text-brand-500`} aria-hidden="true" />;
 }
 
 /**
- * A persisted call card inside the conversation (server message type 'call').
+ * A persisted call row inside the conversation (server message type 'call').
  *
- * It is rendered from the server's call metadata, so the same card shows
- * "Ringing · Join / Decline", then "Ongoing · N people · Join", then the right
- * ending (Ended + duration, Missed, Declined, Busy, Failed to connect …).
+ * Compact one-line history row: leading status icon, the call text, the message
+ * time on the right. Tap the row to join a live group room or to call back.
+ * The server keeps the metadata live through `call:card-updated`.
  */
 export function CallMessageCard({
   message,
@@ -86,57 +70,61 @@ export function CallMessageCard({
   const iAmInThisCall = activeCallId === call.callId;
   const live = call.state !== 'ended' && call.status !== 'completed';
   const full = call.capacity > 0 && call.participantCount >= call.capacity;
-  // Joining from a card is a group-room affordance; a 1:1 card is just history.
+  // A live group room can be joined from the row; a 1:1 row is just history.
   const canJoin = call.isGroup && Boolean(onJoin) && live && !iAmInThisCall && !full;
   const canDecline = call.isGroup && Boolean(onDecline) && call.state === 'ringing' && !startedByMe && !iAmInThisCall;
 
+  const label = callLabel(call);
+  const detail = callDetail(call);
+  const actionLabel = canJoin ? `Join the ${label.toLowerCase()}` : live ? label : `Call back · ${label}`;
+
+  const activate = (): void => {
+    if (live) {
+      // A ringing/active room: join it when possible, never dial a second call.
+      if (canJoin) onJoin?.(call);
+      return;
+    }
+    // History row: dial the same chat again, voice or video as before. When the
+    // caller passed no call actions at all (read-only surfaces), nothing happens.
+    if (!onJoin && !onDecline) return;
+    void startCall(
+      { chatId: call.chatId, title: call.title, isGroup: call.isGroup, participantCount: call.participantCount },
+      { video: call.video },
+    );
+  };
+
   return (
-    <div className="my-2 flex justify-center" data-testid="call-card">
-      <div className="w-full max-w-[420px] rounded-2xl border border-ink-200 bg-white px-3.5 py-2.5 text-ink-800 shadow-sm dark:border-white/10 dark:bg-ink-700 dark:text-ink-100">
-        <div className="flex items-start gap-2.5">
-          <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-600/10 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">
-            <StatusIcon call={call} />
+    <div className="my-1 flex justify-center" data-testid="call-card">
+      <div className="flex w-full max-w-[420px] items-center gap-1">
+        <button
+          type="button"
+          onClick={activate}
+          aria-label={actionLabel}
+          title={actionLabel}
+          data-testid="call-history-row"
+          className="group flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-full px-2.5 py-1 text-left transition hover:bg-ink-100/80 dark:hover:bg-white/5"
+        >
+          <StatusIcon call={call} />
+          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink-800 dark:text-ink-100" data-testid="call-card-title">
+            {label}
           </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[13.5px] font-semibold" data-testid="call-card-title">
-              {callKind(call)}
-              {call.isGroup ? <Users className="ml-1 inline h-3.5 w-3.5 opacity-60" aria-label="Group call" /> : null}
-            </p>
-            <p className="mt-0.5 text-[12.5px] text-ink-600 dark:text-ink-300" data-testid="call-card-status">
-              {headline(call)}
-            </p>
-            <p className="mt-0.5 text-[11px] text-ink-500 dark:text-ink-400">
-              {formatTime(message.sentAt, timeFormat)}
-              {call.startedBy?.displayName && call.isGroup ? ` · started by ${call.startedBy.displayName}` : ''}
-            </p>
-          </div>
-        </div>
-        {canJoin || canDecline ? (
-          <div className="mt-2 flex items-center gap-2">
-            {canJoin ? (
-              <button
-                type="button"
-                onClick={() => onJoin?.(call)}
-                aria-label={`Join the ${callKind(call).toLowerCase()}`}
-                className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-emerald-700"
-              >
-                <PhoneCall className="h-3.5 w-3.5" aria-hidden="true" /> Join
-              </button>
-            ) : null}
-            {canDecline ? (
-              <button
-                type="button"
-                onClick={() => onDecline?.(call)}
-                aria-label="Decline the call"
-                className="inline-flex items-center gap-1.5 rounded-full border border-ink-200 px-3.5 py-1.5 text-[12px] font-semibold text-ink-700 transition hover:bg-ink-100 dark:border-white/15 dark:text-ink-200 dark:hover:bg-white/10"
-              >
-                <PhoneOff className="h-3.5 w-3.5" aria-hidden="true" /> Decline
-              </button>
-            ) : null}
-            {full && live ? (
-              <span className="text-[11.5px] text-amber-600 dark:text-amber-300">Call is full · {call.participantCount}/{call.capacity}</span>
-            ) : null}
-          </div>
+          {detail ? (
+            <span className="shrink-0 text-[12px] text-ink-500 dark:text-ink-400" data-testid="call-card-status">
+              · {detail}
+            </span>
+          ) : null}
+          <span className="shrink-0 text-[11px] text-ink-500 dark:text-ink-400">{formatTime(message.sentAt, timeFormat)}</span>
+        </button>
+        {canDecline ? (
+          <button
+            type="button"
+            onClick={() => onDecline?.(call)}
+            aria-label="Decline the call"
+            title="Decline"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-rose-500 transition hover:bg-rose-500/10"
+          >
+            <PhoneOff className="h-4 w-4" aria-hidden="true" />
+          </button>
         ) : null}
       </div>
     </div>

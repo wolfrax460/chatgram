@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { hasMediaCapture, isSecureMediaContext, reportMediaFailure } from './mediaPermissions';
 
 const MAX_BYTES = 10 * 1024 * 1024; // matches the server's multer limit
 const MIN_BYTES = 800; // ignore accidental taps
@@ -66,6 +67,12 @@ export function useVoiceRecorder(onRecorded: (file: File) => void): VoiceRecorde
       setError('Recording is not supported in this browser.');
       return;
     }
+    // Same preflight as calls: a hard "denied" never opens a prompt again, so
+    // explain it with the platform instructions instead of a generic message.
+    if (!isSecureMediaContext() || !hasMediaCapture()) {
+      reportMediaFailure(new DOMException('Capture is unavailable on this page.', 'SecurityError'), 'microphone');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -102,9 +109,9 @@ export function useVoiceRecorder(onRecorded: (file: File) => void): VoiceRecorde
       setRecording(true);
       setSeconds(0);
       timerRef.current = window.setInterval(() => setSeconds((s) => s + 1), 1000);
-    } catch {
-      setError('Microphone permission was denied.');
+    } catch (error) {
       cleanup();
+      reportMediaFailure(error, 'microphone', () => void start());
     }
   }, [supported, onRecorded, cleanup]);
 

@@ -1,23 +1,51 @@
 /**
- * Web notifications and the message chime.
+ * Notifications and the message chime.
  *
  * Works on desktop browsers and on Android Chrome/Edge (including an installed
  * PWA). iOS Safari only permits notifications for home-screen apps, so on
  * iPhone the toggle reports unsupported — that is an Apple rule, not a bug.
+ *
+ * Inside the native shells the page has no notification permission to use:
+ * the Android WebView cannot show Web Notifications at all and an Electron toast
+ * raised by the page carries no app identity or click target. Both shells
+ * therefore own the notification (see lib/nativeNotifications.ts) and this file
+ * only decides *whether* one should be raised.
  */
+import {
+  nativeNotificationsAvailable,
+  nativeNotify,
+  nativePermissionState,
+  requestNativePermission,
+} from './nativeNotifications';
 
 export function notificationsSupported(): boolean {
+  if (nativeNotificationsAvailable()) return true;
   return typeof window !== 'undefined' && 'Notification' in window;
 }
 
 export type PermissionState = NotificationPermission | 'unsupported';
 
+/** Native permission state mapped onto the Web Notification vocabulary. */
+function mapNativePermission(): PermissionState {
+  const state = nativePermissionState();
+  if (state === 'granted') return 'granted';
+  if (state === 'denied') return 'denied';
+  if (state === 'prompt') return 'default';
+  return 'unsupported';
+}
+
 export function notificationPermission(): PermissionState {
+  if (nativeNotificationsAvailable()) return mapNativePermission();
   if (!notificationsSupported()) return 'unsupported';
   return Notification.permission;
 }
 
 export async function requestNotificationPermission(): Promise<PermissionState> {
+  if (nativeNotificationsAvailable()) {
+    // Windows needs no page permission; Android 13+ shows the system prompt here.
+    await requestNativePermission();
+    return mapNativePermission();
+  }
   if (!notificationsSupported()) return 'unsupported';
   try {
     return await Notification.requestPermission();
@@ -54,14 +82,28 @@ export function isDoNotDisturbActive(now: Date = new Date()): boolean {
   return start < end ? current >= start && current < end : current >= start || current < end;
 }
 
-export function showNotification(title: string, body: string, onClick?: () => void): void {
+/**
+ * Raise one notification.
+ *
+ * `chatId` lets the native shells open the right conversation when the user taps
+ * the notification; the browser path keeps using the `onClick` callback.
+ */
+export function showNotification(
+  title: string,
+  body: string,
+  onClick?: () => void,
+  chatId?: string | null,
+): void {
   if (isDoNotDisturbActive()) return;
+  // Android app / Windows app: the shell owns the notification, its permission
+  // and its click target, so hand it over before touching the Web API.
+  if (nativeNotify({ title, body, chatId })) return;
   if (notificationPermission() !== 'granted') return;
   try {
     const notification = new Notification(title, {
       body,
       icon: '/web/assets/favicon.png',
-      tag: `chatgram-${title}-${Date.now()}`,
+      tag: `chatgram-${chatId ?? title}-${Date.now()}`,
     });
     if (onClick) {
       notification.onclick = () => {

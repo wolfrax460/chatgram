@@ -32,6 +32,18 @@ $config = @'
 {
   "version": 3,
   "routes": [
+    {
+      "src": "/(.*)",
+      "headers": {
+        "Permissions-Policy": "camera=(self), microphone=(self), display-capture=(self), fullscreen=(self)"
+      },
+      "continue": true
+    },
+    { "src": "/static/(.*)", "headers": { "cache-control": "public, max-age=31536000, immutable" }, "continue": true },
+    { "src": "/web/static/(.*)", "headers": { "cache-control": "public, max-age=31536000, immutable" }, "continue": true },
+    { "src": "/assets/(.*)", "headers": { "cache-control": "public, max-age=3600" }, "continue": true },
+    { "src": "/web(/.*)?", "headers": { "X-Robots-Tag": "noindex, nofollow" }, "continue": true },
+    { "src": "/api/(.*)", "headers": { "X-Robots-Tag": "noindex, nofollow" }, "continue": true },
     { "src": "/api/(.*)", "dest": "https://chatgram.duckdns.org/api/$1" },
     { "src": "/downloads/(.*)", "dest": "https://chatgram.duckdns.org/downloads/$1" },
     { "src": "/rw/?", "dest": "/rw/index.html" },
@@ -45,14 +57,6 @@ $config = @'
   "redirects": [
     { "source": "/app", "destination": "/web/", "permanent": false },
     { "source": "/app/(.*)", "destination": "/web/", "permanent": false }
-  ],
-  "headers": [
-    { "source": "/static/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
-    { "source": "/web/static/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
-    { "source": "/assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }] },
-    { "source": "/web", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] },
-    { "source": "/web/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] },
-    { "source": "/api/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] }
   ]
 }
 '@

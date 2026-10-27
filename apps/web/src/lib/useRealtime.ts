@@ -104,7 +104,14 @@ export function useRealtimeBridge(): void {
                 const body =
                   message.content ||
                   (message.type === 'image' ? 'Photo' : message.type === 'video' ? 'Video' : message.type === 'audio' ? 'Voice message' : message.type === 'file' ? 'Document' : 'New message');
-                showNotification('New message', body, () => window.focus());
+                // The sender's name is the title ("Aline: hey"), so a locked phone
+                // shows who wrote and the tap opens that conversation.
+                showNotification(
+                  message.sender?.displayName || 'New message',
+                  body,
+                  () => window.focus(),
+                  message.chatId,
+                );
               }
             }
           }
@@ -188,6 +195,7 @@ export function useRealtimeBridge(): void {
               `${groupName}: you were mentioned`,
               message.content || 'You were mentioned in a group',
               () => window.focus(),
+              chatId,
             );
           }
           void queryClient.invalidateQueries({ queryKey: ['chats'] });

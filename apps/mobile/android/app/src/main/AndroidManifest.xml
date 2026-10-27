@@ -60,9 +60,20 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Calls: route audio to a paired Bluetooth headset / car kit. On Android
+         12+ this is a runtime permission ("Nearby devices"); the legacy pair is
+         only needed up to API 30. All are optional features, so a device
+         without Bluetooth still installs the app. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <!-- Kept for the update notifications in CHUNK 7 and for call alert
          notifications; Android 13+ only shows them after a runtime prompt. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Chunk 8: the "messages" notification channel enables vibration, which
+         Android only performs when the app holds VIBRATE. Without it the
+         notification is silent instead of vibrating. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Chunk 7C: the in-app updater hands the verified APK to Android's package
          installer. This permission lets the system offer that flow; the user
          still approves "install unknown apps" once and taps Install. -->
@@ -72,5 +83,8 @@
          Android 7+, so READ_MEDIA_* / READ_EXTERNAL_STORAGE are intentionally
          NOT declared: fewer scary prompts at install time. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 </manifest>

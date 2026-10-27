@@ -46,6 +46,8 @@ import { READ_ONLY_BANNER, READ_ONLY_NOTICE } from './lib/readOnly';
 import { ProfilePanel } from './components/ProfilePanel';
 import { AndroidUpdateGate } from './components/AndroidUpdateGate';
 import { AppUpdateDialog } from './components/AppUpdateDialog';
+import { MediaPermissionDialog } from './components/MediaPermissionDialog';
+import { initNativeNotifications } from './lib/nativeNotifications';
 import { takeRefreshDraft } from './lib/appUpdate';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, formatTime, sameDay, statusOf } from './lib/ui';
@@ -1019,6 +1021,10 @@ function Shell({ features }: { features: AppFeatures | null }) {
     setSelectedId(chatId);
   }, []);
 
+  // Tapping a system notification (Android local notification / Windows toast)
+  // must land in the right conversation: the shells hand us the chat id.
+  useEffect(() => initNativeNotifications(openChat), [openChat]);
+
   const closeProfile = useCallback(() => setProfileTarget(null), []);
   const closeGroupInfo = useCallback(() => setGroupInfoId(null), []);
   const groupInfoApi = useMemo<GroupInfoApi>(
@@ -1587,6 +1593,7 @@ export default function App() {
     <>
       <AndroidUpdateGate />
       <AppUpdateDialog />
+      <MediaPermissionDialog />
       {user ? <Shell features={features} /> : <Auth />}
       {features?.supportWidgetEnabled === false ? null : <SupportWidget hideLauncher={Boolean(user)} />}
     </>

@@ -1,8 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import {
   Camera, CameraOff, ChevronDown, Grid2x2, Maximize2, MessageSquare, Mic, MicOff, Minimize2,
-  PhoneOff, PictureInPicture2, Pin, PinOff, ScreenShare, Settings2, Signal, SignalLow,
-  SignalMedium, SwitchCamera, UserPlus, Video, VideoOff, Volume2, VolumeX, X, Users,
+  MoreHorizontal, PhoneOff, PictureInPicture2, Pin, PinOff, ScreenShare, Settings2, Signal, SignalLow,
+  SignalMedium, SwitchCamera, UserPlus, Users, Video, VideoOff, Volume2, VolumeX, X,
 } from 'lucide-react';
 import {
   MAX_AUDIO_PARTICIPANTS,
@@ -14,7 +23,6 @@ import {
   getPeerStream,
   hangUp,
   inviteParticipant,
-  isAndroidNative,
   isScreenSharingSupported,
   outcomeLabel,
   outcomeText,
@@ -22,7 +30,6 @@ import {
   rejectCall,
   requestVideoUpgrade,
   respondVideoUpgrade,
-  screenShareUnavailableReason,
   setMinimised,
   setSpeaker,
   supportsSpeakerSelection,
@@ -36,6 +43,14 @@ import {
   type CallState,
 } from '../lib/calls';
 import { api } from '../lib/api';
+
+/** Bottom-sheet / floating-tile geometry. */
+const SELF_VIEW_STORAGE_KEY = 'chatgram.call.selfView';
+const SELF_VIEW_MARGIN = 12;
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
 
 function initials(name?: string): string {
   const clean = (name || '?').trim();
@@ -52,27 +67,24 @@ function clockFor(startedAt: number | null): string {
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 }
 
-function formatDurationSeconds(totalSeconds: number): string {
-  const elapsed = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(elapsed / 3600);
-  const minutes = Math.floor((elapsed % 3600) / 60);
-  const seconds = elapsed % 60;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
-}
-
-function statusText(call: CallState, active: boolean): string {
-  if (call.status === 'incoming') return call.isGroup ? 'Incoming group call' : call.title ? `${call.title} is calling…` : 'Incoming call…';
-  if (call.status === 'calling') return call.isGroup ? 'Calling the group…' : 'Calling…';
-  if (call.status === 'connecting') return 'Connecting…';
-  if (call.status === 'reconnecting') return 'Reconnecting…';
-  if (call.status === 'active') return active ? `Connected · ${clockFor(call.startedAt)}` : 'Connecting…';
-  if (call.status === 'ended' || call.status === 'error') return outcomeText(call);
-  return '';
+/**
+ * The ONE mapping behind the single status line on the call screen. Every state
+ * renders through this function, so there is never a second competing banner.
+ */
+function statusLine(call: CallState): string {
+  switch (call.status) {
+    case 'calling': return 'Calling…';
+    case 'incoming': return 'Incoming call';
+    case 'connecting': return 'Connecting…';
+    case 'active': return clockFor(call.startedAt);
+    case 'reconnecting': return 'Reconnecting…';
+    case 'ended':
+    case 'error': return outcomeText(call);
+    case 'idle': return '';
+  }
 }
 
 function qualityIcon(quality: CallState['quality']) {
-  if (quality === 'good') return Signal;
   if (quality === 'fair') return SignalMedium;
   if (quality === 'poor') return SignalLow;
   return Signal;
@@ -83,6 +95,71 @@ function qualityLabel(quality: CallState['quality']): string {
   if (quality === 'fair') return 'Fair connection';
   if (quality === 'poor') return 'Poor connection';
   return 'Connection';
+}
+
+/**
+ * Adaptive gallery for group calls.
+ * Mesh limit: one RTCPeerConnection per remote peer, so ~6 video (or 12 audio)
+ * participants is the ceiling before an SFU would be needed — with 5+ remotes
+ * the last row scrolls instead of shrinking into unreadable slivers.
+ */
+function galleryGridClass(remoteCount: number): string {
+  if (remoteCount <= 1) return 'grid-cols-1';
+  if (remoteCount <= 2) return 'grid-cols-2';
+  if (remoteCount <= 4) return 'grid-cols-2 grid-rows-2';
+  return 'grid-cols-2 auto-rows-[minmax(7.5rem,1fr)]';
+}
+
+/** Remembers where the floating self-view was dragged to (fractions of the overlay). */
+interface SelfViewFraction {
+  fx: number;
+  fy: number;
+}
+
+interface SelfViewPoint {
+  x: number;
+  y: number;
+}
+
+interface SelfViewBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  width: number;
+  height: number;
+}
+
+interface SelfViewDragState {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+  moved: boolean;
+}
+
+function readStoredSelfView(): SelfViewFraction | null {
+  try {
+    const raw = window.localStorage.getItem(SELF_VIEW_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const record = parsed as { fx?: unknown; fy?: unknown };
+    if (typeof record.fx !== 'number' || typeof record.fy !== 'number') return null;
+    if (!Number.isFinite(record.fx) || !Number.isFinite(record.fy)) return null;
+    return { fx: clampNumber(record.fx, 0, 1), fy: clampNumber(record.fy, 0, 1) };
+  } catch {
+    return null;
+  }
+}
+
+function storeSelfView(fraction: SelfViewFraction): void {
+  try {
+    window.localStorage.setItem(SELF_VIEW_STORAGE_KEY, JSON.stringify(fraction));
+  } catch {
+    /* storage unavailable (private mode): the position just is not persisted */
+  }
 }
 
 /** Ringback / incoming ring tone, generated locally (no audio asset needed). */
@@ -190,6 +267,7 @@ function RemoteTile({
   onRegisterVideo: (element: HTMLVideoElement | null) => void;
 }) {
   const video = useRef<HTMLVideoElement | null>(null);
+  const [needsAudioUnlock, setNeedsAudioUnlock] = useState(false);
   const stream = getPeerStream(participant.id);
   const showVideo =
     videoEnabled &&
@@ -198,11 +276,25 @@ function RemoteTile({
     participant.videoOff !== true;
   const sharing = screenSharing || participant.screenSharing === true;
 
+  // Autoplay can be refused for a remote stream that carries audio. Retry on the
+  // next render (streamTick / getPeerStream updates) and, when the browser insists
+  // on a user gesture, offer one explicit "Tap to enable sound" button.
+  const tryAutoplay = useCallback(async (): Promise<void> => {
+    const element = video.current;
+    if (!element) return;
+    try {
+      await element.play();
+      setNeedsAudioUnlock(false);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'NotAllowedError') setNeedsAudioUnlock(true);
+    }
+  }, []);
+
   useEffect(() => {
     const element = video.current;
     if (!element) return;
     if (stream && element.srcObject !== stream) element.srcObject = stream;
-    void element.play().catch(() => undefined);
+    void tryAutoplay();
   });
 
   return (
@@ -213,16 +305,28 @@ function RemoteTile({
       data-testid={`call-tile-${participant.id}`}
     >
       {showVideo ? (
-        <video
-          ref={(element) => {
-            video.current = element;
-            onRegisterVideo(element);
-          }}
-          autoPlay
-          playsInline
-          className="absolute inset-0 h-full w-full object-cover"
-          aria-label={`${participant.displayName ?? 'Participant'} video`}
-        />
+        <>
+          <video
+            ref={(element) => {
+              video.current = element;
+              onRegisterVideo(element);
+            }}
+            autoPlay
+            playsInline
+            className="absolute inset-0 h-full w-full object-cover"
+            aria-label={`${participant.displayName ?? 'Participant'} video`}
+          />
+          {needsAudioUnlock ? (
+            <button
+              type="button"
+              onClick={() => void tryAutoplay()}
+              data-testid="remote-audio-unlock"
+              className="absolute inset-x-0 top-1/2 z-10 mx-auto flex w-max -translate-y-1/2 items-center gap-1.5 rounded-full bg-black/75 px-3 py-2 text-[11.5px] font-semibold text-white shadow-lg ring-1 ring-white/20"
+            >
+              <Volume2 className="h-4 w-4" aria-hidden="true" /> Tap to enable sound
+            </button>
+          ) : null}
+        </>
       ) : (
         <div className="flex flex-col items-center justify-center gap-2 p-4 text-center">
           {participant.avatarUrl ? (
@@ -269,23 +373,35 @@ function RemoteTile({
   );
 }
 
-function ControlButton({
+/** One labelled primary control in the bottom bar: icon on top, small label below. */
+function CallControl({
   children,
   label,
-  hint,
+  testId,
+  onClick,
   active = false,
   disabled = false,
+  danger = false,
+  ghost = false,
   title,
-  onClick,
 }: {
   children: ReactNode;
   label: string;
-  hint?: string;
+  testId: string;
+  onClick: () => void;
   active?: boolean;
   disabled?: boolean;
+  danger?: boolean;
+  ghost?: boolean;
   title?: string;
-  onClick: () => void;
 }) {
+  const circle = danger
+    ? 'h-12 w-12 bg-rose-600 text-white group-hover:bg-rose-700'
+    : ghost
+      ? 'h-11 w-11 bg-transparent text-white group-hover:bg-white/10'
+      : active
+        ? 'h-11 w-11 bg-brand-600 text-white group-hover:bg-brand-700'
+        : 'h-11 w-11 bg-white/10 text-white group-hover:bg-white/20';
   return (
     <button
       type="button"
@@ -293,43 +409,88 @@ function ControlButton({
       disabled={disabled}
       aria-label={label}
       aria-pressed={active}
-      title={title ?? (hint ? `${label} (${hint})` : label)}
-      className={`grid h-12 w-12 place-items-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 ${
-        active ? 'bg-brand-600 text-white hover:bg-brand-700' : 'bg-white/10 text-white hover:bg-white/20'
+      title={title ?? label}
+      data-testid={testId}
+      className="group flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-[10.5px] font-medium leading-tight text-white/90 transition disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <span className={`grid shrink-0 place-items-center rounded-full transition ${circle}`}>{children}</span>
+      <span className="max-w-[64px] truncate">{label}</span>
+    </button>
+  );
+}
+
+/** One action inside the "More" bottom sheet. */
+function MoreAction({
+  children,
+  label,
+  testId,
+  onClick,
+  active = false,
+  disabled = false,
+  title,
+}: {
+  children: ReactNode;
+  label: string;
+  testId: string;
+  onClick: () => void;
+  active?: boolean;
+  disabled?: boolean;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={active}
+      title={title ?? label}
+      data-testid={testId}
+      className={`flex min-h-[76px] min-w-[44px] flex-col items-center justify-center gap-1.5 rounded-2xl px-2 py-2 text-center text-[11px] font-medium leading-tight transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        active ? 'bg-brand-600/25 text-brand-100' : 'text-white/85 hover:bg-white/10'
       }`}
     >
-      {children}
+      <span className={`grid h-11 w-11 place-items-center rounded-full ${active ? 'bg-brand-600 text-white' : 'bg-white/10'}`}>
+        {children}
+      </span>
+      <span className="w-full truncate">{label}</span>
     </button>
   );
 }
 
 export function CallOverlay({ call }: { call: CallState }) {
-  const localVideo = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const localVideo = useRef<HTMLVideoElement>(null);
+  const localSelfVideo = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const selfViewRef = useRef<HTMLDivElement>(null);
+  const selfFractionRef = useRef<SelfViewFraction | null>(null);
+  const selfFractionLoadedRef = useRef(false);
+  const selfViewDragRef = useRef<SelfViewDragState | null>(null);
   const [, forceTick] = useState(0);
-  const [menu, setMenu] = useState<null | 'devices' | 'connection'>(null);
+  const [menu, setMenu] = useState<null | 'connection' | 'devices'>(null);
   const [layout, setLayout] = useState<'speaker' | 'gallery'>('speaker');
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [swapped, setSwapped] = useState(false);
   const [messagesOpen, setMessagesOpen] = useState(false);
   const [participantsOpen, setParticipantsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [messages, setMessages] = useState<{ id: string; senderId: string; content: string; sentAt: string }[]>([]);
-  const [selfPos, setSelfPos] = useState<'br' | 'bl' | 'tr' | 'tl'>('br');
+  const [selfView, setSelfView] = useState<SelfViewPoint | null>(null);
   const [addParticipantOpen, setAddParticipantOpen] = useState(false);
   const [participantSearch, setParticipantSearch] = useState('');
   const [contacts, setContacts] = useState<{ id: string; displayName: string; avatarUrl: string | null }[]>([]);
-  const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  const active = call.status === 'active' && Boolean(call.startedAt);
   const inCall = call.status === 'calling' || call.status === 'connecting' || call.status === 'reconnecting' || call.status === 'active';
   const showVideo = call.video && !call.audioOnly;
   const remoteCount = call.participants.length;
   const cap = call.video ? MAX_VIDEO_PARTICIPANTS : MAX_AUDIO_PARTICIPANTS;
+  const showSelfView = showVideo && remoteCount > 0;
+  const qualityVisible = call.status === 'active' && call.quality !== 'unknown';
+  const screenShareSupported = isScreenSharingSupported();
   const participantIds = useMemo(() => call.participants.map((participant) => participant.id), [call.participants]);
   const speaking = useSpeaking(participantIds);
-  const android = isAndroidNative();
-  const screenShareReason = screenShareUnavailableReason();
   const sharers = call.participants.filter((participant) => participant.screenSharing);
   useRingTone(call.status === 'calling' ? 'ringback' : call.status === 'incoming' ? 'incoming' : null);
 
@@ -354,10 +515,15 @@ export function CallOverlay({ call }: { call: CallState }) {
     return () => window.clearInterval(id);
   }, [call.status]);
 
+  // Local preview stays muted (it is your own microphone); remote video is not.
   useEffect(() => {
     const stream = getLocalStream();
-    const element = localVideo.current;
-    if (element && showVideo && call.cameraOn && stream && element.srcObject !== stream) element.srcObject = stream;
+    if (!stream) return;
+    for (const element of [localVideo.current, localSelfVideo.current]) {
+      if (!element) continue;
+      if (element.srcObject !== stream) element.srcObject = stream;
+      void element.play().catch(() => undefined);
+    }
   });
 
   // Keyboard shortcuts (ignored while typing in an input).
@@ -371,11 +537,19 @@ export function CallOverlay({ call }: { call: CallState }) {
       if (key === 'm') { event.preventDefault(); void toggleMute(); }
       if (key === 'v' && call.video) { event.preventDefault(); void toggleCamera(); }
       if (key === 's' && isScreenSharingSupported()) { event.preventDefault(); void toggleScreenShare(); }
-      if (key === 'escape') { event.preventDefault(); setMinimised(true); }
+      if (key === 'escape') {
+        event.preventDefault();
+        if (addParticipantOpen) { setAddParticipantOpen(false); return; }
+        if (moreOpen) { setMoreOpen(false); return; }
+        if (messagesOpen) { setMessagesOpen(false); return; }
+        if (participantsOpen) { setParticipantsOpen(false); return; }
+        if (menu) { setMenu(null); return; }
+        setMinimised(true);
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [call.status, call.video]);
+  }, [call.status, call.video, moreOpen, messagesOpen, participantsOpen, addParticipantOpen, menu]);
 
   // Message side panel: load the chat's recent messages when opened.
   useEffect(() => {
@@ -388,6 +562,134 @@ export function CallOverlay({ call }: { call: CallState }) {
       cancelled = true;
     };
   }, [messagesOpen, call.chatId]);
+
+  // The floating self-view never leaves the overlay and never covers the top
+  // name/status area or the bottom control bar (whose height includes the
+  // safe-area inset). Bounds are re-derived on every relevant geometry change.
+  const selfViewBounds = useCallback((): SelfViewBounds | null => {
+    const container = containerRef.current;
+    const tile = selfViewRef.current;
+    if (!container || !tile) return null;
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    const tileWidth = tile.offsetWidth;
+    const tileHeight = tile.offsetHeight;
+    if (width <= 0 || height <= 0 || tileWidth <= 0 || tileHeight <= 0) return null;
+    const headerHeight = headerRef.current?.offsetHeight ?? 0;
+    const controlsHeight = controlsRef.current?.offsetHeight ?? 0;
+    const minX = SELF_VIEW_MARGIN;
+    const maxX = Math.max(minX, width - tileWidth - SELF_VIEW_MARGIN);
+    const minY = headerHeight + SELF_VIEW_MARGIN;
+    const maxY = Math.max(minY, height - controlsHeight - tileHeight - SELF_VIEW_MARGIN);
+    return { minX, maxX, minY, maxY, width, height };
+  }, []);
+
+  const syncSelfView = useCallback((): void => {
+    if (!selfFractionLoadedRef.current) {
+      // Restore the remembered spot once, when the tile is first measurable.
+      selfFractionRef.current = readStoredSelfView();
+      selfFractionLoadedRef.current = true;
+    }
+    const bounds = selfViewBounds();
+    if (!bounds) return;
+    const fraction = selfFractionRef.current;
+    // No stored spot yet: default bottom-right, above the controls.
+    const rawX = fraction ? fraction.fx * bounds.width : bounds.maxX;
+    const rawY = fraction ? fraction.fy * bounds.height : bounds.maxY;
+    setSelfView({
+      x: Math.round(clampNumber(rawX, bounds.minX, bounds.maxX)),
+      y: Math.round(clampNumber(rawY, bounds.minY, bounds.maxY)),
+    });
+  }, [selfViewBounds]);
+
+  useLayoutEffect(() => {
+    if (!showSelfView) return;
+    syncSelfView();
+  }, [syncSelfView, showSelfView, layout, remoteCount, call.status]);
+
+  useEffect(() => {
+    if (!showSelfView) return undefined;
+    const onResize = () => syncSelfView();
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, [syncSelfView, showSelfView]);
+
+  const onSelfViewPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const element = selfViewRef.current;
+    if (!element || !selfView) return;
+    selfViewDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: selfView.x,
+      originY: selfView.y,
+      moved: false,
+    };
+    try {
+      element.setPointerCapture(event.pointerId);
+    } catch {
+      /* synthetic pointer events (tests) have no capturable pointer */
+    }
+    event.preventDefault();
+  }, [selfView]);
+
+  const onSelfViewPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragState = selfViewDragRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+    const dx = event.clientX - dragState.startX;
+    const dy = event.clientY - dragState.startY;
+    if (!dragState.moved && Math.hypot(dx, dy) < 6) return;
+    dragState.moved = true;
+    const bounds = selfViewBounds();
+    if (!bounds) return;
+    setSelfView({
+      x: Math.round(clampNumber(dragState.originX + dx, bounds.minX, bounds.maxX)),
+      y: Math.round(clampNumber(dragState.originY + dy, bounds.minY, bounds.maxY)),
+    });
+  }, [selfViewBounds]);
+
+  const finishSelfViewDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragState = selfViewDragRef.current;
+    selfViewDragRef.current = null;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+    const element = selfViewRef.current;
+    if (element?.hasPointerCapture(event.pointerId)) {
+      try {
+        element.releasePointerCapture(event.pointerId);
+      } catch {
+        /* pointer already released */
+      }
+    }
+    if (!dragState.moved) {
+      // A tap (not a drag) keeps the old shortcut: swap self view and main tile.
+      setSwapped((value) => !value);
+      return;
+    }
+    const container = containerRef.current;
+    if (!container || !element) return;
+    const containerRect = container.getBoundingClientRect();
+    const tileRect = element.getBoundingClientRect();
+    if (containerRect.width <= 0 || containerRect.height <= 0) return;
+    const fraction: SelfViewFraction = {
+      fx: clampNumber((tileRect.left - containerRect.left) / containerRect.width, 0, 1),
+      fy: clampNumber((tileRect.top - containerRect.top) / containerRect.height, 0, 1),
+    };
+    selfFractionRef.current = fraction;
+    storeSelfView(fraction);
+  }, []);
+
+  const cancelSelfViewDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragState = selfViewDragRef.current;
+    selfViewDragRef.current = null;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+    const element = selfViewRef.current;
+    if (element?.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+  }, []);
 
   const prominent = useMemo<CallParticipant | null>(() => {
     if (pinnedId) return call.participants.find((participant) => participant.id === pinnedId) ?? null;
@@ -417,6 +719,17 @@ export function CallOverlay({ call }: { call: CallState }) {
     }
   }, []);
 
+  // "Speaker" is a real toggle: pick an output device where setSinkId exists.
+  const speakerOutputs = call.devices.audioOutput.filter((device) => device.deviceId !== 'default');
+  const speakerActive = call.sinkId !== '' && call.sinkId !== 'default';
+  const canUseSpeaker = supportsSpeakerSelection() && speakerOutputs.length > 0;
+  const speakerTarget = speakerOutputs.find((device) => /speaker|loud/i.test(device.label)) ?? speakerOutputs[0];
+  const toggleSpeaker = useCallback(() => {
+    if (!canUseSpeaker) return;
+    if (speakerActive) void setSpeaker('default');
+    else if (speakerTarget) void setSpeaker(speakerTarget.deviceId);
+  }, [canUseSpeaker, speakerActive, speakerTarget]);
+
   if (call.status === 'idle') return null;
 
   if (call.status === 'incoming') {
@@ -433,14 +746,15 @@ export function CallOverlay({ call }: { call: CallState }) {
           )}
         </div>
         <div className="text-center">
-          <p className="text-sm text-white/70" data-testid="incoming-call-kind">
+          <h2 className="text-2xl font-bold" data-testid="call-status">{statusLine(call)}</h2>
+          <p className="mt-1 text-sm text-white/70" data-testid="incoming-call-kind">
             {call.isGroup
               ? `Incoming group ${call.video ? 'video' : 'voice'} call`
               : call.video
                 ? 'Incoming video call'
                 : 'Incoming audio call'}
           </p>
-          <h2 className="mt-1 text-2xl font-bold">{call.title}</h2>
+          <p className="mt-1 text-xl font-bold">{call.title}</p>
           <p className="mt-1 text-[13px] text-white/70">
             {call.isGroup
               ? `${call.participants.length} ${call.participants.length === 1 ? 'person' : 'people'} on the call${
@@ -474,17 +788,19 @@ export function CallOverlay({ call }: { call: CallState }) {
 
   if (call.status === 'ended' || call.status === 'error') {
     const title = outcomeLabel(call.outcome);
-    const detail =
-      call.outcome === 'ended' && call.durationSeconds > 0
-        ? `Duration ${formatDurationSeconds(call.durationSeconds)}`
-        : call.message || title;
+    const status = statusLine(call);
+    const detail = call.message && call.message !== status ? call.message : null;
     return (
       <div className="fixed inset-0 z-[70] grid place-items-center bg-black/70 p-6 text-white" role="dialog" aria-label={title}>
         <div className="w-full max-w-sm rounded-2xl bg-ink-900 p-6 text-center shadow-2xl" data-testid="call-ended">
-          <p className="text-lg font-bold" data-testid="call-ended-message">{title}</p>
-          <p className="mt-1 text-[13px] text-white/70" data-testid="call-ended-detail">
-            {detail}
-          </p>
+          <h2 className="text-lg font-bold" data-testid="call-status">
+            <span data-testid="call-ended-message">{status}</span>
+          </h2>
+          {detail ? (
+            <p className="mt-1 text-[13px] text-white/70" data-testid="call-ended-detail">
+              {detail}
+            </p>
+          ) : null}
           <div className="mt-4 flex items-center justify-center gap-2">
             {call.canRetry && call.outcome !== 'ended' ? (
               <button type="button" className="btn-primary" onClick={retryCall} data-testid="call-retry">
@@ -506,9 +822,7 @@ export function CallOverlay({ call }: { call: CallState }) {
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-600 text-xs font-bold">{initials(call.title)}</span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold" data-testid="minimised-call-title">{call.title}</p>
-          <p className="text-[11px] text-white/70" data-testid="minimised-call-status">
-            {call.status === 'active' ? clockFor(call.startedAt) : statusText(call, active)}
-          </p>
+          <p className="text-[11px] text-white/70" data-testid="minimised-call-status">{statusLine(call)}</p>
         </div>
         <button type="button" className="rounded-full bg-white/10 p-2 hover:bg-white/20" aria-label={call.muted ? 'Unmute' : 'Mute'} onClick={() => void toggleMute()}>
           {call.muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
@@ -526,10 +840,7 @@ export function CallOverlay({ call }: { call: CallState }) {
   const QualityIcon = qualityIcon(call.quality);
   const others = call.participants;
   const mainParticipant = swapped ? null : prominent;
-  const galleryCount = others.length + 1;
-  const gridClass =
-    galleryCount <= 1 ? 'grid-cols-1' : galleryCount <= 4 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2 sm:grid-cols-3';
-  const selfPosition = { br: 'bottom-3 right-3', bl: 'bottom-3 left-3', tr: 'top-3 right-3', tl: 'top-3 left-3' }[selfPos];
+  const gridClass = galleryGridClass(remoteCount);
 
   return (
     <div
@@ -539,57 +850,40 @@ export function CallOverlay({ call }: { call: CallState }) {
       aria-label={call.isGroup ? 'Group call' : 'Call'}
       data-testid="call-overlay"
     >
-      {/* header */}
-      <div className="flex items-center gap-2 px-4 py-3">
+      {/* header: ONE status line + ONE quality indicator (only when truly active) */}
+      <div ref={headerRef} className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="min-w-0 flex-1">
-          <h2 className="flex items-center gap-2 truncate text-base font-bold" data-testid="call-status">
-            <span>{statusText(call, active)}</span>
-            {active ? <span className="text-sm font-semibold text-emerald-300" data-testid="call-timer">{clockFor(call.startedAt)}</span> : null}
+          <h2 className="truncate text-base font-bold tabular-nums" data-testid="call-status">
+            {call.status === 'active' ? <span data-testid="call-timer">{statusLine(call)}</span> : statusLine(call)}
           </h2>
           <p className="truncate text-[12px] text-white/70" data-testid="call-title">
             {call.title}
             {call.isGroup ? ` · ${remoteCount + 1} / ${cap}` : ''}
           </p>
         </div>
-        <div className="relative">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1.5 text-[11.5px] font-semibold hover:bg-white/20"
-            aria-label="Connection details"
-            data-testid="connection-indicator"
-            onClick={() => setMenu(menu === 'connection' ? null : 'connection')}
-          >
-            <QualityIcon className="h-4 w-4" />
-            {qualityLabel(call.quality)}
-            <ChevronDown className="h-3 w-3" />
-          </button>
-          {menu === 'connection' ? (
-            <div className="absolute right-0 top-full z-20 mt-2 w-60 rounded-xl border border-white/15 bg-ink-800 p-3 text-[12px] shadow-2xl">
-              <p className="font-semibold">Connection</p>
-              <p className="mt-1 text-white/70">Status: {qualityLabel(call.quality)}</p>
-              <p className="text-white/70">Latency: {call.stats.latencyMs !== null ? `${call.stats.latencyMs} ms` : 'measuring…'}</p>
-              <p className="text-white/70">Packet loss: {call.stats.packetLoss !== null ? `${call.stats.packetLoss}%` : 'measuring…'}</p>
-              <button
-                type="button"
-                className="mt-2 w-full rounded-lg bg-white/10 px-2 py-1.5 font-semibold hover:bg-white/20"
-                onClick={toggleIncomingVideo}
-                aria-pressed={call.incomingVideoOff}
-                data-testid="incoming-video-toggle"
-              >
-                {call.incomingVideoOff ? 'Turn incoming video back on' : 'Turn off incoming video (saves data)'}
-              </button>
-              {call.incomingVideoOff ? (
-                <p className="mt-1 text-[11px] text-white/60">Audio still plays. Others can still hear you.</p>
-              ) : null}
-              {android && screenShareReason ? (
-                <p className="mt-2 rounded-lg bg-white/5 px-2 py-1.5 text-[11px] text-white/60">{screenShareReason}</p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-        <button type="button" className="rounded-full bg-white/10 p-2 hover:bg-white/20" aria-label="Minimise call" onClick={() => setMinimised(true)}>
-          <Minimize2 className="h-4 w-4" />
-        </button>
+        {qualityVisible ? (
+          <div className="relative">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1.5 text-[11.5px] font-semibold hover:bg-white/20"
+              aria-label="Connection details"
+              data-testid="connection-indicator"
+              onClick={() => setMenu(menu === 'connection' ? null : 'connection')}
+            >
+              <QualityIcon className="h-4 w-4" />
+              {qualityLabel(call.quality)}
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {menu === 'connection' ? (
+              <div className="absolute right-0 top-full z-20 mt-2 w-60 rounded-xl border border-white/15 bg-ink-800 p-3 text-[12px] shadow-2xl">
+                <p className="font-semibold">Connection</p>
+                <p className="mt-1 text-white/70">Status: {qualityLabel(call.quality)}</p>
+                <p className="text-white/70">Latency: {call.stats.latencyMs !== null ? `${call.stats.latencyMs} ms` : 'measuring…'}</p>
+                <p className="text-white/70">Packet loss: {call.stats.packetLoss !== null ? `${call.stats.packetLoss}%` : 'measuring…'}</p>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {/* stage */}
@@ -656,47 +950,9 @@ export function CallOverlay({ call }: { call: CallState }) {
                     onRegisterVideo={(element) => { remoteVideoRef.current = element; }}
                   />
                 ) : null}
-                {/* self view: draggable, snaps to a corner, tap to swap */}
-                <div
-                  className={`absolute ${selfPosition} z-20 h-[26%] max-h-40 w-[26%] max-w-[180px] cursor-grab touch-none overflow-hidden rounded-xl border border-white/25 bg-ink-800 shadow-xl`}
-                  onPointerDown={(event) => {
-                    drag.current = { x: event.clientX, y: event.clientY, moved: false };
-                    (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
-                  }}
-                  onPointerMove={(event) => {
-                    if (!drag.current) return;
-                    if (Math.hypot(event.clientX - drag.current.x, event.clientY - drag.current.y) > 6) drag.current.moved = true;
-                  }}
-                  onPointerUp={(event) => {
-                    const start = drag.current;
-                    drag.current = null;
-                    if (!start) return;
-                    if (!start.moved) {
-                      setSwapped((value) => !value);
-                      return;
-                    }
-                    const rect = containerRef.current?.getBoundingClientRect();
-                    if (rect) {
-                      const right = event.clientX > rect.left + rect.width / 2;
-                      const bottom = event.clientY > rect.top + rect.height / 2;
-                      setSelfPos(`${bottom ? 'b' : 't'}${right ? 'r' : 'l'}` as typeof selfPos);
-                    }
-                  }}
-                  title="Drag to a corner, tap to swap with the main view"
-                  data-testid="self-view"
-                >
-                  {call.cameraOn || call.screenSharing ? (
-                    <video ref={localVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${call.screenSharing ? '' : 'scale-x-[-1]'}`} aria-label="Your video" />
-                  ) : (
-                    <div className="grid h-full w-full place-items-center bg-ink-800" data-testid="self-camera-off">
-                      <CameraOff className="h-6 w-6 text-white/60" aria-label="Your camera is off" />
-                    </div>
-                  )}
-                  {call.muted ? <MicOff className="absolute right-1 top-1 h-3.5 w-3.5 text-rose-300" /> : null}
-                </div>
               </div>
             ) : (
-              <div className={`grid min-h-0 flex-1 auto-rows-fr gap-2 overflow-y-auto ${gridClass}`}>
+              <div className={`grid min-h-0 flex-1 gap-2 ${remoteCount > 4 ? 'overflow-y-auto' : 'overflow-hidden'} ${gridClass}`}>
                 {others.map((participant) => (
                   <RemoteTile
                     key={participant.id}
@@ -709,18 +965,20 @@ export function CallOverlay({ call }: { call: CallState }) {
                     onRegisterVideo={() => undefined}
                   />
                 ))}
-                <div className="relative flex min-h-0 items-center justify-center overflow-hidden rounded-2xl bg-ink-800">
-                  {call.cameraOn || call.screenSharing ? (
-                    <video ref={localVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${call.screenSharing ? '' : 'scale-x-[-1]'}`} aria-label="Your video" />
-                  ) : (
-                    <div className="flex flex-col items-center gap-1.5 text-center" data-testid="self-camera-off-tile">
-                      <div className="grid h-16 w-16 place-items-center rounded-full bg-brand-600 text-xl font-bold">You</div>
-                      <span className="text-[11px] text-white/70">Camera off · others can still hear you</span>
-                    </div>
-                  )}
-                  <span className="absolute bottom-2 left-2 rounded-md bg-black/50 px-2 py-0.5 text-xs font-medium">You</span>
-                  {call.cameraOn === false ? <CameraOff className="absolute right-2 top-2 h-4 w-4" /> : null}
-                </div>
+                {remoteCount === 0 ? (
+                  // Nothing remote yet (still ringing / connecting): show the local preview.
+                  <div className="relative flex min-h-0 items-center justify-center overflow-hidden rounded-2xl bg-ink-800">
+                    {call.cameraOn || call.screenSharing ? (
+                      <video ref={localVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${call.screenSharing ? '' : 'scale-x-[-1]'}`} aria-label="Your video" />
+                    ) : (
+                      <div className="flex flex-col items-center gap-1.5 text-center" data-testid="self-camera-off-tile">
+                        <div className="grid h-16 w-16 place-items-center rounded-full bg-brand-600 text-xl font-bold">You</div>
+                        <span className="text-[11px] text-white/70">Camera off · others can still hear you</span>
+                      </div>
+                    )}
+                    <span className="absolute bottom-2 left-2 rounded-md bg-black/50 px-2 py-0.5 text-xs font-medium">You</span>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
@@ -738,13 +996,43 @@ export function CallOverlay({ call }: { call: CallState }) {
                 </div>
               )}
               <p className="text-xl font-bold">{call.title}</p>
-              <p className="text-sm text-white/75">{statusText(call, active)}</p>
               {call.muted ? <p className="rounded-full bg-rose-600/20 px-3 py-1 text-[12px] font-semibold text-rose-200">You're muted</p> : null}
               {remoteCount > 1 ? <p className="text-[12px] text-white/60">{remoteCount + 1} people on the call</p> : null}
             </div>
           </div>
         )}
       </div>
+
+      {/* floating, draggable self view — kept inside the overlay, clear of the
+          header/status line and of the control bar (incl. safe-area inset) */}
+      {showSelfView ? (
+        <div
+          ref={selfViewRef}
+          data-testid="call-self-view"
+          title="Drag to move · tap to swap with the main view"
+          className="absolute z-20 aspect-[4/3] w-[clamp(96px,26%,180px)] touch-none select-none overflow-hidden rounded-xl border border-white/25 bg-ink-800 shadow-xl"
+          style={{
+            left: selfView ? `${selfView.x}px` : undefined,
+            top: selfView ? `${selfView.y}px` : undefined,
+            visibility: selfView ? 'visible' : 'hidden',
+          }}
+          onPointerDown={onSelfViewPointerDown}
+          onPointerMove={onSelfViewPointerMove}
+          onPointerUp={finishSelfViewDrag}
+          onPointerCancel={cancelSelfViewDrag}
+        >
+          <div className="relative h-full w-full cursor-grab active:cursor-grabbing" data-testid="self-view">
+            {call.cameraOn || call.screenSharing ? (
+              <video ref={localSelfVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${call.screenSharing ? '' : 'scale-x-[-1]'}`} aria-label="Your video" />
+            ) : (
+              <div className="grid h-full w-full place-items-center bg-ink-800" data-testid="self-camera-off">
+                <CameraOff className="h-6 w-6 text-white/60" aria-label="Your camera is off" />
+              </div>
+            )}
+            {call.muted ? <MicOff className="absolute right-1 top-1 h-3.5 w-3.5 text-rose-300" aria-label="You are muted" /> : null}
+          </div>
+        </div>
+      ) : null}
 
       {participantsOpen ? (
         <div className="absolute inset-x-3 bottom-24 z-30 max-h-[45%] overflow-y-auto rounded-2xl border border-white/15 bg-ink-800/95 p-3 shadow-2xl" data-testid="call-participants">
@@ -803,125 +1091,61 @@ export function CallOverlay({ call }: { call: CallState }) {
         </div>
       ) : null}
 
+      {/* controls: five labelled primaries + a ghost More that opens the sheet */}
+      <div
+        ref={controlsRef}
+        className="relative z-10 shrink-0 px-1 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
+      >
+        <div className="flex items-end justify-between gap-0.5 sm:justify-center sm:gap-3">
+          <CallControl
+            testId="call-control-mute"
+            label={call.muted ? 'Unmute' : 'Mute'}
+            active={call.muted}
+            onClick={() => void toggleMute()}
+            title={call.muted ? 'Unmute microphone (M)' : 'Mute microphone (M)'}
+          >
+            {call.muted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+          </CallControl>
 
-      {/* controls */}
-      <div className="relative z-10 flex shrink-0 flex-wrap items-center justify-center gap-2 px-3 py-3 sm:gap-3">
-        <ControlButton label={call.muted ? 'Unmute' : 'Mute'} hint="M" active={call.muted} onClick={() => void toggleMute()}>
-          {call.muted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-        </ControlButton>
+          <CallControl
+            testId="call-control-camera"
+            label="Camera"
+            active={call.video && !call.cameraOn}
+            onClick={call.video ? () => void toggleCamera() : requestVideoUpgrade}
+            title={call.video ? (call.cameraOn ? 'Turn camera off (V)' : 'Turn camera on (V)') : 'Switch this call to video'}
+          >
+            {call.video && call.cameraOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+          </CallControl>
 
-        <div className="relative">
-          <ControlButton label="Devices" onClick={() => setMenu(menu === 'devices' ? null : 'devices')}>
-            <Settings2 className="h-5 w-5" />
-          </ControlButton>
-          {menu === 'devices' ? (
-            <div className="absolute bottom-full left-1/2 z-30 mb-2 max-h-72 w-64 -translate-x-1/2 overflow-y-auto rounded-2xl border border-white/15 bg-ink-800 p-3 text-[12px] shadow-2xl" data-testid="device-menu">
-              <p className="font-semibold">Microphone</p>
-              {call.devices.audioInput.map((device) => (
-                <button key={device.deviceId} type="button" className="block w-full truncate rounded-lg px-2 py-1 text-left hover:bg-white/10" onClick={() => void switchDevice('audio', device.deviceId)}>
-                  {device.label || 'Microphone'}
-                </button>
-              ))}
-              {call.video ? (
-                <>
-                  <p className="mt-2 font-semibold">Camera</p>
-                  {call.devices.videoInput.map((device) => (
-                    <button key={device.deviceId} type="button" className="block w-full truncate rounded-lg px-2 py-1 text-left hover:bg-white/10" onClick={() => void switchDevice('video', device.deviceId)}>
-                      {device.label || 'Camera'}
-                    </button>
-                  ))}
-                  <button type="button" className="mt-1 w-full rounded-lg px-2 py-1 text-left font-semibold hover:bg-white/10" onClick={() => void flipCamera()}>
-                    <SwitchCamera className="mr-1 inline h-3.5 w-3.5" /> Flip camera
-                  </button>
-                </>
-              ) : null}
-              {supportsSpeakerSelection() ? (
-                <>
-                  <p className="mt-2 font-semibold">Speaker</p>
-                  {call.devices.audioOutput.map((device) => (
-                    <button key={device.deviceId} type="button" className="block w-full truncate rounded-lg px-2 py-1 text-left hover:bg-white/10" onClick={() => void setSpeaker(device.deviceId)}>
-                      {device.label || 'Speaker'}
-                    </button>
-                  ))}
-                </>
-              ) : null}
-            </div>
-          ) : null}
+          <CallControl
+            testId="call-control-speaker"
+            label="Speaker"
+            active={speakerActive}
+            disabled={!canUseSpeaker}
+            onClick={toggleSpeaker}
+            title={canUseSpeaker ? (speakerActive ? 'Switch back to the default speaker' : 'Use the loudspeaker') : 'Speaker switching is not available on this device'}
+          >
+            {speakerActive ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+          </CallControl>
+
+          <CallControl
+            testId="call-control-flip"
+            label="Flip"
+            disabled={!call.video || !call.cameraOn}
+            onClick={() => void flipCamera()}
+            title="Flip camera"
+          >
+            <SwitchCamera className="h-5 w-5" />
+          </CallControl>
+
+          <CallControl testId="call-control-more" label="More" ghost onClick={() => setMoreOpen(true)} title="More call actions">
+            <MoreHorizontal className="h-5 w-5" />
+          </CallControl>
+
+          <CallControl testId="call-control-end" label="End call" danger onClick={hangUp} title="End call">
+            <PhoneOff className="h-6 w-6" />
+          </CallControl>
         </div>
-
-        {call.video ? (
-          <>
-            <ControlButton label={call.cameraOn ? 'Camera off' : 'Camera on'} hint="V" active={call.cameraOn === false} onClick={() => void toggleCamera()}>
-              {call.cameraOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-            </ControlButton>
-            {!android ? (
-              <ControlButton
-                label={call.screenSharing ? 'Stop sharing' : 'Share screen'}
-                hint="S"
-                active={call.screenSharing}
-                disabled={!isScreenSharingSupported()}
-                title={screenShareReason ?? undefined}
-                onClick={() => void toggleScreenShare()}
-              >
-                <ScreenShare className="h-5 w-5" />
-              </ControlButton>
-            ) : null}
-            <ControlButton label={layout === 'speaker' ? 'Gallery view' : 'Speaker view'} onClick={() => setLayout(layout === 'speaker' ? 'gallery' : 'speaker')}>
-              {layout === 'speaker' ? <Grid2x2 className="h-5 w-5" /> : <Users className="h-5 w-5" />}
-            </ControlButton>
-            <ControlButton label="Full screen" onClick={() => void requestFullscreen()}>
-              <Maximize2 className="h-5 w-5" />
-            </ControlButton>
-            <ControlButton label="Picture in picture" disabled={!showVideo} onClick={() => void togglePip()}>
-              <PictureInPicture2 className="h-5 w-5" />
-            </ControlButton>
-            <ControlButton label="Audio only" onClick={() => void switchToAudioOnly()}>
-              <VolumeX className="h-5 w-5" />
-            </ControlButton>
-          </>
-        ) : (
-          <>
-            <ControlButton label="Switch to video" onClick={requestVideoUpgrade}>
-              <Video className="h-5 w-5" />
-            </ControlButton>
-            {supportsSpeakerSelection() ? (
-              <ControlButton label="Speaker" onClick={() => setMenu(menu === 'devices' ? null : 'devices')}>
-                <Volume2 className="h-5 w-5" />
-              </ControlButton>
-            ) : null}
-          </>
-        )}
-
-        <ControlButton
-          label={call.incomingVideoOff ? 'Turn incoming video on' : 'Turn off incoming video'}
-          active={call.incomingVideoOff}
-          onClick={toggleIncomingVideo}
-        >
-          {call.incomingVideoOff ? <CameraOff className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
-        </ControlButton>
-
-        <ControlButton
-          label="Add participant"
-          disabled={call.isGroup}
-          title={
-            call.isGroup
-              ? 'Everyone in this group can join from the group chat'
-              : 'Add someone to this call and turn it into a group call'
-          }
-          onClick={() => setAddParticipantOpen(true)}
-        >
-          <UserPlus className="h-5 w-5" />
-        </ControlButton>
-        <ControlButton label={participantsOpen ? 'Hide participants' : 'Participants'} active={participantsOpen} onClick={() => setParticipantsOpen((value) => !value)}>
-          <Users className="h-5 w-5" />
-        </ControlButton>
-        <ControlButton label="Messages" active={messagesOpen} onClick={() => setMessagesOpen((value) => !value)}>
-          <MessageSquare className="h-5 w-5" />
-        </ControlButton>
-
-        <button type="button" className="grid h-14 w-14 place-items-center rounded-full bg-rose-600 hover:bg-rose-700" aria-label="Hang up" title="End call" onClick={hangUp}>
-          <PhoneOff className="h-6 w-6" />
-        </button>
       </div>
 
       {call.cameraOn === false && call.video && !call.screenSharing ? (
@@ -930,8 +1154,146 @@ export function CallOverlay({ call }: { call: CallState }) {
         </p>
       ) : null}
 
+      {/* More sheet: everything that is not a primary control lives here. */}
+      {moreOpen ? (
+        <div
+          className="fixed inset-0 z-[80] flex flex-col justify-end"
+          role="dialog"
+          aria-modal="true"
+          aria-label="More call actions"
+          data-testid="call-more-sheet"
+        >
+          <button
+            type="button"
+            aria-label="Close more actions"
+            onClick={() => setMoreOpen(false)}
+            className="absolute inset-0 h-full w-full bg-black/60"
+          />
+          <div className="relative max-h-[80vh] overflow-y-auto rounded-t-3xl border-t border-white/10 bg-ink-800 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 shadow-2xl">
+            <div className="mx-auto h-1.5 w-10 rounded-full bg-white/25" aria-hidden="true" />
+            <div className="mt-2 flex items-center px-4">
+              <p className="flex-1 text-sm font-semibold">More</p>
+              <button type="button" className="rounded-full p-1.5 hover:bg-white/10" aria-label="Close more actions" onClick={() => setMoreOpen(false)}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-1 px-2 pt-1 sm:grid-cols-4">
+              <MoreAction testId="call-more-participants" label="Participants" onClick={() => { setParticipantsOpen(true); setMoreOpen(false); }}>
+                <Users className="h-5 w-5" />
+              </MoreAction>
+
+              <MoreAction
+                testId="call-more-add"
+                label="Add person"
+                disabled={call.isGroup}
+                title={call.isGroup ? 'Everyone in this group can join from the group chat' : 'Add someone to this call and turn it into a group call'}
+                onClick={() => { setAddParticipantOpen(true); setMoreOpen(false); }}
+              >
+                <UserPlus className="h-5 w-5" />
+              </MoreAction>
+
+              <MoreAction testId="call-more-chat" label="Chat" onClick={() => { setMessagesOpen(true); setMoreOpen(false); }}>
+                <MessageSquare className="h-5 w-5" />
+              </MoreAction>
+
+              <MoreAction
+                testId="call-layout-toggle"
+                label={layout === 'speaker' ? 'Gallery view' : 'Spotlight view'}
+                onClick={() => setLayout(layout === 'speaker' ? 'gallery' : 'speaker')}
+              >
+                {layout === 'speaker' ? <Grid2x2 className="h-5 w-5" /> : <Users className="h-5 w-5" />}
+              </MoreAction>
+
+              <MoreAction testId="call-more-fullscreen" label="Full screen" onClick={() => void requestFullscreen()}>
+                <Maximize2 className="h-5 w-5" />
+              </MoreAction>
+
+              <MoreAction testId="call-more-pip" label="Picture in picture" disabled={!showVideo} onClick={() => void togglePip()}>
+                <PictureInPicture2 className="h-5 w-5" />
+              </MoreAction>
+
+              {/* Screen sharing only exists where getDisplayMedia does (Capacitor
+                  Android WebView has none) — so the action is simply absent there. */}
+              {screenShareSupported ? (
+                <MoreAction
+                  testId="call-more-screen-share"
+                  label={call.screenSharing ? 'Stop sharing' : 'Share screen'}
+                  active={call.screenSharing}
+                  onClick={() => void toggleScreenShare()}
+                >
+                  <ScreenShare className="h-5 w-5" />
+                </MoreAction>
+              ) : null}
+
+              <MoreAction
+                testId="incoming-video-toggle"
+                label={call.incomingVideoOff ? 'Incoming video on' : 'Incoming video off'}
+                active={call.incomingVideoOff}
+                title={call.incomingVideoOff ? 'Turn incoming video back on' : 'Turn off incoming video (saves data)'}
+                onClick={toggleIncomingVideo}
+              >
+                {call.incomingVideoOff ? <Camera className="h-5 w-5" /> : <CameraOff className="h-5 w-5" />}
+              </MoreAction>
+
+              <MoreAction
+                testId="call-more-devices"
+                label="Devices"
+                active={menu === 'devices'}
+                onClick={() => setMenu(menu === 'devices' ? null : 'devices')}
+              >
+                <Settings2 className="h-5 w-5" />
+              </MoreAction>
+
+              {call.video ? (
+                <MoreAction testId="call-more-audio-only" label="Audio only" onClick={() => void switchToAudioOnly()}>
+                  <VolumeX className="h-5 w-5" />
+                </MoreAction>
+              ) : null}
+
+              <MoreAction testId="call-more-minimise" label="Minimise" onClick={() => { setMoreOpen(false); setMinimised(true); }}>
+                <Minimize2 className="h-5 w-5" />
+              </MoreAction>
+            </div>
+
+            {menu === 'devices' ? (
+              <div className="mx-3 mt-2 max-h-72 overflow-y-auto rounded-2xl bg-black/30 p-3 text-[12px]" data-testid="device-menu">
+                <p className="font-semibold">Microphone</p>
+                {call.devices.audioInput.map((device) => (
+                  <button key={device.deviceId} type="button" className="block w-full truncate rounded-lg px-2 py-1 text-left hover:bg-white/10" onClick={() => void switchDevice('audio', device.deviceId)}>
+                    {device.label || 'Microphone'}
+                  </button>
+                ))}
+                {call.video ? (
+                  <>
+                    <p className="mt-2 font-semibold">Camera</p>
+                    {call.devices.videoInput.map((device) => (
+                      <button key={device.deviceId} type="button" className="block w-full truncate rounded-lg px-2 py-1 text-left hover:bg-white/10" onClick={() => void switchDevice('video', device.deviceId)}>
+                        {device.label || 'Camera'}
+                      </button>
+                    ))}
+                    <button type="button" className="mt-1 w-full rounded-lg px-2 py-1 text-left font-semibold hover:bg-white/10" onClick={() => void flipCamera()}>
+                      <SwitchCamera className="mr-1 inline h-3.5 w-3.5" /> Flip camera
+                    </button>
+                  </>
+                ) : null}
+                {supportsSpeakerSelection() ? (
+                  <>
+                    <p className="mt-2 font-semibold">Speaker</p>
+                    {call.devices.audioOutput.map((device) => (
+                      <button key={device.deviceId} type="button" className="block w-full truncate rounded-lg px-2 py-1 text-left hover:bg-white/10" onClick={() => void setSpeaker(device.deviceId)}>
+                        {device.label || 'Speaker'}
+                      </button>
+                    ))}
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {addParticipantOpen ? (
-        <div className="absolute inset-0 z-40 grid place-items-center bg-black/60 p-4" onClick={() => setAddParticipantOpen(false)}>
+        <div className="absolute inset-0 z-[75] grid place-items-center bg-black/60 p-4" onClick={() => setAddParticipantOpen(false)}>
           <div
             className="flex max-h-[70vh] w-full max-w-sm flex-col overflow-hidden rounded-2xl bg-ink-800 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
