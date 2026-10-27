@@ -1,8 +1,22 @@
-## CHUNK 7 PARTIAL — first pass code committed `1323a44`, NOT DEPLOYED (2026-10-26)
+## CHUNK 7 FIRST PASS DEPLOYED — version check + update banner (2026-10-27)
 
-**Done (green locally):** server `GET /api/app/version?platform=windows|android&current=&build=&id=` (rate-limited, ETag, own-HTTPS-domain URL enforcement, never a downgrade; AppRelease extended with withdrawn/notes/sha512; anonymous ClientVersion rows), admin "Versions in use" panel on the Releases page + admin endpoint/audit, Privacy Policy disclosure sentence, web build emits `/web/version.json` (vite) and the app polls it every 10 min + on focus showing "A new version of Chatgram is available. Refresh" with draft preserved via localStorage and no banner/auto-reload while a call is active (`UpdateBanner.tsx`, `lib/appUpdate.ts`, Composer draft). Verified: `node --check` all changed server files, `server/test/unit/appVersion.test.js` **81/81**, typecheck green, web build green.
+**Live:** backend PM2 `chatgram-api` **#118** (commit `eb8e839`), web `chatgram-axp112492` (aliased to chatgram-xi.vercel.app).
 
-**NOT done (next session):** deploy this first pass (backend backup → src + docs → restart #118 → health; web via scripts/deploy-web.ps1 → verify `/api/app/version` own-domain JSON + 401/ETag, then production smoke); 7B Windows electron-updater runtime (startup/6 h/resume checks, background download+progress, SHA-512 verify, Restart prompt, force/min-supported blocking screen, Settings→About controls, retry/backoff, unsigned/SmartScreen docs); 7C Android DownloadManager/WorkManager update flow (launch/resume/6 h + ~12 h job, Wi-Fi-only setting, SHA-256 verify, notification + install intent with REQUEST_INSTALL_PACKAGES, forced-update screen, versionCode increments, same debug keystore); 7E checksum-mismatch refusal test + local Electron/`adb` update simulation; rebuild + publish Windows 1.1.x and Android 1.1.x so the first auto-update path exists; and the pending **Android 1.1.1 publish hand-off** from CHUNK 3 (APK `defe6b4e…1149`, 1,116,723 B → upload to VM `/downloads/` + update `client/landing/content/site.mjs`, `guides.mjs`, `scripts/validate.mjs` and the AppRelease feed together, then deploy web).
+**Verified in production:**
+- `GET /api/app/version?platform=windows&current=1.1.0&build=10` → **200**, `ETag: W/"6592e9644619080afe5e5853c34ebccd"`, `Cache-Control: public, max-age=60`, conditional GET with `If-None-Match` → **304**, missing params → **400**.
+- The returned download URL is on our own domain (`https://chatgram-xi.vercel.app/downloads/chatgram-windows-setup.exe`, 81,824,358 B, SHA-256 `c9882047…`), never a third-party host.
+- `/web/version.json` is served (`{"buildId":"mvqipotr","builtAt":"2026-10-27T10:03:34.767Z"}`) and the shipped main bundle contains the banner text + `version.json` polling code.
+- Routes `/`, `/web/`, `/web/admin`, `/docs/`, `/sitemap.xml`, `/robots.txt`, `/downloads/latest.yml` → 200; `/api/status/health` → `{ok:true, database:connected}`.
+- Backup before deploy: `20261027-095754` (100K) + `src.bak-20261027-095754`. Source was shipped as a tarball because a recursive `scp -r` was reset mid-transfer; extracting over the deployed tree was verified by a clean health gate 4 s after restart.
+
+**Still NOT done (next sessions):**
+- **7B Windows electron-updater runtime**: startup/6 h/resume checks, background download + progress, SHA-512 verify, Restart prompt, force/min-supported blocking screen, Settings→About controls, retry/backoff, unsigned/SmartScreen docs.
+- **7C Android DownloadManager/WorkManager flow**: launch/resume/6 h + ~12 h job, Wi-Fi-only setting, SHA-256 verify, notification + install intent (`REQUEST_INSTALL_PACKAGES`), forced-update screen, versionCode increments, pinned debug keystore.
+- **7E**: checksum-mismatch refusal test + local Electron/`adb` update simulation; rebuild + publish Windows 1.1.x and Android 1.1.x so a first auto-update path exists.
+- **Android 1.1.1 publish hand-off is blocked on an artifact mismatch**: `release-artifacts/chatgram-android.apk` on disk is **1,116,911 B / SHA-256 `03812cb5ecdc64b343860d7ded4f08b3c54ddad24be63673529e0517d72a1ceb`**, but CHUNK 3 documented **1,116,723 B / `defe6b4e…e2c1149`**. Do not update `client/landing/content/site.mjs`, `guides.mjs`, `scripts/validate.mjs` or the AppRelease feed until the owner confirms which build is the published 1.1.1.
+- The "a new version is available" banner state itself was **not** exercised in production (it needs two different deployed builds); the endpoint, ETag/304 path, version.json and the shipped polling/banner code are verified.
+
+**Gate run for this deploy:** `npm run typecheck` clean; `npm run build` green; landing build + `node client/landing/scripts/check-dist.mjs` "all static checks passed"; `server/test/unit/appVersion.test.js` **81/81** (exit 0).
 
 ## CHUNK 3 COMPLETE (code + local APK 1.1.1, NOT published) — 2026-10-26
 
