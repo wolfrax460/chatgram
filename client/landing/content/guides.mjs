@@ -14,7 +14,7 @@ export const GUIDES_CONTENT = [
       {
         h2: 'What you need to get started',
         html: `<p>You need an email address or a Google account. Chatgram runs on Android 7.0 or newer, on 64-bit Windows 10 or newer, and in any current Chrome, Edge, Firefox or Safari. The same account works on all three, so you can start on your phone and continue on your PC.</p>
-<p>Install it here: the <a href="/downloads/chatgram-android.apk">Android APK</a> is 1,116,911 bytes (1.1 MB) and the <a href="/downloads/chatgram-windows-setup.exe">Windows installer</a> is 81,824,358 bytes (78.0 MB). Or open the <a href="/web/">web app</a> and sign in there; it is the same account.</p>`,
+<p>Install it here: the <a href="/downloads/chatgram-android.apk">Android APK</a> is 1,116,911 bytes (1.1 MB) and the <a href="/downloads/chatgram-windows-setup.exe">Windows installer</a> is 81,829,947 bytes (78.1 MB). Or open the <a href="/web/">web app</a> and sign in there; it is the same account.</p>`,
       },
       {
         h2: 'Create your account',
@@ -129,10 +129,10 @@ export const GUIDES_CONTENT = [
     sections: [
       {
         h2: 'Check the file before you download',
-        html: `<p>The current desktop build is version 1.1.0 for 64-bit Windows 10 or newer. It is an unsigned NSIS installer, which is why SmartScreen can warn about it.</p>
+        html: `<p>The current desktop build is version 1.1.1 for 64-bit Windows 10 or newer. It is an unsigned NSIS installer, which is why SmartScreen can warn about it.</p>
 <ul>
 <li><strong>File:</strong> chatgram-windows-setup.exe</li>
-<li><strong>Size:</strong> 81,824,358 bytes (78.0 MB)</li>
+<li><strong>Size:</strong> 81,829,947 bytes (78.1 MB)</li>
 <li><strong>Download link:</strong> <a href="/downloads/chatgram-windows-setup.exe">download chatgram-windows-setup.exe</a></li>
 </ul>
 <p>Only download the installer from this site. If a message or another website offers you a Chatgram .exe, treat it as untrusted.</p>`,
@@ -151,7 +151,7 @@ export const GUIDES_CONTENT = [
         h2: 'Verify the SHA-256 checksum',
         html: `<p>If you want to be certain the download is intact, open PowerShell in the folder that holds the installer and run:</p>
 <p><code>Get-FileHash .\\chatgram-windows-setup.exe -Algorithm SHA256</code></p>
-<p>The current Windows build's checksum begins with <strong>c9882047</strong> and ends with <strong>53ab3</strong>; the complete value is published with the release feed the download cards read from. If your hash does not match the published value for the version you downloaded, delete the file and download it again.</p>`,
+<p>The current Windows build's checksum begins with <strong>c2e41a9b</strong> and ends with <strong>a5aa</strong>; the complete value is published with the release feed the download cards read from. If your hash does not match the published value for the version you downloaded, delete the file and download it again.</p>`,
       },
       {
         h2: 'After installation',
@@ -216,7 +216,7 @@ export const GUIDES_CONTENT = [
       },
       {
         h2: 'Get the app',
-        html: `<p>Chatgram AI is part of the free app on every platform: <a href="/downloads/chatgram-android.apk">download the Android APK</a> (1,116,911 bytes), <a href="/downloads/chatgram-windows-setup.exe">download the Windows installer</a> (81,824,358 bytes), or <a href="/web/">open Chatgram in your browser</a>. The account and the conversations are the same everywhere.</p>`,
+        html: `<p>Chatgram AI is part of the free app on every platform: <a href="/downloads/chatgram-android.apk">download the Android APK</a> (1,116,911 bytes), <a href="/downloads/chatgram-windows-setup.exe">download the Windows installer</a> (81,829,947 bytes), or <a href="/web/">open Chatgram in your browser</a>. The account and the conversations are the same everywhere.</p>`,
       },
     ],
   },

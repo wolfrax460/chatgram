@@ -230,11 +230,13 @@ export default {
       },
       {
         platform: 'windows',
-        version: '1.1.0',
-        date: '25 October 2026',
+        version: '1.1.1',
+        date: '27 October 2026',
         items: [
           'Desktop app with tray, taskbar badge and auto-update from /downloads',
           'Start-on-login and native notifications',
+          'Background update downloads with a "Restart to install" prompt; updates install on quit',
+          'A blocking update screen when a version is forced or below the minimum',
           'Unsigned build — see the SmartScreen guide before installing',
         ],
       },

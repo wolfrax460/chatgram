@@ -233,7 +233,7 @@ export default {
       },
       {
         platform: "windows",
-        version: "1.1.0",
+        version: "1.1.1",
         date: "25 Ukwakira 2026",
         items: [
           "Porogaramu ya mudasobwa ifite tray, ikimenyetso kuri taskbar no kwivugurura kuva /downloads",

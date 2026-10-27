@@ -63,15 +63,15 @@ export const SCREENSHOTS = {
 export const RELEASES = {
   windows: {
     platform: 'windows',
-    version: '1.1.0',
+    version: '1.1.1',
     fileName: 'chatgram-windows-setup.exe',
     fileUrl: '/downloads/chatgram-windows-setup.exe',
-    sizeBytes: 81824358,
-    sizeMB: '78.0',
-    shaShort: 'c9882047…53ab3',
+    sizeBytes: 81829947,
+    sizeMB: '78.1',
+    shaShort: 'c2e41a9b…a5aa',
     shaFull: '',
-    releasedText: '25 October 2026',
-    releasedISO: '2026-10-25',
+    releasedText: '27 October 2026',
+    releasedISO: '2026-10-27',
     requirements: 'Windows 10 or newer, 64-bit',
   },
   android: {
@@ -101,7 +101,7 @@ export const RELEASES = {
 /** Feed rows that still describe the previous installers must not overwrite the
  * verified size/checksum above. These prefixes belong to the 2026-10-25 builds
  * (and the broken 1.1.0 Android APK, replaced by 1.1.2 on 2026-10-27). */
-export const STALE_FEED_HASH_PREFIXES = ['1943d51a', 'a5891a58', '1dfe75cb'];
+export const STALE_FEED_HASH_PREFIXES = ['1943d51a', 'a5891a58', '1dfe75cb', 'c9882047'];
 
 export const OG_IMAGE = {
   path: '/assets/og-image-1200x630.png',

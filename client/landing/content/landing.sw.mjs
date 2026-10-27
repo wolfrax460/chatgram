@@ -233,7 +233,7 @@ export default {
       },
       {
         platform: "windows",
-        version: "1.1.0",
+        version: "1.1.1",
         date: "25 Oktoba 2026",
         items: [
           "Programu ya kompyuta yenye tray, alama ya taskbar na kujisasisha kutoka /downloads",

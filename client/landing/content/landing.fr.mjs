@@ -233,7 +233,7 @@ export default {
       },
       {
         platform: "windows",
-        version: "1.1.0",
+        version: "1.1.1",
         date: "25 octobre 2026",
         items: [
           "Application de bureau avec zone de notification, badge et mise à jour automatique depuis /downloads",

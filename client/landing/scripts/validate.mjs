@@ -131,7 +131,7 @@ export async function validateSite({ distDir, siteUrl, locales, guideContents, g
     const windows = findNode(nodes, 'SoftwareApplication');
     check(windows && windows.operatingSystem, `${label} SoftwareApplication needs operatingSystem`);
     check(windows && windows.downloadUrl === `${siteUrl}/downloads/chatgram-windows-setup.exe`, `${label} SoftwareApplication downloadUrl must be the EXE`);
-    check(windows && windows.fileSize === '81824358', `${label} SoftwareApplication fileSize must be 81824358`);
+    check(windows && windows.fileSize === '81829947', `${label} SoftwareApplication fileSize must be 81829947`);
     check(windows && windows.softwareVersion, `${label} SoftwareApplication needs softwareVersion`);
     check(windows && windows.offers && String(windows.offers.price) === '0', `${label} SoftwareApplication offers.price must be 0`);
 
@@ -174,7 +174,7 @@ export async function validateSite({ distDir, siteUrl, locales, guideContents, g
       ]) {
         check(html.includes(needle), `[en] missing expected copy "${needle}" for the existing Playwright landing spec`);
       }
-      check(html.includes('81,824,358'), '[en] Windows size must state the real 81,824,358 bytes');
+      check(html.includes('81,829,947'), '[en] Windows size must state the real 81,829,947 bytes');
       check(html.includes('1,116,911'), '[en] Android size must state the real 1,116,911 bytes');
     }
 

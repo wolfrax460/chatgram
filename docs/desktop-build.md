@@ -45,6 +45,36 @@ shell itself changes (tray, updater, version gate, icons).
 - Security: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`;
   external links open in the real browser.
 
+## Publishing an update (important)
+
+`npm run dist -w @chatgram/desktop` builds the installer, but with **no publish
+provider configured** electron-builder does **not** rewrite `latest.yml` — the file
+is left over from the previous release. Publishing therefore needs these steps:
+
+1. Bump `version` in `apps/desktop/package.json`, then build.
+2. Generate the metadata from the real file — never by hand:
+   ```powershell
+   node scripts/make-latest-yml.mjs --version 1.1.1
+   ```
+   It reads the built `.exe`, writes `latest.yml` (version, size, SHA-512 base64,
+   `releaseDate`) **without a BOM** and with LF endings, refuses to emit a BOM,
+   and prints the SHA-256 plus a ready AppRelease summary. `electron-builder`
+   itself only writes `latest.yml` when a publish provider is configured, which
+   is why this script exists.
+   - Manual fallback (avoid): size = file bytes, sha512 = **base64** of the
+     SHA-512 digest. PowerShell's `Set-Content -Encoding utf8` writes a BOM on
+     5.1, which makes YAML readers mis-parse the first key.
+3. Upload `chatgram-windows-setup.exe`, `latest.yml` and the `.blockmap` to
+   `/var/www/downloads/` on the VM (the Vercel `/downloads/*` rewrite points
+   there). Large scp transfers to this VM have been reset mid-flight — split the
+   exe into ~8 MB parts, upload each with retries, then `cat` them back together
+   and **compare the SHA-256 before replacing the published file**.
+4. Update the `windows` AppRelease row (version, sizeBytes, sha256, sha512,
+   fileUrl, notes, releasedAt) and `/var/www/downloads/checksums.txt`.
+5. Update the landing constants (`client/landing/content/site.mjs`,
+   `guides.mjs`, `landing.<locale>.mjs`) and `scripts/validate.mjs`, then deploy
+   the web build; `check-dist.mjs` fails if the stated size/hash is wrong.
+
 ## Updates and SmartScreen (the installer is unsigned)
 
 Chatgram's Windows installer is **not code-signed**, so:
@@ -94,12 +124,14 @@ the in-app updater.
 
 | | |
 | --- | --- |
-| Version | 1.1.0 (rebuilt 2026-10-26) |
+| Version | 1.1.1 (built 2026-10-27) |
 | File | `chatgram-windows-setup.exe` |
-| Size | 81,824,358 bytes |
-| SHA-256 | `c98820472d69447a61d3fc0f0d51c29d79d5bbd1a4fca4365a31b77f69853ab3` |
+| Size | 81,829,947 bytes |
+| SHA-256 | `c2e41a9b99a7619971c31f8a100e6a7b97f91c2e354d6d1f4f86e1e4b6aaa5aa` |
+| SHA-512 (`latest.yml`) | `8eVqLQIoDd6IoYMJ3IQ6waknIWkzYWAoNX5xE6K75TmIzfO+dwBFKzfFbCjrog9ZrLCRkUeXvVxyy1agXN8gVQ==` |
 | Signed | **No** - the installer is unsigned. Windows SmartScreen may show "Windows protected your PC". |
-| Updater metadata | `latest.yml` refreshed with the new SHA-512 and size. |
+| Updater metadata | `latest.yml` version 1.1.1, size 81,829,947, the SHA-512 above, `releaseDate: '2026-10-27T11:09:33.169Z'` |
+| Published | `/var/www/downloads/` on the VM (served via nginx **and** the Vercel `/downloads/*` proxy); AppRelease row `windows` → 1.1.1. |
 
 ### SmartScreen / install steps
 
