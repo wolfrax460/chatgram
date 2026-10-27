@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#062A33"/>
+      <stop offset="0.55" stop-color="#0B7F68"/>
+      <stop offset="1" stop-color="#2DE2A6"/>
+    </linearGradient>
+    <radialGradient id="hl" cx="0.25" cy="0.1" r="0.8">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bub" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#CFF3E7"/>
+    </linearGradient>
+    <linearGradient id="cc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#12C49A"/>
+      <stop offset="1" stop-color="#067A62"/>
+    </linearGradient>
+    <radialGradient id="gold" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#FFE27A"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </radialGradient>
+    <filter id="sh" x="-25%" y="-25%" width="150%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#021A20" flood-opacity="0.45"/>
+    </filter>
+    <filter id="gl" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <clipPath id="clip"><rect width="512" height="512" rx="115"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="115" fill="url(#bg)"/>
+  <g clip-path="url(#clip)">
+    <rect width="512" height="512" fill="url(#hl)"/>
+    <circle cx="450" cy="70" r="170" fill="#fff" opacity="0.06"/>
+    <circle cx="60" cy="470" r="150" fill="#000" opacity="0.10"/>
+  </g>
+  <g class="float" filter="url(#sh)">
+    <rect x="90" y="106" width="332" height="246" rx="92" fill="url(#bub)"/>
+    <path d="M146 332 L108 416 L228 352 Z" fill="#CFF3E7"/>
+    <path d="M118 150 Q256 118 394 150" stroke="#fff" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.7"/>
+    <path d="M318 196 A70 70 0 1 0 318 286" fill="none" stroke="url(#cc)" stroke-width="34" stroke-linecap="round"/>
+    <circle cx="190" cy="326" r="0" fill="none"/>
+  </g>
+  <g>
+    <circle class="pulse" cx="388" cy="241" r="20" fill="#F59E0B" filter="url(#gl)" opacity="0.7"/>
+    <circle cx="388" cy="241" r="16" fill="url(#gold)" stroke="#fff" stroke-width="4"/>
+  </g>
+  <g fill="#0B7F68">
+    <circle class="d1" cx="214" cy="318" r="0"/>
+  </g>
+</svg>

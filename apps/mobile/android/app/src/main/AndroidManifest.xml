@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:allowBackup="false"
@@ -10,6 +11,12 @@
         android:usesCleartextTraffic="false"
         android:hardwareAccelerated="true"
         android:theme="@style/AppTheme">
+
+        <!-- FCM (1.1.7): notification payloads (if the server ever sends one)
+             must land on the same high-importance channel as local messages. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="messages" />
 
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|density|fontScale|locale|layoutDirection|uiMode"
@@ -47,6 +54,29 @@
                 <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
             </intent-filter>
         </receiver>
+
+        <!-- FCM (1.1.7): single MESSAGING_EVENT receiver for token refreshes and
+             data messages. It extends the Capacitor push plugin's service and
+             calls super, so the plugin's JS events keep working, but the library
+             declaration is removed below to avoid two services racing for the
+             same intent. -->
+        <service
+            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
+            tools:node="remove" />
+
+        <service
+            android:name=".ChatgramMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- FCM (1.1.7): "Decline" on an incoming-call notification stops the
+             ringtone and removes the notification without opening the app. -->
+        <receiver
+            android:name=".CallActionReceiver"
+            android:exported="false" />
     </application>
 
     <!-- Permissions -->
@@ -70,6 +100,11 @@
     <!-- Kept for the update notifications in CHUNK 7 and for call alert
          notifications; Android 13+ only shows them after a runtime prompt. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- FCM (1.1.7): incoming-call alerts may open the call screen on a locked
+         phone. On Android 14+ this is a user-controlled permission inspected with
+         NotificationManager.canUseFullScreenIntent(); when denied, the same
+         notification is posted as a heads-up alert instead. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- Chunk 8: the "messages" notification channel enables vibration, which
          Android only performs when the app holds VIBRATE. Without it the
          notification is silent instead of vibrating. -->

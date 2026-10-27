@@ -5,6 +5,7 @@
  * the markup reuses the design tokens/classes from src/styles.css so the existing
  * look and feel is preserved.
  */
+import { ICON, PHOTOS } from '../content/media.mjs';
 import { GUIDES, LANGUAGES, OG_IMAGE, RELEASES, SCREENSHOTS, SITE } from '../content/site.mjs';
 
 /* ------------------------------------------------------------------ helpers */
@@ -28,8 +29,6 @@ export function formatBytes(bytes) {
   return Number(bytes).toLocaleString('en-US');
 }
 
-const LANG_SHORT = { en: 'EN', rw: 'RW', fr: 'FR', sw: 'SW' };
-
 /* -------------------------------------------------------------------- icons */
 const stroke = 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
 
@@ -41,11 +40,15 @@ export const ICONS = {
   clock: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
   help: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2-2.4 3.5"/><path d="M12 17h.01"/></svg>`,
   key: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8M17 6l2 2M15 4l2 2"/></svg>`,
+  bell: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6Z"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/></svg>`,
+  spark: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z"/><path d="M18.5 15.5 19.4 18l2.5.9-2.5.9-.9 2.5-.9-2.5-2.5-.9 2.5-.9.9-2.5Z"/></svg>`,
+  refresh: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg>`,
   windows: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.5 4.4v7.1H3V5.5Zm8.6-1.3L21 2.7v8.8h-9.4V4.2ZM3 12.6h7.5v7.1L3 18.5v-5.9Zm8.6 0H21v8.8l-9.4-1.5v-7.3Z"/></svg>`,
   android: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.2 8.4h11.6c.5 0 .9.4.9.9v7.3a1.6 1.6 0 0 1-1.6 1.6H6.9a1.6 1.6 0 0 1-1.6-1.6V9.3c0-.5.4-.9.9-.9Zm-2.1.2c.6 0 1 .5 1 1v5c0 .6-.4 1-1 1s-1-.4-1-1v-5c0-.5.4-1 1-1Zm15.8 0c.6 0 1 .5 1 1v5c0 .6-.4 1-1 1s-1-.4-1-1v-5c0-.5.4-1 1-1ZM8.3 18.6h1.5v2.6c0 .6-.4 1-1 1s-1-.4-1-1v-2.6Zm6 0h1.5v2.6c0 .6-.4 1-1 1s-1-.4-1-1v-2.6ZM8.7 7.2 7.5 5.1a.3.3 0 0 1 .1-.4.3.3 0 0 1 .4.1l1.2 2.2a6.6 6.6 0 0 1 5.6 0l1.2-2.2a.3.3 0 0 1 .5.3l-1.2 2.1H8.7Zm1.5-1.6a.55.55 0 1 0 0-1.1.55.55 0 0 0 0 1.1Zm3.6 0a.55.55 0 1 0 0-1.1.55.55 0 0 0 0 1.1Z"/></svg>`,
   globe: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3Z"/></svg>`,
   shield: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3Z"/><path d="m9 12 2 2 4-4"/></svg>`,
   devices: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><rect x="2" y="4" width="13" height="10" rx="2"/><path d="M6 18h7"/><rect x="16" y="9" width="6" height="11" rx="1.6"/></svg>`,
+  activity: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>`,
   lock: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>`,
   eyeOff: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.2A9.6 9.6 0 0 1 12 6c5 0 9 4.5 9 6-.3.8-1.3 2.1-2.8 3.2M6.5 8.2C4.5 9.6 3.4 11.2 3 12c.7 1.4 4 6 9 6 1 0 1.9-.2 2.8-.5"/></svg>`,
   server: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg>`,
@@ -55,10 +58,13 @@ export const ICONS = {
   monitor: `<svg viewBox="0 0 24 24" ${stroke} aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>`,
 };
 
-const FEATURE_ICONS = ['chat', 'users', 'phone', 'image', 'clock', 'help', 'key', 'windows'];
+/* Feature cards map one-to-one onto locale.features.items (8 items). */
+const FEATURE_ICONS = ['chat', 'phone', 'clock', 'users', 'spark', 'bell', 'lock', 'refresh'];
+const CALL_ICONS = ['phone', 'devices', 'monitor', 'server', 'activity'];
 const PRIVACY_ICONS = ['lock', 'key', 'eyeOff', 'devices', 'shield', 'server'];
+const FACT_ICONS = ['phone', 'globe', 'key', 'shield'];
 
-const LOGO = `<svg class="logo" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2C6.48 2 2 5.94 2 10.8c0 2.7 1.39 5.11 3.58 6.72L4.6 22l4.9-2.6c.81.17 1.65.26 2.5.26 5.52 0 10-3.94 10-8.8S17.52 2 12 2Z" fill="var(--brand)"/><path d="M7.6 9.3h8.8M7.6 12.4h5.6" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+const LOGO = `<img class="logo" src="${ICON.svg}" alt="" width="30" height="30" decoding="async">`;
 
 const THEME_SCRIPT = `(function(){try{var s=localStorage.getItem('chatgram-theme');var t=s&&s!=='system'?s:(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='dark';}})();`;
 
@@ -101,6 +107,7 @@ function head({
   <link rel="canonical" href="${canonical}">
 ${altLines}
   <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/svg+xml" href="${ICON.svg}">
   <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
@@ -135,10 +142,6 @@ function header(locale) {
   const links = locale.nav.links
     .map((l) => `        <a href="${l.href}">${e(l.label)}</a>`)
     .join('\n');
-  const langs = LANGUAGES.map((l) => {
-    const current = l.code === locale.code;
-    return `        <a href="${l.path}" hreflang="${l.code}" lang="${l.code}" title="${e(l.nativeLabel)}" aria-label="${LANG_SHORT[l.code]} — ${e(l.nativeLabel)}"${current ? ' class="is-current" aria-current="page"' : ''}>${LANG_SHORT[l.code]}</a>`;
-  }).join('\n');
 
   return `  <a class="skip-link" href="#main">${e(locale.ui.skipToContent)}</a>
   <header class="site-header">
@@ -148,9 +151,6 @@ function header(locale) {
 ${links}
       </nav>
       <div class="nav-spacer"></div>
-      <nav class="lang-switch" aria-label="${e(locale.ui.languageLabel)}">
-${langs}
-      </nav>
       <div class="theme-switch" role="group" aria-label="${e(locale.ui.themeGroup)}">
         <button type="button" class="theme-opt" data-theme-mode="light" aria-pressed="false" title="${e(locale.ui.themeLight)}">${ICONS.sun}<span class="sr-only">${e(locale.ui.themeLight)}</span></button>
         <button type="button" class="theme-opt" data-theme-mode="dark" aria-pressed="true" title="${e(locale.ui.themeDark)}">${ICONS.moon}<span class="sr-only">${e(locale.ui.themeDark)}</span></button>
@@ -164,10 +164,20 @@ ${langs}
   </header>`;
 }
 
+/* ------------------------------------------------------------------ figures */
+function photoFigure(photo, { className = '', loading = 'lazy', high = false }) {
+  const source = PHOTOS[photo.key];
+  return `      <figure class="photo ${className}">
+        <picture>
+          <source type="image/webp" srcset="${source.webp}" width="${source.width}" height="${source.height}">
+          <img src="${source.jpg}" width="${source.width}" height="${source.height}" alt="${e(photo.alt)}"${high ? ' fetchpriority="high"' : ''} loading="${loading}" decoding="async">
+        </picture>
+        <figcaption><span class="photo-label">${e(photo.label)}</span> ${e(photo.caption)}</figcaption>
+      </figure>`;
+}
+
 /* ---------------------------------------------------------------- sections */
 function hero(locale) {
-  const shot = SCREENSHOTS.chats;
-  const alt = locale.preview.shots[0].alt;
   return `    <section class="hero">
       <div class="wrap hero-inner">
         <div class="hero-copy">
@@ -185,19 +195,18 @@ function hero(locale) {
           </div>
         </div>
         <div class="hero-art">
-          <figure class="hero-app">
-            <div class="hero-app-bar" aria-hidden="true"><span></span><span></span><span></span><i class="hero-app-url">chatgram</i></div>
-            <picture>
-              <source type="image/webp" srcset="${shot.webp760} 760w, ${shot.webp1366} 1366w" sizes="(max-width: 900px) 92vw, 460px">
-              <img src="${shot.png}" width="${shot.width}" height="${shot.height}" alt="${e(alt)}" fetchpriority="high" decoding="async">
-            </picture>
-          </figure>
+${photoFigure({ ...locale.hero.photo, key: 'friends' }, { className: 'photo-hero testid-hero-photo', loading: 'eager', high: true })}
         </div>
       </div>
     </section>
     <div class="wrap">
       <div class="facts">
-${locale.facts.map((f) => `        <div class="fact"><span class="fact-icon">${ICONS[['devices', 'key', 'shield', 'server'][locale.facts.indexOf(f)]]}</span><div><strong>${e(f.title)}</strong><span>${e(f.sub)}</span></div></div>`).join('\n')}
+${locale.facts
+  .map(
+    (f, i) =>
+      `        <div class="fact"><span class="fact-icon">${ICONS[FACT_ICONS[i]] || ICONS.check}</span><div><strong>${e(f.title)}</strong><span>${e(f.sub)}</span></div></div>`,
+  )
+  .join('\n')}
       </div>
     </div>`;
 }
@@ -225,6 +234,48 @@ function features(locale) {
 ${sectionHead(locale.features)}
         <div class="grid grid-4">
 ${items}
+        </div>
+      </div>
+    </section>`;
+}
+
+function calls(locale) {
+  const items = locale.calls.items
+    .map(
+      (item, i) => `          <article class="card card-row">
+            <span class="icon">${ICONS[CALL_ICONS[i]] || ICONS.phone}</span>
+            <div><h3>${e(item.title)}</h3><p>${e(item.body)}</p></div>
+          </article>`,
+    )
+    .join('\n');
+  return `    <section class="section section-alt" id="calls">
+      <div class="wrap">
+${sectionHead(locale.calls)}
+        <div class="grid grid-2 calls-grid">
+${items}
+        </div>
+        <p class="privacy-note">${e(locale.calls.note)}</p>
+      </div>
+    </section>`;
+}
+
+function messaging(locale) {
+  const items = locale.messaging.items
+    .map((item) => `            <li><span class="tick">${ICONS.check}</span><div><strong>${e(item.title)}</strong> ${e(item.body)}</div></li>`)
+    .join('\n');
+  return `    <section class="section" id="messaging">
+      <div class="wrap split">
+        <div class="split-copy">
+          <span class="eyebrow">${e(locale.messaging.eyebrow)}</span>
+          <h2>${e(locale.messaging.title)}</h2>
+          <p class="split-lead">${e(locale.messaging.lead)}</p>
+          <ul class="tick-list">
+${items}
+          </ul>
+          <p class="privacy-note">${e(locale.messaging.note)}</p>
+        </div>
+        <div class="split-media">
+${photoFigure({ ...locale.messaging.photo, key: 'duo' }, { className: 'photo-duo testid-showcase-photo' })}
         </div>
       </div>
     </section>`;
@@ -277,11 +328,24 @@ ${items}
     </section>`;
 }
 
+function releaseStrip(locale) {
+  const chip = (platform, label, size) =>
+    `        <span class="release-chip" data-release-chip data-platform="${platform}"><span>${e(label)}</span><strong>v${e(RELEASES[platform].version)}</strong>${
+      size === null ? '' : ` · ${e(RELEASES[platform].sizeMB)} MB`
+    }</span>`;
+  return `        <div class="release-strip" role="group" aria-label="${e(locale.downloads.stripLabel)}">
+          <span class="release-strip-label">${e(locale.downloads.stripLabel)}</span>
+${chip('windows', locale.downloads.windows.label, RELEASES.windows.sizeMB)}
+${chip('android', locale.downloads.android.label, RELEASES.android.sizeMB)}
+${chip('web', locale.downloads.web.label, null)}
+        </div>`;
+}
+
 function dlCard(locale, platform, release) {
   const copy = locale.downloads[platform];
   const steps = copy.steps.map((s) => `            <li>${e(s)}</li>`).join('\n');
   const icon = platform === 'windows' ? ICONS.windows : platform === 'android' ? ICONS.android : ICONS.globe;
-  const sha = platform === 'windows' || platform === 'android' ? release.shaShort : '';
+  const sha = platform === 'windows' || platform === 'android' ? release.shaFull || release.shaShort : '';
   const metaLabel =
     platform === 'web'
       ? e(copy.meta)
@@ -322,7 +386,7 @@ ${qr}
       : details;
 
   return `        <div class="dl-card" data-platform="${platform}">
-          <div class="dl-top"><span class="dl-icon">${icon}</span><span class="plat">${e(copy.label)}</span></div>
+          <div class="dl-top"><span class="dl-icon">${icon}</span><span class="plat">${e(copy.label)}</span><span class="dl-version">v${e(release.version)}</span></div>
           <h3>${e(copy.title)}</h3>
           <div class="meta">${metaLabel}</div>
 ${body}
@@ -335,6 +399,7 @@ function downloads(locale) {
   return `    <section class="section section-alt" id="download">
       <div class="wrap">
 ${sectionHead(locale.downloads)}
+${releaseStrip(locale)}
         <div class="dl-notice" data-cached-notice hidden>${e(locale.downloads.cachedNote)}</div>
         <div class="grid grid-3">
 ${dlCard(locale, 'windows', RELEASES.windows)}
@@ -417,9 +482,6 @@ function footer(locale) {
   const guideLinks = GUIDES.map(
     (g) => `          <a href="${g.path}">${e(g.label[locale.code])}</a>`,
   ).join('\n');
-  const langs = LANGUAGES.map(
-    (l) => `            <a href="${l.path}" hreflang="${l.code}" lang="${l.code}" title="${e(l.nativeLabel)}"${l.code === locale.code ? ' aria-current="page"' : ''}>${e(l.nativeLabel)}</a>`,
-  ).join('\n');
 
   return `  <footer class="site-footer">
     <div class="wrap">
@@ -440,12 +502,6 @@ ${locale.footer.legal.map((l) => `          <a href="${l.href}">${e(l.label)}</a
         <div>
           <h4>${e(locale.footer.guidesTitle)}</h4>
 ${guideLinks}
-        </div>
-        <div>
-          <h4>${e(locale.footer.languageTitle)}</h4>
-          <nav class="foot-langs" aria-label="${e(locale.footer.languageTitle)}">
-${langs}
-          </nav>
         </div>
       </div>
       <div class="foot-bottom">
@@ -468,7 +524,7 @@ export function softwareJsonLd(siteUrl, lang = 'en') {
       url: `${siteUrl}/`,
       logo: {
         '@type': 'ImageObject',
-        url: `${siteUrl}/assets/icon-512.png`,
+        url: `${siteUrl}${ICON.svg}`,
         width: 512,
         height: 512,
       },
@@ -537,8 +593,8 @@ export function renderLocalePage({ locale, siteUrl, cssHref, jsHref }) {
     ...LANGUAGES.map((l) => ({ hreflang: l.code, path: l.path, ogLocale: l.ogLocale })),
     { hreflang: 'x-default', path: '/', ogLocale: 'en_US' },
   ];
-  const heroShot = SCREENSHOTS.chats;
-  const preload = `  <link rel="preload" as="image" type="image/webp" href="${heroShot.webp1366}" imagesrcset="${heroShot.webp760} 760w, ${heroShot.webp1366} 1366w" imagesizes="(max-width: 900px) 92vw, 460px" fetchpriority="high">`;
+  const heroPhoto = PHOTOS.friends;
+  const preload = `  <link rel="preload" as="image" type="image/webp" href="${heroPhoto.webp}" imagesrcset="${heroPhoto.webp}" imagesizes="(max-width: 900px) 92vw, 470px" fetchpriority="high">`;
   const language = LANGUAGES.find((l) => l.code === locale.code);
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -566,6 +622,8 @@ ${header(locale)}
   <main id="main">
 ${hero(locale)}
 ${features(locale)}
+${calls(locale)}
+${messaging(locale)}
 ${preview(locale)}
 ${privacy(locale)}
 ${downloads(locale)}
@@ -594,7 +652,7 @@ export function renderGuidePage({ content, guide, siteUrl, cssHref, jsHref }) {
         '@id': orgId,
         name: 'Chatgram',
         url: `${siteUrl}/`,
-        logo: { '@type': 'ImageObject', url: `${siteUrl}/assets/icon-512.png`, width: 512, height: 512 },
+        logo: { '@type': 'ImageObject', url: `${siteUrl}${ICON.svg}`, width: 512, height: 512 },
       },
       {
         '@type': 'BreadcrumbList',
@@ -649,9 +707,6 @@ export function renderGuidePage({ content, guide, siteUrl, cssHref, jsHref }) {
     <div class="wrap nav">
       <a class="brand-link" href="/" aria-label="Chatgram home">${LOGO}<span>Chatgram</span></a>
       <div class="nav-spacer"></div>
-      <nav class="lang-switch" aria-label="Language">
-        <a href="/" hreflang="en" lang="en">EN</a><a href="/rw/" hreflang="rw" lang="rw">RW</a><a href="/fr/" hreflang="fr" lang="fr">FR</a><a href="/sw/" hreflang="sw" lang="sw">SW</a>
-      </nav>
       <a class="btn btn-primary nav-cta" href="/web/">Open Chatgram</a>
     </div>
   </header>

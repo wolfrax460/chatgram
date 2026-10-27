@@ -167,6 +167,10 @@
       if (versionEl && release.version) {
         versionEl.textContent = versionEl.getAttribute('data-version-prefix') + ' ' + release.version;
       }
+      var versionTag = card.querySelector('.dl-version');
+      if (versionTag && release.version) versionTag.textContent = 'v' + release.version;
+      var chip = document.querySelector('[data-release-chip][data-platform="' + release.platform + '"] strong');
+      if (chip && release.version) chip.textContent = 'v' + release.version;
       var dateEl = card.querySelector('[data-release-date]');
       if (dateEl) {
         var dateText = formatDate(release.releasedAt);

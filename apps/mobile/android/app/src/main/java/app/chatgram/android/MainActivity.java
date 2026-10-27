@@ -47,6 +47,13 @@ public class MainActivity extends BridgeActivity {
         // through onNewIntent(); this is a no-op in that case because the extras
         // were consumed there.)
         NotifierStore.captureFromIntent(this, getIntent());
+        // If the app was opened by an incoming-call Accept / full-screen intent,
+        // stop the ringtone and clear the call notification.
+        CallAlerts.handleMainActivityIntent(this, getIntent());
+
+        // FCM (1.1.7): make sure the notification channels exist, ask for the
+        // Android 13+ notification permission, and fetch/store the FCM token.
+        PushRegistrar.register(this);
 
         WebSettings settings = getBridge().getWebView().getSettings();
 
@@ -74,5 +81,7 @@ public class MainActivity extends BridgeActivity {
         // chat id; the web layer drains it with Notifier.consumePending() when it
         // is running (it may be paused behind the notification shade).
         NotifierStore.captureFromIntent(this, intent);
+        // An incoming-call Accept / full-screen intent: stop ringing.
+        CallAlerts.handleMainActivityIntent(this, intent);
     }
 }

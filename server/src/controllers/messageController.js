@@ -163,6 +163,15 @@ const sendMessage = async (req, res) => {
       }
     }
 
+    // Push to offline/background devices. Fire-and-forget: a push failure must
+    // never block or fail the request that already stored the message, and a
+    // private AI question is never pushed to other members.
+    if (!isPrivate) {
+      void require('../services/pushSender')
+        .pushChatMessage({ chat, sender: populated.senderId || req.user, message: populated })
+        .catch((pushError) => console.warn('Message push skipped:', String(pushError?.message || pushError).slice(0, 160)));
+    }
+
     // Group "@Chatgram AI" mentions: off by default, rate limited, silent on error.
     groupMentions
       .maybeAnswer({ chat, message: payload, io: realtime.getIo() })
@@ -693,6 +702,12 @@ const forwardMessage = async (req, res) => {
     const populated = await Message.findById(forwarded._id).populate('senderId', '_id displayName avatarUrl phone');
     realtime.joinUsersToChat(targetChatId, targetChat.participants.map((participantId) => String(participantId)));
     realtime.emitToChat(targetChatId, 'message:new', populated.toObject());
+
+    // Push to the target chat's offline/background devices (fire-and-forget).
+    void require('../services/pushSender')
+      .pushChatMessage({ chat: targetChat, sender: populated.senderId || req.user, message: populated })
+      .catch((pushError) => console.warn('Message push skipped:', String(pushError?.message || pushError).slice(0, 160)));
+
     return res.status(201).json(populated);
   } catch (error) {
     console.error('Forward message error:', error);

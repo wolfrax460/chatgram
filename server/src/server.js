@@ -170,6 +170,18 @@ connectDB().then(() => {
     await VerificationCode.createIndexes();
   })().catch((error) => console.warn('Verification code indexes could not be created:', error.message));
 
+  // Push device tokens: the unique token index (upsert key) and the
+  // userId+token lookup index need the same explicit bootstrap.
+  (async () => {
+    const DeviceToken = require('./models/DeviceToken');
+    try {
+      await DeviceToken.createCollection();
+    } catch (error) {
+      if (error && error.code !== 48) throw error;
+    }
+    await DeviceToken.createIndexes();
+  })().catch((error) => console.warn('Device token indexes could not be created:', error.message));
+
   // Help-centre articles (idempotent upsert from articles.seed.json).
   require('./help/seed')
     .seedHelpCentre()
@@ -303,6 +315,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/calls', require('./routes/callRoutes'));
+// FCM device registration + push self-test (server/src/services/pushSender.js).
+app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/messages', messageRoutes);
 
 // Health details for the help widget's Status card. NOTE: `/api/status` is the

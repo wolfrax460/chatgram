@@ -365,6 +365,15 @@ function registerSocketHandlers(io) {
         io.to(realtime.roomForChat(chatId)).emit('message:new', payload);
       }
 
+      // Push to offline/background devices (fire-and-forget: a push failure must
+      // never block or fail the socket send). Private AI questions are never
+      // pushed, or another member would receive their text.
+      if (!isPrivate) {
+        void require('../services/pushSender')
+          .pushChatMessage({ chat, sender: payload.senderId || { _id: socket.userId }, message: payload })
+          .catch((pushError) => console.warn('Message push skipped:', String(pushError?.message || pushError).slice(0, 160)));
+      }
+
       // @mention notifications for group members (never for a private AI
       // question: that would leak its text to a mentioned member).
       if (!isPrivate && mentioned.length > 0) {
@@ -796,6 +805,24 @@ function registerSocketHandlers(io) {
         });
         // Tell the whole chat a call is in progress (banner + live card).
         callRooms.broadcastRoom(call);
+
+        // FCM data-only wake-up for the phones the socket cannot ring (and, with
+        // force, as a wake-up even when presence still says online). This is
+        // fire-and-forget: a push problem never fails the call itself.
+        const pushTargets = others.filter((id) => !busy.includes(id));
+        if (pushTargets.length > 0) {
+          void require('../services/pushSender')
+            .pushCall({
+              callId: call.callId,
+              chatId: String(call.chatId),
+              callerName: me.displayName,
+              kind: video ? 'video' : 'audio',
+              groupName: isGroup ? (chat.groupName || 'Group call') : undefined,
+              recipientIds: pushTargets,
+              force: true,
+            })
+            .catch((pushError) => console.warn('Call push skipped:', String(pushError?.message || pushError).slice(0, 160)));
+        }
       } catch (error) {
         console.error('Call start error:', error.message);
         emitCallError('Could not start the call.', 'CALL_START_FAILED');

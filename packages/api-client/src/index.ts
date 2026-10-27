@@ -536,6 +536,33 @@ export class ApiClient {
   }
 
   /**
+   * Register this device's push token (Android FCM / Web Push) so the server can
+   * notify the user while the app is closed. Idempotent: re-registering refreshes
+   * the row.
+   */
+  registerDevice(token: string, platform: 'android' | 'web', deviceLabel?: string) {
+    return this.request<{ ok?: boolean }>('/api/notifications/devices', {
+      method: 'POST',
+      body: { token, platform, ...(deviceLabel ? { deviceLabel } : {}) },
+    });
+  }
+
+  /** Stop pushes to this device (sign-out); idempotent on the server. */
+  unregisterDevice(token: string) {
+    return this.request<{ ok?: boolean }>('/api/notifications/devices', {
+      method: 'DELETE',
+      body: { token },
+    });
+  }
+
+  /** Ask the server to send one test push to this user's devices. */
+  sendTestPush() {
+    return this.request<{ sent: number; failed: number }>('/api/notifications/devices/test', {
+      method: 'POST',
+    });
+  }
+
+  /**
    * Content-free call-quality report for the admin Inbox: transport facts only
    * (ICE state, candidate types, byte counters), never message content.
    */

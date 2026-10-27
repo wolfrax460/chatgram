@@ -22,17 +22,14 @@ import com.getcapacitor.annotation.PermissionCallback;
 import org.json.JSONObject;
 
 /**
- * {@code Notifier} — Android local notifications for new messages and calls.
+ * {@code Notifier} — Android notifications for new messages and calls.
  *
- * <p>The web client already holds the Socket.IO connection, so it decides when a
- * notification is due and calls this plugin. The notification is posted by this
- * app process; there is no remote push.
- *
- * <p><b>Not FCM:</b> a notification while the app process is dead (force-stopped,
- * swiped away or killed by the system) is impossible this way. That needs a
- * server push through FCM, which is a later round — hence no Firebase
- * dependency in this build. This covers screen-locked / other-app-in-front with
- * the process alive.
+ * <p>Local notifications are posted by this app process while the WebView and
+ * its Socket.IO connection are alive (backgrounded app, locked screen). Since
+ * 1.1.7 the same channels are also used by FCM: {@link ChatgramMessagingService}
+ * receives server pushes even when the app process was killed and posts through
+ * {@link NotifierNotifications}. No Firebase credentials live in source — the
+ * gitignored {@code google-services.json} is processed at build time.
  *
  * <p>JS surface (all called through Capacitor, method names/arguments fixed):
  * <pre>
@@ -45,6 +42,9 @@ import org.json.JSONObject;
  *   cancel({ id?, tag? }) -> void
  *   cancelAll() -> void
  *   consumePending() -> { chatId: string | null }
+ *   consumePushOpened() -> { chatId: string | null }
+ *   getFcmToken() -> { token: string | null }
+ *   deleteFcmToken() -> { deleted: boolean }
  *   batteryOptimization() -> { ignoring: boolean }
  *   requestBatteryExemption() -> { opened: boolean }
  * </pre>
@@ -255,6 +255,70 @@ public class NotifierPlugin extends Plugin {
         String chatId = NotifierStore.consumePendingChatId(getContext());
         result.put("chatId", chatId == null ? JSONObject.NULL : chatId);
         call.resolve(result);
+    }
+
+    /**
+     * FCM (1.1.7): the same pending chat id, under the push-specific name. Local
+     * notifications and FCM {@code type=message} pushes store their tap in
+     * {@link NotifierStore}, so either method drains the same value exactly once.
+     */
+    @PluginMethod
+    public void consumePushOpened(PluginCall call) {
+        JSObject result = new JSObject();
+        String chatId = NotifierStore.consumePendingChatId(getContext());
+        result.put("chatId", chatId == null ? JSONObject.NULL : chatId);
+        call.resolve(result);
+    }
+
+    /**
+     * FCM registration token for this device.
+     *
+     * <p>Reads the token stored by {@link ChatgramMessagingService#onNewToken}
+     * (which also runs when the app process is started for a push); when none
+     * has been seen yet it asks FCM once. Resolves {@code { token: null }} when
+     * FCM cannot provide one (missing credentials/network) instead of rejecting.
+     */
+    @PluginMethod
+    public void getFcmToken(PluginCall call) {
+        try {
+            String cached = PushStore.token(getContext());
+            if (!cached.isEmpty()) {
+                JSObject result = new JSObject();
+                result.put("token", cached);
+                call.resolve(result);
+                return;
+            }
+            call.setKeepAlive(true);
+            PushRegistrar.fetchToken(getContext(), token -> {
+                JSObject result = new JSObject();
+                result.put("token", token == null || token.isEmpty() ? JSONObject.NULL : token);
+                call.resolve(result);
+            });
+        } catch (Exception ignored) {
+            JSObject result = new JSObject();
+            result.put("token", JSONObject.NULL);
+            call.resolve(result);
+        }
+    }
+
+    /**
+     * Deletes this device's FCM token (e.g. on sign-out) and clears the stored
+     * copy. Resolves {@code { deleted: false }} when Firebase cannot delete it.
+     */
+    @PluginMethod
+    public void deleteFcmToken(PluginCall call) {
+        try {
+            call.setKeepAlive(true);
+            PushRegistrar.deleteToken(getContext(), deleted -> {
+                JSObject result = new JSObject();
+                result.put("deleted", deleted);
+                call.resolve(result);
+            });
+        } catch (Exception ignored) {
+            JSObject result = new JSObject();
+            result.put("deleted", false);
+            call.resolve(result);
+        }
     }
 
     private boolean hasRuntimePermission() {

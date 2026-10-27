@@ -13,6 +13,7 @@
  *  - a toast raised by the page in Electron cannot carry the app id, the icon or
  *    a click target, and Windows attributes it to "electron.exe".
  */
+import { api } from './api';
 
 export interface NotificationPayload {
   title: string;
@@ -44,6 +45,11 @@ interface AndroidNotifierPlugin {
     ongoing?: boolean;
   }) => Promise<void>;
   consumePending?: () => Promise<{ chatId?: string | null }>;
+  /** FCM token (Android 1.1.7+); the server sends pushes to it. */
+  getFcmToken?: () => Promise<{ token?: string | null }>;
+  deleteFcmToken?: () => Promise<{ deleted?: boolean }>;
+  /** Chat id from a tapped push (message tap or call accept). */
+  consumePushOpened?: () => Promise<{ chatId?: string | null }>;
   openSettings?: () => Promise<{ opened?: boolean }>;
   batteryOptimization?: () => Promise<{ ignoring?: boolean }>;
   requestBatteryExemption?: () => Promise<{ opened?: boolean }>;
@@ -254,6 +260,62 @@ export function nativePermissionState(): NativePermission {
   return 'unsupported';
 }
 
+const PUSH_TOKEN_KEY = 'chatgram.push.token';
+
+/**
+ * Register this device's FCM token with the server (Android only).
+ *
+ * The native shell owns the token, the server owns delivery, so the token has to
+ * travel once per app session (and again whenever it rotates). Registration is
+ * best effort: a failure must never block sign-in or the UI.
+ */
+export async function syncPushToken(): Promise<void> {
+  const notifier = androidNotifier();
+  if (!notifier?.getFcmToken) return;
+  try {
+    const result = await notifier.getFcmToken();
+    const token = typeof result?.token === 'string' ? result.token : '';
+    if (!token) return;
+    let remembered: string | null = null;
+    try {
+      remembered = window.localStorage.getItem(PUSH_TOKEN_KEY);
+    } catch {
+      remembered = null;
+    }
+    if (remembered === token) return;
+    await api.registerDevice(token, 'android');
+    try {
+      window.localStorage.setItem(PUSH_TOKEN_KEY, token);
+    } catch {
+      /* private mode: the token is simply registered again next launch */
+    }
+  } catch {
+    /* push registration is best effort */
+  }
+}
+
+/** Forget this device's push token (sign-out): no pushes for the old account. */
+export async function unregisterPushToken(): Promise<void> {
+  const notifier = androidNotifier();
+  let token: string | null = null;
+  try {
+    token = window.localStorage.getItem(PUSH_TOKEN_KEY);
+  } catch {
+    token = null;
+  }
+  try {
+    if (token) await api.unregisterDevice(token);
+    await notifier?.deleteFcmToken?.();
+  } catch {
+    /* signing out must always work */
+  }
+  try {
+    window.localStorage.removeItem(PUSH_TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Wire the shell's "the user tapped a notification" path to the app router.
  *
@@ -265,6 +327,7 @@ export function nativePermissionState(): NativePermission {
  */
 export function initNativeNotifications(openChat: (chatId: string) => void): () => void {
   void syncNativePermission();
+  void syncPushToken();
   const disposers: Array<() => void> = [];
 
   const bridge = desktop();
@@ -281,6 +344,14 @@ export function initNativeNotifications(openChat: (chatId: string) => void): () 
     const drain = () => {
       void notifier
         .consumePending?.()
+        .then((pending) => {
+          const chatId = pending?.chatId;
+          if (chatId) openChat(chatId);
+        })
+        .catch(() => undefined);
+      // A push tap (message notification or accepted call) stores the chat too.
+      void notifier
+        .consumePushOpened?.()
         .then((pending) => {
           const chatId = pending?.chatId;
           if (chatId) openChat(chatId);

@@ -19,6 +19,7 @@ const {
   callGroups,
   getCallState,
 } = require('../controllers/callController');
+const { reportCallQuality } = require('../controllers/callQualityController');
 
 const isTest = process.env.NODE_ENV === 'test' || process.env.AUTH_RATE_LIMIT_DISABLED === 'true';
 
@@ -40,9 +41,48 @@ const historyLimiter = rateLimit({
   message: { message: 'Too many requests.' },
 });
 
+/*
+ * Call-quality reports are fire-and-forget telemetry (see
+ * controllers/callQualityController.js): max 5 per user per minute. This limiter
+ * is deliberately NOT skipped when AUTH_RATE_LIMIT_DISABLED=true — the limit is
+ * part of the endpoint contract and the integration test asserts it. In-memory
+ * is fine: a restart only forgets a few counters.
+ */
+const QUALITY_WINDOW_MS = 60_000;
+const QUALITY_MAX_PER_WINDOW = 5;
+const qualityHits = new Map(); // userId -> { count, startedAt }
+
+function callQualityLimiter(req, res, next) {
+  const key = String((req.user && req.user._id) || req.ip || 'anonymous');
+  const now = Date.now();
+  if (qualityHits.size > 5000) {
+    for (const [entryKey, entry] of qualityHits) {
+      if (now - entry.startedAt >= QUALITY_WINDOW_MS) qualityHits.delete(entryKey);
+    }
+  }
+  const entry = qualityHits.get(key);
+  if (!entry || now - entry.startedAt >= QUALITY_WINDOW_MS) {
+    qualityHits.set(key, { count: 1, startedAt: now });
+    return next();
+  }
+  entry.count += 1;
+  if (entry.count > QUALITY_MAX_PER_WINDOW) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((entry.startedAt + QUALITY_WINDOW_MS - now) / 1000));
+    res.set('Retry-After', String(retryAfterSeconds));
+    return res.status(429).json({
+      message: 'Too many call quality reports. Try again in a minute.',
+      code: 'CALL_QUALITY_RATE_LIMITED',
+      retryAfterSeconds,
+    });
+  }
+  return next();
+}
+
 router.use(protect);
 
 router.get('/ice', iceLimiter, getIceServers);
+// Content-free stalled-call diagnostics for the admin Inbox (TURN unreachable).
+router.post('/quality', callQualityLimiter, reportCallQuality);
 // Live room state (discover/join an ongoing call; chunk 2).
 router.get('/state', historyLimiter, getCallState);
 router.get('/missed-count', historyLimiter, missedCount);

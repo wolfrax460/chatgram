@@ -124,14 +124,14 @@ export async function validateSite({ distDir, siteUrl, locales, guideContents, g
     const android = findNode(nodes, 'MobileApplication');
     check(android && android.operatingSystem, `${label} MobileApplication needs operatingSystem`);
     check(android && android.downloadUrl === `${siteUrl}/downloads/chatgram-android.apk`, `${label} MobileApplication downloadUrl must be the APK`);
-    check(android && android.fileSize === '1305449', `${label} MobileApplication fileSize must be 1305449`);
+    check(android && android.fileSize === '1589034', `${label} MobileApplication fileSize must be 1589034`);
     check(android && android.softwareVersion, `${label} MobileApplication needs softwareVersion`);
     check(android && android.offers && String(android.offers.price) === '0', `${label} MobileApplication offers.price must be 0`);
 
     const windows = findNode(nodes, 'SoftwareApplication');
     check(windows && windows.operatingSystem, `${label} SoftwareApplication needs operatingSystem`);
     check(windows && windows.downloadUrl === `${siteUrl}/downloads/chatgram-windows-setup.exe`, `${label} SoftwareApplication downloadUrl must be the EXE`);
-    check(windows && windows.fileSize === '81829947', `${label} SoftwareApplication fileSize must be 81829947`);
+    check(windows && windows.fileSize === '81830905', `${label} SoftwareApplication fileSize must be 81830905`);
     check(windows && windows.softwareVersion, `${label} SoftwareApplication needs softwareVersion`);
     check(windows && windows.offers && String(windows.offers.price) === '0', `${label} SoftwareApplication offers.price must be 0`);
 
@@ -169,13 +169,13 @@ export async function validateSite({ distDir, siteUrl, locales, guideContents, g
         'Install unknown apps',
         'Chatgram AI',
         'Windows and Android apps',
-        'v1.1.6',
+        'v1.1.7',
         '#download',
       ]) {
         check(html.includes(needle), `[en] missing expected copy "${needle}" for the existing Playwright landing spec`);
       }
-      check(html.includes('81,829,947'), '[en] Windows size must state the real 81,829,947 bytes');
-      check(html.includes('1,305,449'), '[en] Android size must state the real 1,305,449 bytes');
+      check(html.includes('81,830,905'), '[en] Windows size must state the real 81,830,905 bytes');
+      check(html.includes('1,589,034'), '[en] Android size must state the real 1,589,034 bytes');
     }
 
     // FAQ parity: every visible question/answer is present as text in the page.

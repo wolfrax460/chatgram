@@ -406,3 +406,38 @@ is turned off (a server disconnect is not auto-reconnected by the client).
 own, no second save is needed. Turning `maintenanceMode` off clears it. Every
 change is audited as `platform_settings_update`, as before.
 
+## Call-quality diagnostics (2026-10-27, additive)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/calls/quality` | auth required. Body is an exact allowlist of 14 fields: `callId` (string ≤64), `video` (boolean), `status`, `iceConnectionState`, `connectionState` (strings ≤32), `candidatePair` (string ≤40 or `null`), `audioIn`, `videoIn`, `audioOut`, `videoOut` (finite numbers ≥0), `remoteTracks`, `remoteMuted` (integers 0–16), `stalledSeconds` (number 0–3600), `platform` (string ≤20). Every string must match `[A-Za-z0-9 ._:+→-]`. `204` on success; `400 { code: "INVALID_CALL_QUALITY" }` for a missing/extra/mistyped field or a URL/token-shaped string; `429 { code: "CALL_QUALITY_RATE_LIMITED", retryAfterSeconds }` above 5 reports/user/minute. |
+
+The endpoint stores/merges one **AdminInbox** row per call (`type: call_quality`,
+`normalized: call_quality:<callId>`), visible through `GET /api/admin/ai/inbox`.
+Its text is content-free by construction — fixed labels, validated numbers and
+short platform labels only; no user id, message text, names, tokens or URLs are
+stored. Repeat reports for the same call increment the row's `count`.
+
+## Push notifications — device registration (2026-10-27, additive)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/notifications/devices` | auth required. Body `{ token, platform: "android"\|"web", deviceLabel? }`; upserts by token (re-registering refreshes it, a token moving to another account is reassigned), keeps the 10 most recently seen devices per user. `204`, or `400 { code: "INVALID_DEVICE" }`. |
+| DELETE | `/api/notifications/devices` | auth required. Body `{ token }`; `204` even when the token was already gone. |
+| POST | `/api/notifications/devices/test` | auth required. Sends one test notification to the caller's own tokens: `200 { sent, failed }`; `503 { code: "PUSH_DISABLED" }` when the server has no Firebase service account. |
+
+Delivery rules used by the server (FCM, Android channel `messages`):
+message pushes carry `notification {title: senderName, body: preview}` and
+`data { chatId, type: "message", hidePreview }` with high priority, collapse key
+`chat-<chatId>` and tag `<chatId>`; call pushes are **data-only**
+`{ type: "call", callId, chatId, callerName, kind, groupName? }` with high
+priority and a 45 s TTL. Recipients online with a live socket are skipped unless
+the call path forces it; DND windows and muted chats are respected; message
+pushes coalesce to one per recipient+chat every 3 s. Tokens FCM reports as
+unregistered are marked `invalid` and never retried. Each delivery failure
+becomes one content-free AdminInbox row (`type: push_failure`,
+`normalized: push:<tokenId>`, `count++`) containing only the sanitized Firebase
+error code and platform.
+
+
+

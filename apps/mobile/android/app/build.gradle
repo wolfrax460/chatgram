@@ -33,9 +33,11 @@ android {
         // path reliable (Android 8+ blocks manifest DOWNLOAD_COMPLETE); 1.1.5/6
         // adds new-message notifications (NotifierPlugin); 1.1.6/7 adds the
         // notification settings/battery-optimization helpers, dedicated
-        // calls/general notification channels and the AudioRoute plugin.
-        versionCode 7
-        versionName "1.1.6"
+        // calls/general notification channels and the AudioRoute plugin;
+        // 1.1.7/8 adds FCM push: token registration, data-message notifications
+        // and incoming-call full-screen alerts (ChatgramMessagingService).
+        versionCode 8
+        versionName "1.1.7"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -79,6 +81,12 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     // Chunk 7C: periodic (~12 h) update check that also runs when the app is closed.
     implementation "androidx.work:work-runtime:2.9.1"
+    // FCM (1.1.7): engine behind ChatgramMessagingService (token refresh,
+    // data messages, incoming-call alerts). The Capacitor push-notifications
+    // plugin depends on firebase-messaging too, but as an implementation
+    // detail of its own module, so it is declared here explicitly to compile
+    // against FirebaseMessagingService/RemoteMessage.
+    implementation "com.google.firebase:firebase-messaging:23.3.1"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
@@ -88,11 +96,18 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
+// FCM (1.1.7): google-services.json carries the Firebase project credentials
+// (gitignored, never committed). When it is present, the Google Services plugin
+// processes it into the resources FirebaseApp initialises from. When it is
+// missing the build stays usable but push registration is a no-op.
 try {
     def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
+    if (servicesJSON.exists() && servicesJSON.text) {
         apply plugin: 'com.google.gms.google-services'
+        logger.lifecycle("google-services.json found: FCM push is enabled for this build.")
+    } else {
+        logger.warn("google-services.json not found: Chatgram builds, but FCM push will not work.")
     }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+} catch (Exception e) {
+    logger.warn("google-services.json not found: the google-services plugin was not applied and Push Notifications won't work.")
 }

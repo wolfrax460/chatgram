@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, FileText, Inbox as InboxIcon, RefreshCw, Save, Send, Sparkles, ThumbsDown, X } from 'lucide-react';
+import { Check, Copy, FileText, Inbox as InboxIcon, RefreshCw, Save, Send, Sparkles, ThumbsDown, X, type LucideIcon } from 'lucide-react';
 import {
   adminFetch,
   copyToClipboard,
@@ -15,6 +15,8 @@ import { Chip, EmptyState, PageHead, Select, Skeleton, Toast, useToast } from '.
 interface TypeMeta {
   label: string;
   emoji: string;
+  /** Optional lucide glyph (same icon set the page already uses) shown instead of the emoji. */
+  Icon?: LucideIcon;
 }
 
 const TYPE_META: Record<string, TypeMeta> = {
@@ -29,6 +31,9 @@ const TYPE_META: Record<string, TypeMeta> = {
   support_timeout: { label: 'Support no reply', emoji: '⏱️' },
   negative_feedback: { label: 'Thumbs down', emoji: '👎' },
   request: { label: 'Question', emoji: '💬' },
+  // System-generated media/push health events (no user content, no asker).
+  call_quality: { label: 'Call quality', emoji: '📞', Icon: RefreshCw },
+  push_failure: { label: 'Push failure', emoji: '🔔', Icon: Send },
 };
 
 const REPORT_TYPE_SET = new Set(['bug_report', 'feature_request', 'support_request', 'complaint', 'abuse_report', 'unknown_question']);
@@ -53,6 +58,8 @@ const TYPE_FILTER_OPTIONS = [
   { value: 'low_confidence', label: 'Low confidence' },
   { value: 'support_timeout', label: 'Support no reply' },
   { value: 'negative_feedback', label: 'Thumbs down' },
+  { value: 'call_quality', label: 'Call quality' },
+  { value: 'push_failure', label: 'Push failures' },
 ];
 
 const STATUS_FILTER_OPTIONS = [
@@ -68,6 +75,12 @@ function typeMeta(type: string): TypeMeta {
   return TYPE_META[type] ?? { label: type, emoji: '📩' };
 }
 
+/** The type chip glyph: a lucide icon for types that have one, the legacy emoji otherwise. */
+function TypeGlyph({ meta }: { meta: TypeMeta }) {
+  const Icon = meta.Icon;
+  return Icon ? <Icon className="h-3 w-3" aria-hidden="true" /> : <span aria-hidden="true">{meta.emoji}</span>;
+}
+
 /** True for 1A report records (they store a reference/title); legacy rows do not. */
 function isReportRow(row: InboxRow): boolean {
   return Boolean(row.ref || row.title || REPORT_TYPE_SET.has(row.type));
@@ -78,6 +91,8 @@ function toneForType(type: string): 'default' | 'accent' | 'warning' | 'danger' 
   if (type === 'support_timeout') return 'warning';
   if (type === 'negative_feedback') return 'danger';
   if (type === 'low_confidence') return 'warning';
+  if (type === 'call_quality') return 'warning';
+  if (type === 'push_failure') return 'danger';
   if (type === 'complaint' || type === 'bug_report') return 'warning';
   if (type === 'feature_request' || type === 'support_request' || type === 'unknown_question') return 'accent';
   return type === 'chatgram_unknown' ? 'accent' : 'default';
@@ -411,7 +426,7 @@ export default function InboxPage({ session }: { session: AdminSessionInfo }) {
                     >
                       <span className="flex flex-wrap items-center gap-2">
                         <Chip tone={toneForType(item.type)}>
-                          <span aria-hidden="true">{meta.emoji}</span> {meta.label}
+                          <TypeGlyph meta={meta} /> {meta.label}
                         </Chip>
                         {item.ref ? <span className="font-mono text-[10.5px] font-semibold text-[var(--ad-faint)]">{item.ref}</span> : null}
                         {item.count > 1 ? <span className="text-[10.5px] font-bold text-[var(--ad-muted)]">×{item.count}</span> : null}
@@ -436,7 +451,7 @@ export default function InboxPage({ session }: { session: AdminSessionInfo }) {
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <Chip tone={toneForType(selected.type)}>
-                  <span aria-hidden="true">{selectedMeta.emoji}</span> {selectedMeta.label}
+                  <TypeGlyph meta={selectedMeta} /> {selectedMeta.label}
                 </Chip>
                 {selected.ref ? <Chip tone="accent"><span className="font-mono">{selected.ref}</span></Chip> : null}
                 <Chip tone={toneForStatus(selected.status)}>{STATUS_LABEL[selected.status] || selected.status}</Chip>

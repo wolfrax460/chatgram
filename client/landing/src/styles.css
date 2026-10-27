@@ -1330,8 +1330,8 @@ svg {
   letter-spacing: 0.04em;
 }
 .dl-meta dd { margin: 2px 0 0; word-break: break-all; }
-.dl-android { display: grid; grid-template-columns: 1fr 96px; gap: 10px; align-items: start; }
-.dl-qr { margin: 12px 0 0; text-align: center; }
+.dl-android { display: grid; gap: 6px; align-items: start; }
+.dl-qr { margin: 4px 0 10px; text-align: center; justify-self: center; }
 .dl-qr img { width: 96px; height: 96px; border-radius: 8px; background: #fff; padding: 4px; }
 .dl-qr figcaption { margin-top: 4px; font-size: 10.5px; color: var(--muted); }
 .sha { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
