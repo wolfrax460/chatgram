@@ -1,3 +1,51 @@
+## MOBILE UI + OTP + REMOTE KILL SWITCH (deployed 2026-10-27, backend #119)
+
+**Mobile UI (web, live)**
+- Bottom tab bar on <768 px (Chats, Calls, Status, Groups, AI, Settings) with unread
+  badges, safe-area padding, hidden while a conversation is open; the desktop rail
+  now starts at 768 px (it started at 640, leaving 768-1023 px without navigation).
+- Chat layout bug fixed at the root: the bubble hover-action column was in flow and
+  consumed ~110 px of a 65 %-wide row, which is why phones wrapped one word per line.
+  Actions are now positioned out of flow (desktop hover) and phones get a single "..."
+  button with Reply/Copy added to its menu; bubbles are min-w-0 / 78 % with normal
+  wrapping.
+- Chat header back arrow from 768 px down (was lg, which stranded the 768-1023 range);
+  call buttons move below sm so the title/subtitle stay readable.
+- Update banners moved to the top (dismissible, progress) instead of covering the
+  bottom navigation; new slim reconnect bar with spinner + Retry.
+- Verified: 8/9 automated width checks at 360/412/768/1366 px (bubbles >=55 % of a
+  360 px viewport, rail at 768, no bottom bar >=768) and signed in on the API-34
+  emulator where the bottom navigation renders and works.
+
+**OTP "expires too fast" (server, live in #119)**
+Root causes: codes were held in a per-process in-memory Map (a PM2 restart or a second
+instance lost them -> users saw "expired"), a 10-minute TTL against slow email
+delivery, and a re-send overwriting the code the user was still typing. Fixed: Mongo
+storage (HMAC-SHA256 + pepper, unique channel+target, TTL index; verified in the
+production DB: `channel_1_target_1` + `expiresAt_1`), 15-minute lifetime with copy
+generated from the store, old code kept valid after a resend, and distinct
+`CODE_EXPIRED / CODE_INVALID / CODE_TOO_MANY_ATTEMPTS / CODE_MISSING` responses with
+`canResend`. In-memory fallback when Mongo is down. Tests: verificationStore 25/25,
+platformGate 29/29, maintenanceGate 23/23.
+
+**Remote kill switch (server, live in #119)**
+`maintenanceMode` already replaced the app with the branded page and 503'd normal
+APIs. Added: Socket.IO handshake refusal (`connect_error` with `{code:'MAINTENANCE'}`
+and connected sockets get a `maintenance` event while non-critical traffic is
+dropped), `/api/app/features` now returns the effective `maintenanceMode` plus
+`maintenanceUntil`, and an optional auto-expiring window (ISO date, max 7 days) on the
+existing audited admin platform-settings PUT. Android and Windows inherit the page
+because both load the hosted web build. Web boot no longer clears tokens on a 503
+MAINTENANCE, so a maintenance window cannot log returning users out.
+
+**Version tracking:** already in place from chunk 7A - both shells show their installed
+version in Settings -> About, both call `/api/app/version`, and the admin
+Releases -> "Versions in use" panel counts versions per platform.
+
+**Still manual:** the emulator walkthrough covered sign-in + navigation, not every
+WhatsApp parity capability (calls/voice notes on the device); the admin dashboard has
+no input for `maintenanceUntil` yet (API/curl only, documented in api-contract.md).
+
 ## CHUNK 7C COMPLETE — Android in-app updates (deployed 2026-10-27)
 
 **Live:** Android **1.1.4 (versionCode 5)** published at `/downloads/chatgram-android.apk`
