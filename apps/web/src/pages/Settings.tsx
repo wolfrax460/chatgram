@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { usePrefs, useSession, useTheme, type TextSize } from '@chatgram/core';
 import TwoFactorSettings from '../components/TwoFactorSettings';
+import { DesktopUpdateCard } from '../components/DesktopUpdateCard';
 import ChangePassword from '../components/ChangePassword';
 import { api, API_URL, APP_VERSION } from '../lib/api';
 import {
@@ -960,6 +961,7 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
             <span className="block truncate text-[13px] text-ink-500 dark:text-ink-400">{API_URL}</span>
           </span>
         </div>
+        <DesktopUpdateCard />
       </Section>
 
       <div className="space-y-2 p-4">

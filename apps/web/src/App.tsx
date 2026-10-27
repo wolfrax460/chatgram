@@ -44,6 +44,7 @@ import { isMaintenancePreview } from './lib/maintenance';
 import { READ_ONLY_BANNER, READ_ONLY_NOTICE } from './lib/readOnly';
 import { ProfilePanel } from './components/ProfilePanel';
 import { UpdateBanner } from './components/UpdateBanner';
+import { DesktopUpdateBanner } from './components/DesktopUpdateBanner';
 import { takeRefreshDraft } from './lib/appUpdate';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, formatTime, sameDay, statusOf } from './lib/ui';
@@ -1545,6 +1546,7 @@ export default function App() {
   return (
     <>
       <UpdateBanner />
+      <DesktopUpdateBanner />
       {user ? <Shell features={features} /> : <Auth />}
       {features?.supportWidgetEnabled === false ? null : <SupportWidget hideLauncher={Boolean(user)} />}
     </>

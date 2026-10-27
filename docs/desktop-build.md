@@ -18,15 +18,58 @@ shell itself changes (tray, updater, version gate, icons).
 - Native notifications through the preload bridge and `Notification`.
 - Window icons: `assets/icon.ico` (normal) and `assets/icon-unread.ico` (unread).
 - Offline page (`offline.html`) when the hosted app cannot be reached.
-- Auto-update: `electron-updater` with a **generic** feed at
+- Auto-update (chunk 7B): `electron-updater` with a **generic** feed at
   `https://chatgram-xi.vercel.app/downloads` (reads `latest.yml` there). The shell
-  checks once 6 seconds after launch and from the tray menu.
-- Minimum supported / forced update: on launch the shell reads
-  `GET /api/app/releases` and compares its version with the Windows release's
-  `minSupportedVersion` and `forceUpdate`. Below the minimum (or forced), it shows
-  a dialog with a link to the download page and quits.
+  checks **30 s after launch, then every ~6 h with ±15 min jitter, and again on
+  resume from sleep / unlock**. A manual "Check for updates" lives in
+  Settings → About and in the tray menu.
+- Update policy: the shell first asks `GET /api/app/version?platform=windows`
+  which decides the policy (`latestVersion`, `minSupportedVersion`,
+  `forceUpdate`, `withdrawn`) — see `apps/desktop/updater-logic.js`, unit tested
+  by `node apps/desktop/updater-logic.test.js`. It **never downgrades**, never
+  offers a withdrawn build, and below the minimum (or forced) it replaces the
+  window with a blocking `update-required.html` page that downloads and installs
+  by itself.
+- Download: in the background, with progress, byte counts and speed shown only in
+  **Settings → About** (never over the app). When it finishes the shell shows
+  "Update ready: Restart to install" (banner + notification) and installs on quit
+  by itself; "Restart now" installs immediately. It never restarts on its own.
+- Failures: each attempt retries with backoff (5 s, 15 s, 45 s, ~2 m, ~7 m, ~20 m,
+  capped at 30 min, six tries) and then returns to the 6-hour schedule; the
+  installed version keeps working. A local log is written to
+  `%APPDATA%\Chatgram\update.log` (rotated at 256 KB, no secrets, no chat data).
+- "Download updates automatically" is a switch in Settings → About (default on),
+  persisted in `%APPDATA%\Chatgram\settings.json`.
+- Diagnostics for support: the About card shows the installed version, the last
+  check time, the update state and the release notes.
 - Security: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`;
   external links open in the real browser.
+
+## Updates and SmartScreen (the installer is unsigned)
+
+Chatgram's Windows installer is **not code-signed**, so:
+
+- **First install by hand**: a user downloading `chatgram-windows-setup.exe` may
+  see "Windows protected your PC" (SmartScreen). They choose *More info* →
+  *Run anyway*. This is expected, not a bug; a code-signing certificate is the
+  only real fix (out of scope for this project's budget).
+- **Automatic updates do not go through SmartScreen**: the NSIS updater runs
+  `electron-updater`'s helper with the same unsigned installer over an existing
+  install, so there is no "unknown publisher" prompt on update. The *download* is
+  verified instead: electron-updater checks the **SHA-512** recorded in
+  `latest.yml` before running anything, and the version endpoint always points at
+  our own HTTPS domain, never a third-party host.
+- **No publisher pinning**: electron-builder writes `publisherName` only for
+  signed builds. Because this build is unsigned there is no publisher to pin, so
+  `electron-updater` performs no Authenticode check (setting
+  `updater.publisherName = null` makes that explicit) while keeping the SHA-512
+  verification on. Do **not** set `win.publisherName` in `package.json` unless a
+  certificate is added later — it would make every update fail signature checks.
+- **Downgrades and withdrawn builds** are refused in code
+  (`apps/desktop/updater-logic.js`), independent of the signing situation.
+- **Troubleshooting**: `%APPDATA%\Chatgram\update.log` records each check,
+  download and failure (no secrets). Deleting `%LOCALAPPDATA%\chatgram-updater`
+  forces a fresh download if a cached file is corrupt.
 
 ## Build
 

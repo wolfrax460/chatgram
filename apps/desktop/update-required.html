@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chatgram — update required</title>
+    <style>
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: grid; place-items: center;
+        background: #0b141a; color: #e9edef;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+      }
+      .card { max-width: 460px; text-align: center; padding: 32px; }
+      .mark {
+        width: 64px; height: 64px; margin: 0 auto 20px;
+        border-radius: 18px; display: grid; place-items: center;
+        background: linear-gradient(135deg, #25d366, #008069);
+        font-size: 30px;
+      }
+      h1 { font-size: 20px; margin: 0 0 8px; }
+      p { color: #8696a0; font-size: 14px; line-height: 1.5; margin: 0 0 16px; }
+      .version { color: #e9edef; font-weight: 600; }
+      .bar {
+        height: 8px; border-radius: 999px; background: #1f2c33; overflow: hidden;
+        margin: 20px auto 8px; max-width: 320px;
+      }
+      .bar > div { height: 100%; width: 0; background: #25d366; transition: width .3s ease; }
+      .meta { font-size: 12px; color: #8696a0; min-height: 18px; }
+      button {
+        background: #008069; color: #fff; border: 0; cursor: pointer;
+        padding: 12px 22px; border-radius: 12px; font-size: 14px; font-weight: 600;
+        margin-top: 12px;
+      }
+      button:hover { background: #066353; }
+      button:disabled { opacity: .55; cursor: default; }
+      .note { font-size: 12px; color: #8696a0; margin-top: 18px; line-height: 1.5; }
+      .error { color: #f15c6d; font-size: 13px; margin-top: 12px; min-height: 18px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="mark">💬</div>
+      <h1>Update required</h1>
+      <p>
+        This version of Chatgram can no longer connect. Update to
+        <span class="version" id="target-version">the latest version</span> to keep chatting.
+      </p>
+
+      <div class="bar"><div id="progress"></div></div>
+      <div class="meta" id="meta">Preparing the download…</div>
+
+      <button id="action" type="button">Download and install</button>
+      <div class="error" id="error"></div>
+
+      <p class="note">
+        The update downloads in the background and installs itself. Your chats stay on your
+        account, and your sign-in is kept.
+      </p>
+    </div>
+
+    <script>
+      // The page talks to the shell through the same preload bridge the web app
+      // uses. No Node access, no remote code: everything here is local.
+      const bridge = window.chatgramDesktop && window.chatgramDesktop.updates;
+      const target = document.getElementById('target-version');
+      const progress = document.getElementById('progress');
+      const meta = document.getElementById('meta');
+      const errorBox = document.getElementById('error');
+      const action = document.getElementById('action');
+
+      let state = { status: 'checking', version: null, percent: 0, transferred: 0, total: 0, error: null };
+
+      function bytes(value) {
+        const size = Number(value) || 0;
+        if (size >= 1024 * 1024) return (size / (1024 * 1024)).toFixed(1) + ' MB';
+        if (size >= 1024) return Math.round(size / 1024) + ' KB';
+        return size + ' B';
+      }
+
+      function render() {
+        if (state.version) target.textContent = 'version ' + state.version;
+        const percent = Math.max(0, Math.min(100, Math.round(state.percent || 0)));
+        progress.style.width = percent + '%';
+        errorBox.textContent = state.error || '';
+
+        if (state.status === 'downloading') {
+          meta.textContent = percent + '%' + (state.total ? ' · ' + bytes(state.transferred) + ' of ' + bytes(state.total) : '');
+          action.disabled = true;
+          action.textContent = 'Downloading…';
+        } else if (state.status === 'ready') {
+          meta.textContent = 'Download complete — installing…';
+          action.disabled = true;
+          action.textContent = 'Installing…';
+        } else if (state.status === 'error') {
+          meta.textContent = 'The download did not finish.';
+          action.disabled = false;
+          action.textContent = 'Try again';
+        } else {
+          meta.textContent = 'Preparing the download…';
+          action.disabled = false;
+          action.textContent = 'Download and install';
+        }
+      }
+
+      async function start() {
+        if (!bridge) {
+          meta.textContent = 'This build cannot update itself.';
+          errorBox.textContent = 'Please download the latest installer from chatgram-xi.vercel.app/downloads';
+          action.disabled = true;
+          return;
+        }
+        errorBox.textContent = '';
+        const next = await bridge.download();
+        if (next) state = next;
+        render();
+        // When the download finishes the shell installs and restarts the app.
+      }
+
+      action.addEventListener('click', () => void start());
+
+      if (bridge) {
+        bridge.getState().then((next) => {
+          if (next) state = next;
+          render();
+          if (state.status === 'idle' || state.status === 'available' || state.status === 'error') void start();
+        });
+        bridge.onState((next) => {
+          if (next) state = next;
+          render();
+        });
+      }
+
+      render();
+    </script>
+  </body>
+</html>

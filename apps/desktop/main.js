@@ -9,12 +9,21 @@
  */
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, Notification, session, desktopCapturer, dialog } = require('electron');
 const path = require('node:path');
+const { decideUpdate, backoffDelay, nextCheckDelay, describeAttempt } = require('./updater-logic');
 const fs = require('node:fs');
 
 const APP_URL = process.env.CHATGRAM_URL || 'https://chatgram-xi.vercel.app/web/';
 const OFFLINE_PAGE = path.join(__dirname, 'offline.html');
+const UPDATE_REQUIRED_PAGE = path.join(__dirname, 'update-required.html');
+
+// electron-updater and the tray need the real Electron runtime. Some CI shells set
+// ELECTRON_RUN_AS_NODE, which loads this file under plain Node and leaves `app`
+// undefined; say so instead of throwing a confusing TypeError.
+if (!app || typeof app.getPath !== 'function') {
+  console.error('Chatgram must run inside Electron (unset ELECTRON_RUN_AS_NODE).');
+  process.exit(1);
+}
 const WEB_ORIGIN = 'https://chatgram-xi.vercel.app';
-const RELEASE_FEED = WEB_ORIGIN + '/api/app/releases';
 const DOWNLOAD_PAGE = WEB_ORIGIN + '/docs#downloads';
 
 let mainWindow = null;
@@ -188,88 +197,317 @@ function createTray() {
 
 /* ------------------------------------------------------- release gate */
 
-/** Compare dotted numeric versions (1.2.3 > 1.2.0). Returns -1, 0 or 1. */
-function compareVersions(a, b) {
-  const left = String(a || '0').split(/[.-]/).slice(0, 3).map((part) => Number.parseInt(part, 10) || 0);
-  const right = String(b || '0').split(/[.-]/).slice(0, 3).map((part) => Number.parseInt(part, 10) || 0);
-  for (let index = 0; index < 3; index += 1) {
-    if ((left[index] || 0) !== (right[index] || 0)) return (left[index] || 0) > (right[index] || 0) ? 1 : -1;
-  }
-  return 0;
-}
+/**
+ * Windows update runtime.
+ *
+ * Policy (docs/chatgram-round3-prompt.md, 7B):
+ *  - check 30 s after launch, then every 6 h with jitter, and on resume/unlock;
+ *  - download in the background, surfacing progress only in Settings -> About;
+ *  - never restart on its own: show "Update ready: Restart to install", install
+ *    on quit or immediately on "Restart now";
+ *  - below minSupportedVersion or forceUpdate -> blocking "Update required" page;
+ *  - failures retry with backoff and always keep the current version running;
+ *  - unsigned installer: electron-builder carries no publisherName, so no
+ *    publisher check is attempted, while electron-updater still verifies the
+ *    SHA-512 recorded in latest.yml before installing. See docs/desktop-build.md.
+ */
 
-/** Enforce the minimum supported / forced version published in App releases. */
-async function checkMinimumVersion() {
+const START_CHECK_DELAY_MS = 30_000;
+const CHECK_INTERVAL_MS = 6 * 60 * 60_000;
+const CHECK_JITTER_MS = 15 * 60_000;
+const MAX_CHECK_ATTEMPTS = 6;
+const UPDATE_LOG_MAX_BYTES = 256 * 1024;
+
+/** Normal 6 h schedule with jitter (see updater-logic.nextCheckDelay). */
+const normalCheckDelay = () => nextCheckDelay({ intervalMs: CHECK_INTERVAL_MS, jitterMs: CHECK_JITTER_MS });
+
+const updateLogPath = () => path.join(app.getPath('userData'), 'update.log');
+
+/** Append one line to a local log file (no secrets, no chat data). */
+function logUpdate(level, message) {
+  const line = new Date().toISOString() + ' [' + level + '] ' + String(message).slice(0, 400) + '\n';
   try {
-    const response = await fetch(RELEASE_FEED, { signal: AbortSignal.timeout(8000) });
-    if (!response.ok) return;
-    const payload = await response.json();
-    const windows = (payload.releases || []).find((release) => release.platform === 'windows');
-    if (!windows) return;
-    const current = app.getVersion();
-    const minimum = windows.minSupportedVersion || '';
-    const belowMinimum = minimum && compareVersions(current, minimum) < 0;
-    const forced = windows.forceUpdate === true && windows.version && compareVersions(current, windows.version) < 0;
-    if (!belowMinimum && !forced) return;
-    const { dialog } = require('electron');
-    const choice = await dialog.showMessageBox({
-      type: 'warning',
-      title: 'Chatgram update required',
-      message: belowMinimum
-        ? 'This version of Chatgram (' + current + ') is no longer supported.'
-        : 'A required Chatgram update is available.',
-      detail: 'Please install version ' + (windows.version || minimum) + ' from the download page to keep using Chatgram.',
-      buttons: ['Open download page', 'Close'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (choice.response === 0) {
-      shell.openExternal(windows.fileUrl ? new URL(windows.fileUrl, WEB_ORIGIN).toString() : DOWNLOAD_PAGE);
+    const target = updateLogPath();
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    try {
+      if (fs.statSync(target).size > UPDATE_LOG_MAX_BYTES) fs.renameSync(target, target + '.1');
+    } catch {
+      /* first write */
     }
-    isQuitting = true;
-    app.quit();
-  } catch (error) {
-    console.warn('Version gate check failed', error?.message);
+    fs.appendFileSync(target, line, 'utf8');
+  } catch {
+    /* logging must never break the app */
   }
+  if (level === 'error') console.warn('[update]', message);
+  else console.log('[update]', message);
 }
 
-/* ------------------------------------------------------------- updates */
+const updateState = {
+  status: 'idle', // idle | checking | available | downloading | ready | error | required
+  version: null,
+  notes: null,
+  releasedAt: null,
+  percent: 0,
+  transferred: 0,
+  total: 0,
+  bytesPerSecond: 0,
+  lastCheckedAt: null,
+  error: null,
+  required: false,
+  autoDownload: loadSettings().autoDownloadUpdates !== false,
+  devMode: !app.isPackaged,
+};
 
 let updater = null;
+let updateTimer = null;
+let checkAttempt = 0;
+let updateBusy = false;
+let requiredScreenShown = false;
+
+function broadcastUpdateState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.webContents.send('chatgram:update-state', updateState);
+  } catch {
+    /* window may be closing */
+  }
+  if (tray) {
+    tray.setToolTip(
+      updateState.status === 'ready'
+        ? 'Chatgram - update ' + updateState.version + ' ready to install'
+        : unreadCount > 0
+          ? 'Chatgram - ' + unreadCount + ' unread'
+          : 'Chatgram',
+    );
+  }
+}
+
+function setUpdateState(patch) {
+  Object.assign(updateState, patch);
+  broadcastUpdateState();
+}
+
+/** Ask the version endpoint what policy applies to this install. */
+async function fetchVersionPolicy() {
+  const url =
+    WEB_ORIGIN +
+    '/api/app/version?platform=windows&current=' +
+    encodeURIComponent(app.getVersion()) +
+    '&build=0';
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const decision = decideUpdate({
+      currentVersion: app.getVersion(),
+      latestVersion: payload.latestVersion,
+      minSupportedVersion: payload.minSupportedVersion,
+      forceUpdate: payload.forceUpdate,
+      withdrawn: payload.withdrawn,
+    });
+    return { payload, decision };
+  } catch (error) {
+    logUpdate('warn', 'version check failed: ' + (error && error.message));
+    return null;
+  }
+}
+
 function setupUpdater() {
   try {
     ({ autoUpdater: updater } = require('electron-updater'));
   } catch {
-    console.log('electron-updater not installed — skipping auto-update');
+    logUpdate('warn', 'electron-updater not installed - auto-update disabled');
+    setUpdateState({ status: 'error', error: 'Auto-update is unavailable in this build.', devMode: true });
     return;
   }
+
   try {
     updater.setFeedURL({ provider: 'generic', url: WEB_ORIGIN + '/downloads' });
   } catch (error) {
-    console.warn('Could not set the update feed', error?.message);
+    logUpdate('warn', 'could not set the update feed: ' + (error && error.message));
   }
-  updater.autoDownload = true;
-  updater.on('update-available', (info) => console.log('Update available', info.version));
-  updater.on('error', (error) => console.warn('Updater error', error?.message));
+
+  // Background download, but no surprise restart and no downgrades.
+  updater.autoDownload = false;
+  updater.autoInstallOnAppQuit = true;
+  updater.allowDowngrade = false;
+  updater.allowPrerelease = false;
+  // The installer is unsigned, so there is no publisher to pin. SHA-512 from
+  // latest.yml is still verified by electron-updater before install.
+  updater.publisherName = null;
+
+  updater.on('checking-for-update', () => setUpdateState({ status: 'checking', error: null }));
+  updater.on('update-available', (info) => {
+    checkAttempt = 0;
+    logUpdate('info', 'update available: ' + (info && info.version));
+    setUpdateState({ status: 'available', version: (info && info.version) || updateState.version });
+    if (updateState.required || updateState.autoDownload) void startDownload();
+  });
+  updater.on('update-not-available', () => {
+    checkAttempt = 0;
+    setUpdateState({ status: 'idle', version: null, lastCheckedAt: new Date().toISOString(), error: null });
+  });
+  updater.on('download-progress', (progress) => {
+    setUpdateState({
+      status: 'downloading',
+      percent: Math.max(0, Math.min(100, Number(progress && progress.percent) || 0)),
+      transferred: Number(progress && progress.transferred) || 0,
+      total: Number(progress && progress.total) || 0,
+      bytesPerSecond: Number(progress && progress.bytesPerSecond) || 0,
+    });
+  });
   updater.on('update-downloaded', (info) => {
+    logUpdate('info', 'update downloaded: ' + (info && info.version));
+    setUpdateState({
+      status: 'ready',
+      version: (info && info.version) || updateState.version,
+      notes: info && typeof info.releaseNotes === 'string' ? info.releaseNotes : updateState.notes,
+      percent: 100,
+      error: null,
+    });
     if (Notification.isSupported()) {
       new Notification({
         title: 'Chatgram update ready',
-        body: `Version ${info.version} will install when you quit.`,
+        body: 'Version ' + ((info && info.version) || '') + ' will install when you quit, or click Restart.',
       }).show();
     }
   });
+  updater.on('error', (error) => {
+    logUpdate('error', 'updater error: ' + (error && error.message));
+    setUpdateState({ status: 'error', error: 'The update could not be downloaded.', percent: 0 });
+    scheduleRetry();
+  });
 }
 
-async function checkForUpdates(manual = false) {
-  if (!updater) return;
+async function startDownload() {
+  if (!updater || updateBusy) return updateState;
+  if (updateState.status === 'downloading' || updateState.status === 'ready') return updateState;
+  updateBusy = true;
   try {
-    await updater.checkForUpdates();
+    logUpdate('info', 'starting background download');
+    await updater.downloadUpdate();
   } catch (error) {
-    if (manual && Notification.isSupported()) {
-      new Notification({ title: 'Chatgram', body: 'Could not check for updates.' }).show();
+    logUpdate('error', 'download failed: ' + (error && error.message));
+    setUpdateState({ status: 'error', error: 'The update could not be downloaded.' });
+    scheduleRetry();
+  } finally {
+    updateBusy = false;
+  }
+  return updateState;
+}
+
+/** Show the blocking page that downloads and installs by itself. */
+async function showUpdateRequired(targetVersion) {
+  if (requiredScreenShown || !mainWindow || mainWindow.isDestroyed()) return;
+  requiredScreenShown = true;
+  setUpdateState({ status: 'required', required: true, version: targetVersion || updateState.version });
+  logUpdate('warn', 'blocking update required to ' + (targetVersion || 'unknown'));
+  try {
+    await mainWindow.loadFile(UPDATE_REQUIRED_PAGE);
+  } catch (error) {
+    logUpdate('error', 'could not open the update page: ' + (error && error.message));
+    requiredScreenShown = false;
+  }
+}
+
+function installUpdate() {
+  if (!updater || updateState.status !== 'ready') return false;
+  logUpdate('info', 'installing update and restarting');
+  isQuitting = true;
+  setImmediate(() => {
+    try {
+      updater.quitAndInstall(false, true);
+    } catch (error) {
+      logUpdate('error', 'install failed: ' + (error && error.message));
+      isQuitting = false;
+    }
+  });
+  return true;
+}
+
+function scheduleRetry() {
+  checkAttempt += 1;
+  if (checkAttempt > MAX_CHECK_ATTEMPTS) {
+    logUpdate('warn', 'retry limit reached; returning to the normal schedule');
+    checkAttempt = 0;
+    scheduleNextCheck(normalCheckDelay());
+    return;
+  }
+  const delay = backoffDelay(checkAttempt);
+  logUpdate('info', 'retry ' + describeAttempt(checkAttempt) + ' in ' + Math.round(delay / 1000) + ' s');
+  scheduleNextCheck(delay);
+}
+
+function scheduleNextCheck(delayMs) {
+  if (updateTimer) clearTimeout(updateTimer);
+  updateTimer = setTimeout(() => {
+    void checkForUpdates(false);
+  }, Math.max(1_000, delayMs));
+  if (updateTimer.unref) updateTimer.unref();
+}
+
+/**
+ * One update check: the version endpoint decides force/minimum policy, then
+ * electron-updater looks at /downloads/latest.yml for the actual package.
+ */
+async function checkForUpdates(manual = false) {
+  if (!app.isPackaged) {
+    setUpdateState({ status: 'idle', devMode: true, lastCheckedAt: new Date().toISOString() });
+    return updateState;
+  }
+  const policy = await fetchVersionPolicy();
+  if (policy) {
+    const payload = policy.payload;
+    setUpdateState({
+      version: payload.latestVersion || null,
+      notes: payload.notes || null,
+      releasedAt: payload.releasedAt || null,
+    });
+    if (policy.decision.action === 'required') {
+      void startDownload();
+      void showUpdateRequired(payload.latestVersion);
+      return updateState;
     }
   }
+
+  if (!updater) {
+    if (manual) setUpdateState({ error: 'Auto-update is unavailable in this build.' });
+    scheduleNextCheck(normalCheckDelay());
+    return updateState;
+  }
+
+  try {
+    setUpdateState({ status: 'checking', error: null, manual });
+    await updater.checkForUpdates();
+    setUpdateState({ lastCheckedAt: new Date().toISOString() });
+  } catch (error) {
+    logUpdate('warn', 'check failed: ' + (error && error.message));
+    setUpdateState({ status: 'error', error: 'Could not check for updates.' });
+    scheduleRetry();
+    return updateState;
+  }
+  // The normal plan resumes after a successful check, unless a download is running.
+  if (updateState.status !== 'downloading' && updateState.status !== 'ready') {
+    scheduleNextCheck(normalCheckDelay());
+  }
+  return updateState;
+}
+
+/** Start the schedule: 30 s after launch, then every ~6 h, plus resume/unlock. */
+function startUpdateScheduler() {
+  setupUpdater();
+  scheduleNextCheck(START_CHECK_DELAY_MS);
+  try {
+    const { powerMonitor } = require('electron');
+    powerMonitor.on('resume', () => {
+      logUpdate('info', 'woke from sleep - checking for updates');
+      scheduleNextCheck(5_000);
+    });
+    powerMonitor.on('unlock-screen', () => scheduleNextCheck(5_000));
+  } catch (error) {
+    logUpdate('warn', 'power monitor unavailable: ' + (error && error.message));
+  }
+  logUpdate('info', 'scheduler started (first check in ' + START_CHECK_DELAY_MS / 1000 + ' s)');
 }
 
 /* ------------------------------------------------------------------ ipc */
@@ -283,6 +521,26 @@ ipcMain.handle('chatgram:notify', (_event, { title, body }) => {
 });
 
 ipcMain.handle('chatgram:appVersion', () => app.getVersion());
+
+// --- updates (Settings -> About and the required-update screen) ---
+ipcMain.handle('chatgram:update-state', () => updateState);
+ipcMain.handle('chatgram:update-check', async () => {
+  await checkForUpdates(true);
+  return updateState;
+});
+ipcMain.handle('chatgram:update-download', async () => startDownload());
+ipcMain.handle('chatgram:update-install', () => ({ installed: installUpdate() }));
+ipcMain.handle('chatgram:update-auto-download', (_event, value) => {
+  const enabled = value !== false;
+  updateState.autoDownload = enabled;
+  saveSettings({ ...loadSettings(), autoDownloadUpdates: enabled });
+  broadcastUpdateState();
+  return { autoDownload: enabled };
+});
+ipcMain.handle('chatgram:update-open-downloads', () => {
+  shell.openExternal(DOWNLOAD_PAGE);
+  return true;
+});
 
 /* ---------------------------------------------------------------- boot */
 
@@ -391,7 +649,6 @@ if (!gotLock) {
     setupDisplayMedia();
     createWindow();
     createTray();
-    setupUpdater();
 
     // Start-on-login: persisted opt-in (tray menu).
     const settings = loadSettings();
@@ -430,8 +687,7 @@ if (!gotLock) {
       }
     });
 
-    setTimeout(() => void checkMinimumVersion(), 2500);
-    setTimeout(() => checkForUpdates(false), 6000);
+    startUpdateScheduler();
   });
 
   app.on('window-all-closed', () => {

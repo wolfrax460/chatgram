@@ -31,7 +31,9 @@
       "main.js",
       "preload.js",
       "offline.html",
-      "assets/**"
+      "assets/**",
+      "updater-logic.js",
+      "update-required.html"
     ],
     "win": {
       "target": [
