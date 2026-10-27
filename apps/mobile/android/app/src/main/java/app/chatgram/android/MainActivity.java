@@ -1,5 +1,6 @@
 package app.chatgram.android;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.webkit.WebSettings;
 
@@ -32,8 +33,17 @@ public class MainActivity extends BridgeActivity {
         // installer. Must be registered before super.onCreate() so the bridge
         // knows about it when the WebView starts.
         registerPlugin(AppUpdaterPlugin.class);
+        // Chunk 8: Android local notifications for new messages while the app is
+        // backgrounded (the WebView and its Socket.IO connection are still alive).
+        registerPlugin(NotifierPlugin.class);
 
         super.onCreate(savedInstanceState);
+
+        // Cold start from a notification tap: remember the chat before the web
+        // layer loads. (BridgeActivity.load() already replays the launch intent
+        // through onNewIntent(); this is a no-op in that case because the extras
+        // were consumed there.)
+        NotifierStore.captureFromIntent(this, getIntent());
 
         WebSettings settings = getBridge().getWebView().getSettings();
 
@@ -51,5 +61,15 @@ public class MainActivity extends BridgeActivity {
         if (UpdatePrefs.lastCheckedAt(this) < System.currentTimeMillis() - 6 * 60 * 60 * 1000L) {
             UpdateWorker.checkNow(this);
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        // A message-notification tap reuses this singleTask activity. Record the
+        // chat id; the web layer drains it with Notifier.consumePending() when it
+        // is running (it may be paused behind the notification shade).
+        NotifierStore.captureFromIntent(this, intent);
     }
 }
