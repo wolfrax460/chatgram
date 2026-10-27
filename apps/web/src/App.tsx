@@ -1528,6 +1528,11 @@ export default function App() {
         const code = (error as { code?: string } | null)?.code;
         const maintenance = status === 503 || code === 'MAINTENANCE';
         if (!maintenance) {
+          // The session is gone (auth failure): the device must stop receiving
+          // this account's pushes. Fire it before the tokens are cleared so the
+          // request still carries its auth header; the native token is deleted
+          // even if that request fails.
+          void unregisterPushToken();
           api.clearTokens();
           if (!cancelled) setUser(null);
         }
