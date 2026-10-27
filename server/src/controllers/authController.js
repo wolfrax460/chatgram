@@ -1,7 +1,7 @@
 // Auth controller
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-const { parseTarget, readVerificationToken } = require('./verificationController');
+const { parseTarget, readVerificationToken, codeFailureBody } = require('./verificationController');
 const store = require('../utils/verificationStore');
 // Password resets use their own hashed, single-use, 15-minute tokens.
 const resetStore = require('../utils/resetTokenStore');
@@ -723,7 +723,7 @@ const requestIdentifierChange = async (req, res) => {
       });
     }
 
-    const issued = store.issue(parsed.channel, parsed.target);
+    const issued = await store.issue(parsed.channel, parsed.target);
     if (!issued.ok) {
       return res.status(429).json({
         message: `Please wait ${issued.retryAfterSeconds}s before requesting another code.`,
@@ -789,14 +789,12 @@ const confirmIdentifierChange = async (req, res) => {
       }
     }
 
-    const checked = store.check(parsed.channel, parsed.target, code);
+    const checked = await store.check(parsed.channel, parsed.target, code);
     if (!checked.ok) {
-      const status = checked.reason === 'too_many_attempts' ? 429 : 400;
-      return res.status(status).json({
-        message: notifier.reasonMessages[checked.reason] || 'That code is not valid.',
-        reason: checked.reason,
-        code: 'INVALID_CODE',
-      });
+      // Same distinct reasons as POST /api/auth/verification/check, so the
+      // account-settings screen can offer "send a new code" on an expiry.
+      const { status, body } = codeFailureBody(checked.reason);
+      return res.status(status).json(body);
     }
 
     const filter = parsed.channel === 'email' ? { email: parsed.target } : { phone: parsed.target };

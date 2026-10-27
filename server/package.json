@@ -8,6 +8,7 @@
     "dev": "nodemon src/server.js",
     "test": "node test/e2e.smoke.js",
     "test:e2e": "node test/e2e.smoke.js",
+    "test:unit": "node test/unit/verificationStore.test.js && node test/unit/platformGate.test.js",
     "seed": "node test/seed.js",
     "reseed": "node test/seed.js --force",
     "db:reset": "node test/reset.js"

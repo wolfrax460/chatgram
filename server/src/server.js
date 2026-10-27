@@ -154,6 +154,22 @@ connectDB().then(() => {
     console.warn('Status cleanup could not start:', error.message);
   }
 
+  // Verification codes now live in Mongo (they used to be per-process and were
+  // lost on restart). Their unique + TTL indexes must exist on a fresh database.
+  // Mongoose's automatic build is unreliable in this app: models are compiled
+  // before the connection opens and bufferCommands is false, so its one init
+  // attempt can fail and never be retried. Create them explicitly (idempotent).
+  (async () => {
+    const VerificationCode = require('./models/VerificationCode');
+    try {
+      await VerificationCode.createCollection();
+    } catch (error) {
+      // 48 = NamespaceExists: the collection is already there, which is fine.
+      if (error && error.code !== 48) throw error;
+    }
+    await VerificationCode.createIndexes();
+  })().catch((error) => console.warn('Verification code indexes could not be created:', error.message));
+
   // Help-centre articles (idempotent upsert from articles.seed.json).
   require('./help/seed')
     .seedHelpCentre()

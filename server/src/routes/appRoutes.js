@@ -13,9 +13,13 @@ router.post('/heartbeat', heartbeat);
 router.get('/version', versionLimiter, updateCheck);
 router.get('/versions', versionUsage);
 // Public feature flags + maintenance message for the web/desktop/mobile clients.
+// Electron and the Android shell load the hosted web client, so this is the
+// first call that can tell them "the app is down" before any other API request
+// (the gate keeps this path reachable during maintenance).
 router.get('/features', async (req, res) => {
   try {
-    const settings = await require('../utils/platformSettings').get();
+    const platformSettings = require('../utils/platformSettings');
+    const settings = await platformSettings.get();
     return res.json({
       registrationEnabled: settings.registrationEnabled,
       statusEnabled: settings.statusEnabled,
@@ -23,8 +27,11 @@ router.get('/features', async (req, res) => {
       fileUploadsEnabled: settings.fileUploadsEnabled,
       aiEnabled: settings.aiEnabled,
       supportWidgetEnabled: settings.supportWidgetEnabled,
-      maintenanceMode: settings.maintenanceMode,
+      // Effective state: false once an auto-expiry window (`maintenanceUntil`)
+      // has passed, so clients recover without a redeploy or another toggle.
+      maintenanceMode: platformSettings.isMaintenanceActive(settings),
       maintenanceMessage: settings.maintenanceMessage,
+      maintenanceUntil: settings.maintenanceUntil || null,
       readOnlyMode: settings.readOnlyMode,
       maxUploadMb: settings.maxUploadMb,
     });

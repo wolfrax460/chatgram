@@ -18,8 +18,30 @@ const callRegistry = require('../utils/callRegistry');
 const callRooms = require('../utils/callRooms');
 const { blockedBetween } = require('../utils/blocks');
 const groupSystem = require('../utils/groupSystem');
+const platformSettings = require('../utils/platformSettings');
 
 const JWT_SECRET = () => process.env.JWT_SECRET || 'your-secret-key';
+
+/**
+ * Rejection used by both socket maintenance gates. Socket.IO forwards
+ * `error.data` to the client, which sees it on `connect_error` — so a shell can
+ * branch on `err.data.code === 'MAINTENANCE'` and show the maintenance screen
+ * instead of a generic "connection failed".
+ */
+function maintenanceError(settings) {
+  const message = (settings && settings.maintenanceMessage) || platformSettings.DEFAULTS.maintenanceMessage;
+  const error = new Error(message);
+  error.data = { code: 'MAINTENANCE', message };
+  return error;
+}
+
+/**
+ * Events allowed while maintenance is on. Only the ones needed to keep an
+ * already-connected socket alive and identified: the presence heartbeat (the
+ * sweeper disconnects silent sockets) and the auth handshake. Everything else
+ * (messages, calls, typing, receipts) is refused, mirroring the REST 503.
+ */
+const MAINTENANCE_SAFE_EVENTS = new Set(['presence:ping', 'authenticate']);
 
 async function resolveUserFromToken(token) {
   if (!token) return null;
@@ -105,10 +127,50 @@ function registerSocketHandlers(io) {
     }
   }, presenceSweepMs);
   if (typeof presenceSweeper.unref === 'function') presenceSweeper.unref();
+
+  // Maintenance gate for realtime. New connections are refused with a
+  // machine-readable MAINTENANCE code. Deliberately NOT a disconnect of live
+  // sockets: a server-initiated disconnect is not auto-reconnected by the
+  // Socket.IO client, which would leave the app dead after maintenance ends.
+  io.use(async (socket, next) => {
+    try {
+      const settings = await platformSettings.get();
+      if (!platformSettings.isMaintenanceActive(settings)) return next();
+      return next(maintenanceError(settings));
+    } catch (error) {
+      // Same fail-open rule as the REST gate: settings problems must not break
+      // messaging for everyone.
+      console.warn('Socket maintenance gate error:', error.message);
+      return next();
+    }
+  });
+
   io.on('connection', (socket) => {
     if (process.env.NODE_ENV !== 'production') {
       console.log('Socket connected:', socket.id);
     }
+
+    // A socket opened before maintenance was switched on must not keep working
+    // as a side door around the REST 503: drop every app event while it is on.
+    // The socket itself stays connected, so it resumes on its own when the
+    // admin turns maintenance off. We emit `maintenance` (rather than failing
+    // the middleware with an Error) so the client is told why, and the event is
+    // simply not forwarded.
+    socket.use((packet, next) => {
+      const event = Array.isArray(packet) ? packet[0] : packet;
+      if (MAINTENANCE_SAFE_EVENTS.has(event)) return next();
+      platformSettings
+        .get()
+        .then((settings) => {
+          if (!platformSettings.isMaintenanceActive(settings)) return next();
+          socket.emit('maintenance', {
+            code: 'MAINTENANCE',
+            message: (settings && settings.maintenanceMessage) || platformSettings.DEFAULTS.maintenanceMessage,
+          });
+          return undefined;
+        })
+        .catch(() => next());
+    });
 
     // Preferred path: token supplied in the Socket.IO handshake (`auth.token`),
     // so the connection is authorised before any event is handled.

@@ -14,6 +14,10 @@ const DEFAULTS = {
   supportWidgetEnabled: true,
   maintenanceMode: false,
   maintenanceMessage: 'Chatgram is under maintenance. We will be back shortly.',
+  // Optional ISO timestamp: after it passes, maintenance is over even if the
+  // boolean is still true. Lets an admin "put the app down" for 15 minutes
+  // without having to remember to switch it back on.
+  maintenanceUntil: null,
   readOnlyMode: false,
   maxUploadMb: 100,
   // 9b Safety & abuse (enforced by middleware/safety.js).
@@ -71,6 +75,80 @@ function cleanList(value, maxLength) {
 const CACHE_MS = 5000;
 let cache = { at: 0, value: null };
 
+/** Longest auto-expiry window an admin may set, so a typo cannot hide the app for weeks. */
+const MAX_MAINTENANCE_UNTIL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * True while maintenance should actually block users.
+ *
+ * `maintenanceMode` alone is not enough: when `maintenanceUntil` has passed the
+ * window is over, even though the stored flag is still true. Keeping the
+ * decision in one pure function means the REST gate, the Socket.IO gate and
+ * /api/app/features can never disagree.
+ */
+function isMaintenanceActive(settings, nowMs = Date.now()) {
+  if (!settings || settings.maintenanceMode !== true) return false;
+  if (!settings.maintenanceUntil) return true;
+  const until = new Date(settings.maintenanceUntil).getTime();
+  // An unparseable value must not silently turn maintenance off.
+  if (!Number.isFinite(until)) return true;
+  return nowMs < until;
+}
+
+/**
+ * The effective settings. An expired maintenance window is reported as off and
+ * with no end date, so the admin page and the app shells converge on "live"
+ * without a background scheduler or a write on every read.
+ */
+function normalizeAutoExpiry(settings, nowMs = Date.now()) {
+  if (settings.maintenanceMode !== true || !settings.maintenanceUntil) return settings;
+  if (isMaintenanceActive(settings, nowMs)) return settings;
+  return { ...settings, maintenanceMode: false, maintenanceUntil: null };
+}
+
+const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
+const ALWAYS_REACHABLE_PATHS = ['/config', '/app/features'];
+
+/**
+ * Pure gate decision (unit-tested without a database).
+ *
+ * Admin endpoints and health checks always pass: recovery and monitoring must
+ * not depend on the mode being off. `/api/auth/*`, `/api/config` and
+ * `/api/app/features` also stay reachable so users can sign in / recover and
+ * the app shells can read `{ maintenanceMode, maintenanceMessage }` *before*
+ * any other call and show the maintenance screen instead of a generic error.
+ *
+ * @returns {null | {status: number, code: 'MAINTENANCE'|'READ_ONLY', message: string, maintenanceUntil?: string}}
+ */
+function gateDecision(settings, { path = '', method = 'GET', now = Date.now() } = {}) {
+  const requestPath = String(path || '');
+  if (requestPath.startsWith('/admin')) return null;
+  if (requestPath === '/status/health' || requestPath === '/health') return null;
+
+  const alwaysReachable =
+    requestPath.startsWith('/auth') || ALWAYS_REACHABLE_PATHS.includes(requestPath);
+
+  if (!alwaysReachable && isMaintenanceActive(settings, now)) {
+    const decision = {
+      status: 503,
+      code: 'MAINTENANCE',
+      message: settings.maintenanceMessage || DEFAULTS.maintenanceMessage,
+    };
+    if (settings.maintenanceUntil) decision.maintenanceUntil = new Date(settings.maintenanceUntil).toISOString();
+    return decision;
+  }
+
+  if (!alwaysReachable && settings.readOnlyMode && !SAFE_METHODS.includes(String(method).toUpperCase())) {
+    return {
+      status: 503,
+      code: 'READ_ONLY',
+      message: 'Chatgram is in read-only mode right now. You can read, but not post.',
+    };
+  }
+
+  return null;
+}
+
 async function get() {
   if (cache.value && Date.now() - cache.at < CACHE_MS) return cache.value;
   let doc = await PlatformSettings.findOne({ singleton: 'platform' }).lean();
@@ -78,7 +156,8 @@ async function get() {
     doc = await PlatformSettings.create({ singleton: 'platform', ...DEFAULTS });
     doc = doc.toObject();
   }
-  const value = { ...DEFAULTS, ...Object.fromEntries(Object.entries(doc).filter(([key]) => key in DEFAULTS)) };
+  const raw = { ...DEFAULTS, ...Object.fromEntries(Object.entries(doc).filter(([key]) => key in DEFAULTS)) };
+  const value = normalizeAutoExpiry(raw);
   cache = { at: Date.now(), value };
   return value;
 }
@@ -138,13 +217,34 @@ async function update(patch, req) {
         throw error;
       }
       next[key] = Math.round(value);
+    } else if (key === 'maintenanceUntil') {
+      const raw = patch[key];
+      if (raw === null || raw === undefined || raw === '') {
+        next[key] = null;
+      } else {
+        const parsed = new Date(raw);
+        if (Number.isNaN(parsed.getTime())) {
+          const error = new Error('maintenanceUntil must be an ISO date (or null).');
+          error.status = 400;
+          throw error;
+        }
+        if (parsed.getTime() > Date.now() + MAX_MAINTENANCE_UNTIL_MS) {
+          const error = new Error('maintenanceUntil must be within the next 7 days.');
+          error.status = 400;
+          throw error;
+        }
+        next[key] = parsed;
+      }
     } else if (key === 'ipBans') {
       // Managed by the Safety controller only.
       next[key] = current.ipBans || [];
     }
   }
+  // Turning maintenance off clears the window too: a stale future `until` would
+  // silently switch maintenance off again the next time it is enabled.
+  if (next.maintenanceMode === false) next.maintenanceUntil = null;
   await PlatformSettings.updateOne({ singleton: 'platform' }, { $set: next }, { upsert: true });
-  cache = { at: Date.now(), value: next };
+  cache = { at: Date.now(), value: normalizeAutoExpiry(next) };
   await require('../admin/auth').audit('platform_settings_update', req, Object.keys(patch || {}).join(',').slice(0, 300));
   return next;
 }
@@ -173,28 +273,30 @@ function featureGate(flag, code, message) {
 async function platformGate(req, res, next) {
   try {
     const settings = await get();
-    const path = String(req.path || '');
-    const isAdmin = path.startsWith('/admin');
-    const isHealth = path === '/status/health' || path === '/health';
-    const isAuth = path.startsWith('/auth') || path === '/config' || path === '/app/features';
-    if (isAdmin || isHealth) return next();
-    if (settings.maintenanceMode && !isAuth) {
-      return res.status(503).json({
-        message: settings.maintenanceMessage,
-        code: 'MAINTENANCE',
-      });
-    }
-    if (settings.readOnlyMode && !['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !isAuth) {
-      return res.status(503).json({
-        message: 'Chatgram is in read-only mode right now. You can read, but not post.',
-        code: 'READ_ONLY',
-      });
-    }
-    return next();
+    const decision = gateDecision(settings, { path: req.path, method: req.method });
+    if (!decision) return next();
+    return res.status(decision.status).json({
+      message: decision.message,
+      code: decision.code,
+      // Lets a client show "back at 14:30" instead of a vague "shortly".
+      ...(decision.maintenanceUntil ? { maintenanceUntil: decision.maintenanceUntil } : {}),
+    });
   } catch (error) {
+    // Fail open, like before: a settings read failure must not take the app down.
     console.error('Platform gate error:', error.message);
     return next();
   }
 }
 
-module.exports = { DEFAULTS, get, update, resetCache, featureGate, platformGate };
+module.exports = {
+  DEFAULTS,
+  get,
+  update,
+  resetCache,
+  featureGate,
+  platformGate,
+  // Pure decisions, exported so unit tests (and the socket gate) use exactly
+  // the same rules as the HTTP middleware.
+  isMaintenanceActive,
+  gateDecision,
+};

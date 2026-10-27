@@ -4,7 +4,36 @@ const store = require('../utils/verificationStore');
 const notifier = require('../utils/notifier');
 
 const SECRET = () => process.env.JWT_SECRET || 'your-secret-key';
+// The proof token deliberately outlives the code (30m vs the code's 15m): the
+// user may verify and then finish registration a little later. The token is not
+// what users experience as "expired", so keep it long and do not couple it to
+// the code lifetime.
 const TOKEN_TTL = '30m';
+
+/**
+ * One response shape for every failed code check, so the client can tell
+ * expired / wrong / too-many-attempts apart and show the right action instead
+ * of a generic "invalid code". `canResend` means "offer the Send again button".
+ */
+const CODE_FAILURES = {
+  missing: { status: 400, code: 'CODE_MISSING', canResend: true },
+  expired: { status: 400, code: 'CODE_EXPIRED', canResend: true },
+  invalid: { status: 400, code: 'CODE_INVALID', canResend: false },
+  too_many_attempts: { status: 429, code: 'CODE_TOO_MANY_ATTEMPTS', canResend: true },
+};
+
+function codeFailureBody(reason) {
+  const failure = CODE_FAILURES[reason] || CODE_FAILURES.invalid;
+  return {
+    status: failure.status,
+    body: {
+      message: notifier.reasonMessages[reason] || 'Verification failed.',
+      reason: reason in CODE_FAILURES ? reason : 'invalid',
+      code: failure.code,
+      canResend: failure.canResend,
+    },
+  };
+}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_RE = /^\+?[0-9]{7,15}$/;
@@ -65,7 +94,7 @@ const sendCode = async (req, res) => {
     }
 
     const { channel, target } = parsed;
-    const issued = store.issue(channel, target);
+    const issued = await store.issue(channel, target);
 
     if (!issued.ok) {
       return res.status(429).json({
@@ -134,13 +163,10 @@ const checkCode = async (req, res) => {
       return res.status(400).json({ message: 'Enter the 6-digit code.' });
     }
 
-    const result = store.check(parsed.channel, parsed.target, code);
+    const result = await store.check(parsed.channel, parsed.target, code);
     if (!result.ok) {
-      const status = result.reason === 'too_many_attempts' ? 429 : 400;
-      return res.status(status).json({
-        message: notifier.reasonMessages[result.reason] || 'Verification failed.',
-        reason: result.reason,
-      });
+      const { status, body } = codeFailureBody(result.reason);
+      return res.status(status).json(body);
     }
 
     return res.json({
@@ -161,4 +187,5 @@ module.exports = {
   parseTarget,
   readVerificationToken,
   normalizePhone,
+  codeFailureBody,
 };

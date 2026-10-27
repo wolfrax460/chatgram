@@ -26,6 +26,11 @@ try {
   nodemailer = null;
 }
 
+// The email/SMS copy promises an expiry to the user; generate it from the
+// verification store's actual TTL so raising the lifetime can never leave the
+// message telling people "10 minutes" while the code really lasts 15.
+const { TTL_MINUTES: CODE_TTL_MINUTES } = require('./verificationStore');
+
 const isProd = process.env.NODE_ENV === 'production';
 const emailProvider = process.env.EMAIL_PROVIDER || 'console';
 const smsProvider = process.env.SMS_PROVIDER || 'console';
@@ -56,8 +61,8 @@ function getTransporter() {
 
 async function sendEmailCode(to, code) {
   const subject = 'Your Chatgram verification code';
-  const text = `Your Chatgram verification code is ${code}. It expires in 10 minutes.`;
-  const html = `<p>Your Chatgram verification code is <strong style="font-size:20px">${code}</strong>.</p><p>It expires in 10 minutes. If you did not request this, ignore this email.</p>`;
+  const text = `Your Chatgram verification code is ${code}. It expires in ${CODE_TTL_MINUTES} minutes.`;
+  const html = `<p>Your Chatgram verification code is <strong style="font-size:20px">${code}</strong>.</p><p>It expires in ${CODE_TTL_MINUTES} minutes. If you did not request this, ignore this email.</p>`;
 
   if (emailProvider === 'smtp') {
     const tx = getTransporter();
@@ -95,7 +100,7 @@ async function sendEmailCode(to, code) {
 }
 
 async function sendSmsCode(to, code) {
-  const body = `Your Chatgram verification code is ${code}. It expires in 10 minutes.`;
+  const body = `Your Chatgram verification code is ${code}. It expires in ${CODE_TTL_MINUTES} minutes.`;
 
   if (smsProvider === 'twilio') {
     const sid = process.env.TWILIO_ACCOUNT_SID;
@@ -201,10 +206,10 @@ async function notifyPasswordChanged(user) {
 }
 
 const reasonMessages = {
-  missing: 'No code was requested for this address, or it already expired. Request a new one.',
-  expired: 'That code has expired. Request a new one.',
+  missing: 'No verification code is waiting for this address. Request a new one.',
+  expired: 'That code expired. Send a new one — it only takes a moment.',
   invalid: 'That code is not correct.',
-  too_many_attempts: 'Too many incorrect attempts. Request a new code.',
+  too_many_attempts: 'Too many incorrect attempts. Send a new code.',
 };
 
 module.exports = {

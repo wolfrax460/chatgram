@@ -15,6 +15,10 @@ const platformSettingsSchema = new mongoose.Schema(
     supportWidgetEnabled: { type: Boolean, default: true },
     maintenanceMode: { type: Boolean, default: false },
     maintenanceMessage: { type: String, default: 'Chatgram is under maintenance. We will be back shortly.', maxlength: 500 },
+    // Optional end of a short maintenance window. Maintenance is treated as off
+    // once this passes, even if maintenanceMode is still true (utils/platformSettings
+    // enforces it; no scheduler is needed).
+    maintenanceUntil: { type: Date, default: null },
     readOnlyMode: { type: Boolean, default: false },
     maxUploadMb: { type: Number, default: 100 },
     // 9b Safety & abuse.

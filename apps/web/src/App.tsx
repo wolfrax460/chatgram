@@ -1527,9 +1527,18 @@ export default function App() {
       try {
         const me = await api.me();
         if (!cancelled) setUser(me);
-      } catch {
-        api.clearTokens();
-        if (!cancelled) setUser(null);
+      } catch (error) {
+        // A maintenance window makes every normal API call return 503 MAINTENANCE.
+        // That must NOT log the user out: the session is still valid and the
+        // maintenance page polls until the app is back. Only a real auth failure
+        // (401/403) clears the tokens.
+        const status = (error as { status?: number } | null)?.status;
+        const code = (error as { code?: string } | null)?.code;
+        const maintenance = status === 503 || code === 'MAINTENANCE';
+        if (!maintenance) {
+          api.clearTokens();
+          if (!cancelled) setUser(null);
+        }
       } finally {
         if (!cancelled) setReady(true);
       }

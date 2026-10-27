@@ -20,3 +20,30 @@
 **Verification (no screenshots):** `npm run typecheck -w @chatgram/web` and `npm run build -w @chatgram/web` pass; a temporary headless-browser check against a local Vite server confirmed the preview/real maintenance page (headline, banner, details, language + theme switch, draft persistence, no horizontal scroll at 360 px, mocked “maintenance off” → “We’re back” → reload to the remembered path), read-only mode (banner, readable messages, disabled composer/call/status buttons) and the admin flags page (safety confirmation, draft fields, Preview opening `?maintenance-preview=1`). Check scripts were deleted afterwards; no Playwright suite was added.
 
 **Not built (by design of the brief):** closed-app push notifications and an offline send queue. The draft box only stores text locally; no message is claimed to be queued or sent.
+
+## Server follow-up (2026-10-27)
+
+The two server-side gaps in the table above are now closed in `server/` (the web page
+is unchanged):
+
+1. **Socket gate.** Socket.IO now refuses the namespace handshake during maintenance
+   with `connect_error` → `err.data = { code: 'MAINTENANCE', message }`, and drops
+   events from sockets that were connected before the switch (they stay connected and
+   resume on their own when maintenance ends; the presence heartbeat is still let
+   through so they are not reaped). This closes the `message:send` / `call:start`
+   bypass called out above.
+2. **Auto-off.** `PlatformSettings.maintenanceUntil` (ISO date, optional, max 7 days
+   ahead) makes the window one-shot: once it passes, the REST gate, the socket gate and
+   `/api/app/features` all report maintenance off without another admin action.
+   `/api/app/features` now reports the effective `maintenanceMode` plus
+   `maintenanceUntil`, so both shells can show the page before their first API call and
+   recover by polling. `PUT /api/admin/platform-settings` accepts the field and the
+   existing `platform_settings_update` audit keeps covering every change.
+
+Still open (not done here): the maintenance-updates feed, the multi-language message /
+start-end fields, and a public contact/socials endpoint. One cross-scope item for the
+web client (`apps/web/src/App.tsx`): on boot it calls `api.me()` and clears the tokens
+in its `catch`, so a returning user whose session check gets `503 MAINTENANCE` is
+logged out; skipping the session call while `features.maintenanceMode` is true (and
+letting the maintenance page refresh the session, as it already does) avoids that.
+

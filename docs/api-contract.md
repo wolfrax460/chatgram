@@ -342,3 +342,67 @@ and blocked users cannot call each other. The web app shows a full-screen call o
 Gateway rule: no admin route works from a normal user JWT — only the admin cookie
 (and CSRF header for state changes). The web app reaches these through the
 same-origin `/api/*` proxy so SameSite=Strict cookies are sent.
+
+## Maintenance & one-time codes (2026-10-27, additive)
+
+Nothing above is renamed or removed; this section only documents new fields and
+code values.
+
+### One-time verification codes
+
+`POST /api/auth/verification/send` now reports `expiresInSeconds: 900`
+(15 minutes, was 10) and `POST /api/auth/verification/check` can answer with
+distinct failure codes so the client can offer "send a new code":
+
+| HTTP | `code` | `reason` | Meaning |
+|---|---|---|---|
+| 400 | `CODE_MISSING` | `missing` | no pending code (never sent, already used, or purged) |
+| 400 | `CODE_EXPIRED` | `expired` | the code existed but its 15 minutes are over |
+| 400 | `CODE_INVALID` | `invalid` | wrong code; the pending code is still usable |
+| 429 | `CODE_TOO_MANY_ATTEMPTS` | `too_many_attempts` | 5 wrong guesses burned the code |
+
+Every failure body also has `canResend` (true except for `CODE_INVALID`).
+`POST /api/auth/account/identifier/confirm` returns the same `code`/`reason`/
+`canResend` values for a failed code (it used to answer only `INVALID_CODE`).
+
+Codes are stored in MongoDB (hashed with a server pepper), so they survive a
+restart and are shared by every API instance. A re-send replaces the code but
+the previous code keeps working until its own expiry, so a second email/SMS
+arriving late does not invalidate the one the user is typing.
+
+### Maintenance / read-only gate
+
+While `GET /api/app/features` reports `maintenanceMode: true`, every `/api/*`
+route answers **503** with `{ "code": "MAINTENANCE", "message": <admin message>,
+"maintenanceUntil?": <ISO date> }`, except:
+
+- `/api/status/health`, `/api/health`, `/api/config`, `/api/app/features`
+- every `/api/auth/*` route
+- every `/api/admin/*` route
+
+Read-only mode (`readOnlyMode: true`) answers **503** `{ "code": "READ_ONLY" }`
+for non-`GET/HEAD/OPTIONS` requests, with the same exemptions.
+
+`GET /api/app/features` adds the effective values:
+
+| Field | Notes |
+|---|---|
+| `maintenanceMode` | effective boolean; `false` again once `maintenanceUntil` has passed |
+| `maintenanceMessage` | the admin message (already present) |
+| `maintenanceUntil` | ISO timestamp of an auto-expiry window, or `null` |
+
+Socket.IO: a new connection while maintenance is on fails the namespace
+handshake, and the client receives it as `connect_error` with
+`err.data = { code: "MAINTENANCE", message }`. Sockets that were already
+connected stay connected but their events are dropped and the server emits
+`maintenance` with the same payload; they resume automatically when maintenance
+is turned off (a server disconnect is not auto-reconnected by the client).
+
+### Admin
+
+`PUT /api/admin/platform-settings` (CSRF required) accepts the optional
+`maintenanceUntil` field in `settings`: an ISO date (within the next 7 days) or
+`null`. It is a one-shot window — once the date passes the gate releases on its
+own, no second save is needed. Turning `maintenanceMode` off clears it. Every
+change is audited as `platform_settings_update`, as before.
+
