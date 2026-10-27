@@ -55,9 +55,15 @@ function desktop(): DesktopBridge | null {
 /** The `Notifier` Capacitor plugin, when the Android shell has it. */
 export function androidNotifier(): AndroidNotifierPlugin | null {
   const cap = capacitor();
-  if (!cap?.isNativePlatform?.() || cap.getPlatform?.() !== 'android') return null;
+  if (!cap) return null;
   const plugin = cap.Plugins?.Notifier as AndroidNotifierPlugin | undefined;
-  return plugin && typeof plugin.notify === 'function' ? plugin : null;
+  if (!plugin || typeof plugin.notify !== 'function') return null;
+  // The presence of the native plugin is the strongest signal, but a browser
+  // page could publish a same-named object, so prefer the platform checks when
+  // the bridge exposes them (older bridges vary in what they report).
+  const native = cap.isNativePlatform ? cap.isNativePlatform() === true : true;
+  const platform = cap.getPlatform?.();
+  return native && (platform === undefined || platform === 'android') ? plugin : null;
 }
 
 export function isDesktopShell(): boolean {
