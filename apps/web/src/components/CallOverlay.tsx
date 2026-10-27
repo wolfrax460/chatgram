@@ -803,11 +803,6 @@ export function CallOverlay({ call }: { call: CallState }) {
         </div>
       ) : null}
 
-      {call.status === 'reconnecting' ? (
-        <div className="absolute inset-x-4 top-16 z-30 rounded-xl bg-amber-500/20 px-3 py-2 text-center text-[12.5px] font-semibold text-amber-200">
-          Reconnecting… your connection dropped.
-        </div>
-      ) : null}
 
       {/* controls */}
       <div className="relative z-10 flex shrink-0 flex-wrap items-center justify-center gap-2 px-3 py-3 sm:gap-3">
@@ -932,11 +927,6 @@ export function CallOverlay({ call }: { call: CallState }) {
       {call.cameraOn === false && call.video && !call.screenSharing ? (
         <p className="relative z-10 -mt-1 pb-2 text-center text-[11.5px] text-white/65" data-testid="camera-off-note">
           Camera off — others can still hear your audio.
-        </p>
-      ) : null}
-      {android && screenShareReason ? (
-        <p className="relative z-10 -mt-1 pb-2 text-center text-[11.5px] text-white/60" data-testid="screen-share-unsupported-note">
-          {screenShareReason}
         </p>
       ) : null}
 
