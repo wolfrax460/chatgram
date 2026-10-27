@@ -25,7 +25,7 @@ export function AndroidUpdateBanner() {
       role="status"
       aria-live="polite"
       data-testid="android-update-banner"
-      className="fixed inset-x-0 bottom-0 z-[66] border-t border-brand-600/30 bg-brand-700 px-3 py-2 text-[12.5px] font-semibold text-white shadow-lg"
+      className="fixed inset-x-0 top-0 z-[60] border-b border-brand-600/30 bg-brand-700 px-3 py-2 text-[12.5px] font-semibold text-white shadow-lg"
     >
       <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-center gap-2">
         <Smartphone className="h-4 w-4 shrink-0" />

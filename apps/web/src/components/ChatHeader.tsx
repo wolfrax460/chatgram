@@ -115,7 +115,7 @@ export function ChatHeader({
 
   return (
     <header className="relative flex items-center gap-3 border-b border-ink-200 px-3 py-2.5 dark:border-white/10">
-      <button type="button" className="btn-ghost !px-2 lg:hidden" onClick={onBack} title="Back" aria-label="Back">
+      <button type="button" className="btn-ghost !px-2 md:hidden" onClick={onBack} title="Back" aria-label="Back">
         <ChevronLeft className="h-5 w-5" />
       </button>
 
@@ -185,7 +185,7 @@ export function ChatHeader({
       </button>
       {!ai ? (
         <>
-          <span title={readOnly ? READ_ONLY_CALL_HINT : undefined} className="inline-flex">
+          <span title={readOnly ? READ_ONLY_CALL_HINT : undefined} className="hidden sm:inline-flex">
             <button
               type="button"
               className={`btn-ghost !px-2 ${readOnly ? 'cursor-not-allowed opacity-40' : ''}`}
@@ -197,7 +197,7 @@ export function ChatHeader({
               <Phone className="h-5 w-5" />
             </button>
           </span>
-          <span title={readOnly ? READ_ONLY_CALL_HINT : undefined} className="inline-flex">
+          <span title={readOnly ? READ_ONLY_CALL_HINT : undefined} className="hidden sm:inline-flex">
             <button
               type="button"
               className={`btn-ghost !px-2 ${readOnly ? 'cursor-not-allowed opacity-40' : ''}`}

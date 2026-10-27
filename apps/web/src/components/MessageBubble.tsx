@@ -133,8 +133,8 @@ export function MessageBubble({
         firstInGroup ? 'mt-2' : 'mt-[3px]'
       }`}
     >
-      <div className={`relative flex max-w-[65%] items-center gap-1 ${mine ? 'flex-row' : 'flex-row-reverse'}`}>
-        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+      <div className={`relative flex min-w-0 max-w-[78%] items-end gap-1 ${mine ? 'flex-row' : 'flex-row-reverse'}`}>
+        <div className={`absolute -top-8 z-20 hidden items-center gap-0.5 rounded-full bg-white/95 px-1 py-0.5 shadow ring-1 ring-ink-200/60 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 dark:bg-ink-800/95 dark:ring-white/10 md:flex ${mine ? 'right-0' : 'left-0'}`}>
           <button type="button" className={hoverBtn} title="React" onClick={() => setReactOpen((v) => !v)}>
             <Smile className="h-4 w-4" />
           </button>
@@ -149,6 +149,15 @@ export function MessageBubble({
           </button>
         </div>
 
+        <button
+          type="button"
+          className="absolute -right-1 -top-2 z-10 grid h-6 w-6 place-items-center rounded-full bg-white/90 text-ink-500 shadow ring-1 ring-ink-200/60 dark:bg-ink-700/90 dark:text-ink-200 dark:ring-white/10 md:hidden"
+          title="Message actions"
+          aria-label="Message actions"
+          onClick={() => setMenuOpen((value) => !value)}
+        >
+          <MoreVertical className="h-3.5 w-3.5" />
+        </button>
         {reactOpen ? (
           <div
             className={`absolute -top-9 z-20 flex gap-0.5 rounded-full border border-ink-200 bg-white px-1.5 py-1 shadow-lg dark:border-white/10 dark:bg-ink-700 ${
@@ -177,6 +186,26 @@ export function MessageBubble({
               mine ? 'right-full mr-1' : 'left-full ml-1'
             }`}
           >
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10"
+              onClick={() => {
+                actions.onReply(message);
+                setMenuOpen(false);
+              }}
+            >
+              <Reply className="h-4 w-4" /> Reply
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-ink-100 dark:hover:bg-white/10"
+              onClick={() => {
+                void copy();
+                setMenuOpen(false);
+              }}
+            >
+              <Copy className="h-4 w-4" /> Copy
+            </button>
             <button
               type="button"
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10"
@@ -277,7 +306,7 @@ export function MessageBubble({
 
         <div className={`min-w-0 ${message.reactions.length > 0 ? 'pb-4' : ''}`}>
           <div
-            className={`relative rounded-2xl px-3.5 py-2 text-[14.5px] shadow-sm ${
+            className={`relative min-w-0 max-w-full break-words rounded-2xl px-3.5 py-2 text-[14.5px] shadow-sm ${
               mine
                 ? `bg-brand-600 text-white ${lastInGroup ? 'rounded-br-md' : 'rounded-br-2xl'}`
                 : `border border-ink-200/70 bg-white text-ink-800 dark:border-white/[.06] dark:bg-ink-700 dark:text-ink-100 ${

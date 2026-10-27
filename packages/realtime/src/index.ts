@@ -460,4 +460,9 @@ export class RealtimeClient {
     this.socket?.disconnect();
     this.socket = null;
   }
+
+  /** Manual "Retry" from the reconnect bar: reconnect the existing socket. */
+  reconnect(): void {
+    this.socket?.connect();
+  }
 }

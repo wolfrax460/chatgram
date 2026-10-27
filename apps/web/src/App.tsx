@@ -26,6 +26,7 @@ import { ChatHeader } from './components/ChatHeader';
 import { MessageBubble } from './components/MessageBubble';
 import Composer from './components/Composer';
 import { CallOverlay } from './components/CallOverlay';
+import { MobileNav } from './components/MobileNav';
 import { CallAlerts } from './components/CallAlerts';
 import { NewChatPanel } from './components/NewChatPanel';
 import { useIsOnline } from './lib/presence';
@@ -1113,8 +1114,25 @@ function Shell({ features }: { features: AppFeatures | null }) {
           <p className="min-w-0 flex-1">{READ_ONLY_BANNER}</p>
         </div>
       ) : null}
-      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <nav className="hidden w-[76px] shrink-0 flex-col items-center gap-1 border-r border-ink-200 py-4 dark:border-white/10 sm:flex">
+      {!connected ? (
+        <div
+          role="status"
+          data-testid="reconnect-bar"
+          className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-300/60 bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+        >
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-amber-500/40 border-t-amber-700" aria-hidden="true" />
+          Reconnecting…
+          <button
+            type="button"
+            className="rounded-md border border-amber-400/60 px-2 py-0.5 text-[11.5px] font-bold hover:bg-amber-100 dark:hover:bg-amber-500/20"
+            onClick={() => realtime.reconnect()}
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
+      <div className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${selected ? '' : 'pb-[calc(56px+env(safe-area-inset-bottom))] md:pb-0'}`}>
+      <nav className="hidden w-[76px] shrink-0 flex-col items-center gap-1 border-r border-ink-200 py-4 dark:border-white/10 md:flex">
         {NAV.map(({ key, label, Icon }) => {
           const badge = key === 'calls' ? missedCalls.data?.count ?? 0 : 0;
           return (
@@ -1199,7 +1217,7 @@ function Shell({ features }: { features: AppFeatures | null }) {
       {tab === 'chats' || tab === 'ai' ? (
         <>
           <aside
-            className={`${tab === 'ai' || selected ? 'hidden lg:flex' : 'flex'} min-h-0 w-full shrink-0 flex-col overflow-hidden border-r border-ink-200 dark:border-white/10 sm:w-[330px]`}
+            className={`${tab === 'ai' || selected ? 'hidden lg:flex' : 'flex'} min-h-0 w-full shrink-0 flex-col overflow-hidden border-r border-ink-200 dark:border-white/10 md:w-[330px]`}
           >
             {newChatOpen ? (
               <NewChatPanel
@@ -1278,7 +1296,7 @@ function Shell({ features }: { features: AppFeatures | null }) {
           ) : selected ? (
             <ChatWindow chat={selected} meId={meId} onBack={() => setSelectedId(null)} readOnly={readOnly} />
           ) : (
-            <section className="hidden min-h-0 flex-1 place-items-center overflow-y-auto px-6 py-6 text-center sm:grid">
+            <section className="hidden min-h-0 flex-1 place-items-center overflow-y-auto px-6 py-6 text-center md:grid">
               <div className="w-full max-w-md">
                 <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-brand-600 text-white shadow-lg">
                   <MessageCircle className="h-8 w-8" />
@@ -1373,6 +1391,19 @@ function Shell({ features }: { features: AppFeatures | null }) {
           )}
         </div>
       )}
+
+      {!selected ? (
+        <MobileNav
+          tab={tab}
+          onSelect={setTab}
+          badges={{
+            chats: (chats.data ?? []).reduce((total, row) => total + (row.unreadCount ?? 0), 0),
+            calls: missedCalls.data?.count ?? 0,
+            ai: aiUnread,
+          }}
+          hasStatus={false}
+        />
+      ) : null}
 
       {confirmLogout ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
