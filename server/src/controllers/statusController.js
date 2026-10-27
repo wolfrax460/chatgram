@@ -1,4 +1,5 @@
 // Status controller
+const mongoose = require('mongoose');
 const Status = require('../models/Status');
 const User = require('../models/User');
 const storage = require('../utils/storage');
@@ -6,6 +7,20 @@ const statusMedia = require('../utils/statusMedia');
 const { removeStatusWithMedia } = require('../utils/statusCleanup');
 
 const MAX_CAPTION_LENGTH = 700;
+// Statuses live 24 h (utils/statusCleanup deletes the row + media after that).
+const STATUS_TTL_MS = 24 * 60 * 60 * 1000;
+// Upper bound for one "Viewed by" response. `count` still reports the real
+// number of viewers and `truncated` tells the client the list was capped.
+const MAX_STATUS_VIEWERS = 200;
+
+/** True once a status has passed its 24 h lifetime (or its explicit expiry). */
+function isStatusExpired(status, now = Date.now()) {
+  if (!status) return true;
+  const created = status.createdAt ? new Date(status.createdAt).getTime() : NaN;
+  if (Number.isFinite(created) && created + STATUS_TTL_MS <= now) return true;
+  const expires = status.expiresAt ? new Date(status.expiresAt).getTime() : NaN;
+  return Number.isFinite(expires) && expires <= now;
+}
 
 function captionOf(raw) {
   if (raw === undefined || raw === null) return null;
@@ -264,7 +279,9 @@ const deleteStatus = async (req, res) => {
 // @access  Private
 const viewStatus = async (req, res) => {
   try {
-    const status = await Status.findById(req.params.id);
+    // `+viewedAt` is needed to refresh the per-view timestamp. The path is
+    // `select: false`, so the normal status feed never exposes view times.
+    const status = await Status.findById(req.params.id).select('+viewedAt');
 
     if (!status) {
       return res.status(404).json({ message: 'Status not found' });
@@ -274,8 +291,14 @@ const viewStatus = async (req, res) => {
     const hasViewed = status.viewedBy.some(id => id.equals(req.user._id));
     if (!hasViewed) {
       status.viewedBy.push(req.user._id);
-      await status.save();
     }
+
+    // Record WHEN this view happened and refresh it if the same user opens the
+    // status again ("latest view time"). A dotted set only writes this user's
+    // map key, so concurrent viewers never overwrite each other's timestamp.
+    status.set(`viewedAt.${String(req.user._id)}`, new Date());
+
+    await status.save();
 
     res.json({ message: 'Status marked as viewed' });
   } catch (error) {
@@ -284,6 +307,84 @@ const viewStatus = async (req, res) => {
       return res.status(400).json({ message: 'Invalid status ID' });
     }
     res.status(500).json({ message: 'Server error marking status as viewed' });
+  }
+};
+
+// @desc    Who viewed my status (author only — like WhatsApp's "Viewed by" list)
+// @route   GET /api/status/:id/viewers
+// @access  Private (status author)
+const getStatusViewers = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+      return res.status(400).json({ message: 'Invalid status ID' });
+    }
+
+    const status = await Status.findById(req.params.id)
+      .select('+viewedAt')
+      .populate('viewedBy', '_id displayName avatarUrl');
+
+    // Missing and expired are both 404: the feature must not reveal anything
+    // about a status that is no longer visible to anyone.
+    if (!status || isStatusExpired(status)) {
+      return res.status(404).json({ message: 'Status not found' });
+    }
+
+    // Ownership is enforced here, not only in the UI.
+    if (String(status.userId) !== String(req.user._id)) {
+      return res.status(403).json({
+        message: 'Only the author can see who viewed this status',
+        code: 'NOT_STATUS_AUTHOR',
+      });
+    }
+
+    // `isContact` tells the panel whether the viewer is in the author's
+    // address book (the author is the caller here).
+    const me = await User.findById(req.user._id).select('contacts');
+    const contactIds = new Set(((me && me.contacts) || []).map((contact) => String(contact)));
+
+    const seen = new Set();
+    const viewers = [];
+    for (const viewer of status.viewedBy || []) {
+      // A populated entry is null when the account has since been deleted.
+      if (!viewer || !viewer._id) continue;
+      const viewerId = String(viewer._id);
+      // The author never appears in their own viewers list.
+      if (viewerId === String(req.user._id)) continue;
+      // Legacy documents may hold the same id twice; show one row per person.
+      if (seen.has(viewerId)) continue;
+      seen.add(viewerId);
+
+      const stamp = status.viewedAt && typeof status.viewedAt.get === 'function'
+        ? status.viewedAt.get(viewerId)
+        : null;
+      const when = stamp ? new Date(stamp) : null;
+      viewers.push({
+        id: viewerId,
+        displayName: viewer.displayName || 'Unknown',
+        avatarUrl: viewer.avatarUrl || '',
+        // null for views recorded before timestamps were stored.
+        viewedAt: when && !Number.isNaN(when.getTime()) ? when.toISOString() : null,
+        isContact: contactIds.has(viewerId),
+      });
+    }
+
+    // Newest view first; legacy views without a timestamp go last.
+    viewers.sort((a, b) => {
+      const at = a.viewedAt ? Date.parse(a.viewedAt) : Number.NEGATIVE_INFINITY;
+      const bt = b.viewedAt ? Date.parse(b.viewedAt) : Number.NEGATIVE_INFINITY;
+      if (at !== bt) return bt - at;
+      return a.displayName.localeCompare(b.displayName);
+    });
+
+    const count = viewers.length;
+    return res.json({
+      count,
+      viewers: viewers.slice(0, MAX_STATUS_VIEWERS),
+      truncated: count > MAX_STATUS_VIEWERS,
+    });
+  } catch (error) {
+    console.error('Get status viewers error:', error);
+    return res.status(500).json({ message: 'Could not load the status viewers' });
   }
 };
 
@@ -326,5 +427,6 @@ module.exports = {
   createStatus,
   deleteStatus,
   viewStatus,
+  getStatusViewers,
   reportStatus,
 };

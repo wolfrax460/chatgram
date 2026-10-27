@@ -64,10 +64,29 @@ const statusSchema = new mongoose.Schema({
     default: () => new Date(Date.now() + 24 * 60 * 60 * 1000),
     expires: 25 * 60 * 60
   },
+  // WHO viewed: ids of every user who opened this status (de-duplicated — the
+  // view endpoint only pushes the first time). Kept as a plain ObjectId array
+  // so the existing feed populate and every current client keep working.
   viewedBy: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  }]
+  }],
+  // WHEN each viewer last viewed, keyed by the viewer's user id. This is the
+  // only thing that was missing for the owner-only "Viewed by" list: `viewedBy`
+  // has never stored per-view timestamps. It is a separate map (not a change to
+  // `viewedBy`) so no existing consumer breaks. Hidden from normal queries with
+  // `select: false` so the populated feed does not leak view times; the
+  // owner-only viewers endpoint opts in with `.select('+viewedAt')`.
+  //
+  // Views recorded before this field existed have no entry and are returned as
+  // `viewedAt: null`. Statuses live 24 h, so that gap closes on its own within
+  // a day of deploying.
+  viewedAt: {
+    type: Map,
+    of: Date,
+    select: false,
+    default: () => new Map()
+  }
 }, {
   timestamps: false // createdAt is explicit; expiresAt drives the TTL index
 });

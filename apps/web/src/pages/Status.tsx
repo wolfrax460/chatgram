@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CircleDashed, FileVideo, Music, Plus, Image as ImageIcon } from 'lucide-react';
+import { ChevronRight, CircleDashed, Eye, FileVideo, Music, Plus, Image as ImageIcon } from 'lucide-react';
 import { useSession, type StatusItem, type User } from '@chatgram/core';
 import { api } from '../lib/api';
 import { READ_ONLY_SEND_HINT } from '../lib/readOnly';
 import { Avatar, timeAgo } from '../components/status/Parts';
 import { StatusComposer } from '../components/status/StatusComposer';
 import { StatusViewer, type StatusGroup } from '../components/status/StatusViewer';
+import { StatusViewersPanel } from './status/StatusViewersPanel';
 
 /* --------------------------------------------------------------- helpers */
 
@@ -53,6 +54,8 @@ export default function Status({ readOnly = false }: { readOnly?: boolean }) {
   const me = useSession((s) => s.user);
   const [composing, setComposing] = useState(false);
   const [viewing, setViewing] = useState<StatusGroup | null>(null);
+  // Which of MY statuses the owner wants to see the viewers of.
+  const [viewersFor, setViewersFor] = useState<{ id: string; count: number } | null>(null);
 
   const statuses = useQuery({ queryKey: ['statuses'], queryFn: () => api.statuses() });
   const meId = me?.id ?? '';
@@ -60,6 +63,19 @@ export default function Status({ readOnly = false }: { readOnly?: boolean }) {
   const groups = useMemo(() => groupByUser(statuses.data ?? []), [statuses.data]);
   const mine = groups.find((group) => group.userId === meId);
   const others = groups.filter((group) => group.userId !== meId);
+
+  // The "Viewed by N" row covers the newest of my updates (the viewers
+  // endpoint is per status). The feed already carries the populated viewer
+  // list for my own statuses, so no extra request is needed to show the count.
+  const latestMine = mine?.items[mine.items.length - 1];
+  const myViewerCount = useMemo(() => {
+    if (!latestMine) return 0;
+    const ids = new Set<string>();
+    for (const viewer of latestMine.viewedBy) {
+      if (viewer.id && viewer.id !== meId) ids.add(viewer.id);
+    }
+    return ids.size;
+  }, [latestMine, meId]);
 
   const hasUnseen = (group: StatusGroup) =>
     group.items.some((status) => !status.viewedBy.some((viewer) => viewer.id === meId));
@@ -109,6 +125,24 @@ export default function Status({ readOnly = false }: { readOnly?: boolean }) {
           </div>
           {mine ? <span className="text-ink-500 dark:text-ink-400">{mediaIcons(mine.items)}</span> : null}
         </button>
+
+        {/* Owner-only: who viewed my latest update. Never rendered for other
+            people's statuses — the server enforces that too. */}
+        {mine ? (
+          <button
+            type="button"
+            data-testid="status-viewers-open"
+            onClick={() => {
+              const latest = mine.items[mine.items.length - 1];
+              if (latest) setViewersFor({ id: latest.id, count: myViewerCount });
+            }}
+            className="flex w-full items-center gap-2 py-2 pl-[76px] pr-4 text-left text-sm text-ink-600 hover:bg-ink-100/70 dark:text-ink-300 dark:hover:bg-white/[.04]"
+          >
+            <Eye className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="font-medium">Viewed by {myViewerCount}</span>
+            <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-ink-400" aria-hidden="true" />
+          </button>
+        ) : null}
 
         <p className="px-4 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wider text-ink-500 dark:text-ink-400">
           Recent updates
@@ -168,6 +202,13 @@ export default function Status({ readOnly = false }: { readOnly?: boolean }) {
       </div>
 
       {composing ? <StatusComposer onClose={() => setComposing(false)} /> : null}
+      {viewersFor ? (
+        <StatusViewersPanel
+          statusId={viewersFor.id}
+          initialCount={viewersFor.count}
+          onClose={() => setViewersFor(null)}
+        />
+      ) : null}
       {viewing ? (
         <StatusViewer
           group={viewing}

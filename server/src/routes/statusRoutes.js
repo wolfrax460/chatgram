@@ -9,6 +9,7 @@ const {
   createStatus,
   deleteStatus,
   viewStatus,
+  getStatusViewers,
   reportStatus
 } = require('../controllers/statusController');
 const { statusUpload } = require('../utils/upload');
@@ -38,6 +39,9 @@ router.delete('/:id', deleteStatus);
 
 // Mark status as viewed
 router.post('/:id/view', viewStatus);
+// Who viewed my status (author only). Must be declared before any broader
+// `/:id` GET route if one is ever added.
+router.get('/:id/viewers', getStatusViewers);
 router.post('/:id/report', reportStatus);
 
 module.exports = router;
