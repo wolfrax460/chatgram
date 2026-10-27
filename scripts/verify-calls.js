@@ -406,9 +406,12 @@ async function main() {
       .catch(() => false);
     if (!bannerGone) await diagnostics('group end', { A, B, C }, groupId, a.token);
     check('banner disappears when the room ends', bannerGone);
-    const endedCard = await waitForText(A, '[data-testid="call-card-status"]', /Ended/, 15_000);
+    // A4 made the card a compact one-line history row: the label says what the
+    // call was and the status column carries only the duration ("· 2:14"), so
+    // assert the duration rather than the old "Ended" word.
+    const endedCard = await waitForText(A, '[data-testid="call-card-status"]', /\d:\d\d/, 15_000);
     if (!endedCard) await diagnostics('call card ended', { A, B, C }, groupId, a.token);
-    check('call card shows Ended with the duration', Boolean(endedCard) && /\d:\d\d/.test(String(endedCard)), String(endedCard));
+    check('call card shows the duration after the call ends', Boolean(endedCard), String(endedCard));
 
     section('busy path');
     /* --------------------------------------------------- 4. busy path */

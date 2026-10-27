@@ -243,7 +243,7 @@ export default {
       },
       {
         platform: "android",
-        version: "1.1.4",
+        version: "1.1.5",
         date: "27 Oktoba 2026",
         items: [
           "Masasisho ndani ya programu: Chatgram hukagua APK mpya, hupakua kwa Wi-Fi au data ya mkononi (kulingana na upatikanaji), huthibitisha checksum, kisha hutoa � Sasisho liko tayari: gusa ili usakinishe �",

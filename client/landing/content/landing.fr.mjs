@@ -243,7 +243,7 @@ export default {
       },
       {
         platform: "android",
-        version: "1.1.4",
+        version: "1.1.5",
         date: "27 octobre 2026",
         items: [
           "Mises à jour dans l'application : Chatgram vérifie s'il existe un APK plus récent, le télécharge en Wi-Fi ou en données mobiles (selon la disponibilité), vérifie la somme de contrôle et propose « Mise à jour prête : touchez pour installer »",

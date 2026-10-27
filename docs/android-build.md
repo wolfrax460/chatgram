@@ -400,10 +400,10 @@ D:\androidstudio\cmdline-tools\latest\bin\apkanalyzer.bat dex packages $apk | Se
 
 ## 13. Known gaps
 
-- **No push notifications in the app.** The Android WebView does not implement the Web Notification
-  API, and no notification plugin is installed, so an incoming call or message while the app is in
-  the background cannot raise a system notification. Needs a Capacitor notification plugin (or
-  FCM) - unrelated to the 1.1.0 crash. POST_NOTIFICATIONS is declared for that future work.
+- **No remote push (FCM).** 1.1.5 ships local new-message notifications (see section 14): while the
+  app process is alive — backgrounded or screen locked — a message raises a system notification and
+  a tap opens that chat. If Android has killed the process, nothing can wake it without FCM
+  (Firebase project + device tokens + a server-side sender), which is still to do. iOS has no shell.
 - **No safe-area handling yet**, which is why targetSdk stays 34; see D59/D60.
 - **Bundled/offline app is not built**: needs a Vite relative base + root router basename in
   `apps/web` (out of scope here).
@@ -430,3 +430,28 @@ Publishing a new APK therefore means:
 - upload the APK to `/var/www/downloads/` (the file is owned by ubuntu) and update the `android`
   AppRelease row (version, versionCode, sha256, size, fileUrl **with** `?v=<version>`),
 - update `checksums.txt`, the landing constants and `scripts/validate.mjs`, then deploy the web.
+
+## 14. New-message notifications (shipped in 1.1.5, versionCode 6)
+
+The Android WebView cannot raise Web Notifications, so the app owns them:
+
+- `NotifierPlugin` (Capacitor name `Notifier`) creates the `messages` channel (high importance,
+  vibration, default sound) on load and exposes `requestPermission`, `getPermission`, `notify`,
+  `cancel`, `cancelAll`, `consumePending`.
+- `NotifierNotifications` posts with `NotificationCompat`, one notification per chat via Android's
+  `(tag, id)` pair, a per-chat `setGroup`, and a content `PendingIntent` into the singleTask
+  `MainActivity`. `cancelAll()` is filtered to the `messages` channel so the updater's own
+  notification is spared.
+- `NotifierStore` keeps the tapped chat id in `chatgram_notifier` SharedPreferences with a tap token,
+  so activity/process recreation never re-opens a chat twice. `MainActivity.onCreate`/`onNewIntent`
+  capture the tap.
+- Web side (`apps/web/src/lib/nativeNotifications.ts`): messages are handed to the plugin while the
+  page is not focused; on resume/`visibilitychange` the pending chat id is drained and the chat is
+  opened.
+- `VIBRATE` was added to the manifest (channel vibration silently does nothing without it).
+- Permission: Android 13+ shows the `POST_NOTIFICATIONS` prompt the first time; if the user denies
+  it, `notify()` resolves without posting (no crash) and the Settings toggle can ask again.
+- Small icon is `@mipmap/ic_launcher_foreground` — add a proper monochrome notification icon before
+  the first Play Store release.
+- Limits: local only (a killed process needs FCM); no per-chat mute handling in the channel itself
+  (the web layer already suppresses muted chats/DND before calling `notify`).

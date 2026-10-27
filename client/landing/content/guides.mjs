@@ -14,7 +14,7 @@ export const GUIDES_CONTENT = [
       {
         h2: 'What you need to get started',
         html: `<p>You need an email address or a Google account. Chatgram runs on Android 7.0 or newer, on 64-bit Windows 10 or newer, and in any current Chrome, Edge, Firefox or Safari. The same account works on all three, so you can start on your phone and continue on your PC.</p>
-<p>Install it here: the <a href="/downloads/chatgram-android.apk">Android APK</a> is 1,274,365 bytes (1.2 MB) and the <a href="/downloads/chatgram-windows-setup.exe">Windows installer</a> is 81,829,947 bytes (78.1 MB). Or open the <a href="/web/">web app</a> and sign in there; it is the same account.</p>`,
+<p>Install it here: the <a href="/downloads/chatgram-android.apk">Android APK</a> is 1,276,921 bytes (1.2 MB) and the <a href="/downloads/chatgram-windows-setup.exe">Windows installer</a> is 81,829,947 bytes (78.1 MB). Or open the <a href="/web/">web app</a> and sign in there; it is the same account.</p>`,
       },
       {
         h2: 'Create your account',
@@ -68,10 +68,10 @@ export const GUIDES_CONTENT = [
     sections: [
       {
         h2: 'Check the file before you download',
-        html: `<p>The current Android build is version 1.1.4, package ID <strong>app.chatgram.android</strong>, and requires Android 7.0 (API 24) or newer. It is a debug-signed build intended for direct installation.</p>
+        html: `<p>The current Android build is version 1.1.5, package ID <strong>app.chatgram.android</strong>, and requires Android 7.0 (API 24) or newer. It is a debug-signed build intended for direct installation.</p>
 <ul>
 <li><strong>File:</strong> chatgram-android.apk</li>
-<li><strong>Size:</strong> 1,274,365 bytes (1.2 MB)</li>
+<li><strong>Size:</strong> 1,276,921 bytes (1.2 MB)</li>
 <li><strong>Download link:</strong> <a href="/downloads/chatgram-android.apk">download chatgram-android.apk</a></li>
 </ul>
 <p>Download it only from this site or from the Chatgram download page, and never from a message someone sent you. The published file is served over HTTPS from /downloads/.</p>`,
@@ -97,12 +97,12 @@ export const GUIDES_CONTENT = [
       {
         h2: 'Verify the SHA-256 checksum (optional, recommended)',
         html: `<p>A checksum proves the file you downloaded is exactly the file that was published. The SHA-256 for this build is:</p>
-<p><code>ec07976581a36291bdef0182b9e181980e2cc3efc6bee6dad728800860f9f825</code></p>
+<p><code>0954e485aba13fa269363e72ddbef5302f88af2950890d298abd7e04ef9d35cd</code></p>
 <p>On a PC, run <code>Get-FileHash chatgram-android.apk -Algorithm SHA256</code> in PowerShell or <code>sha256sum chatgram-android.apk</code> on Linux, and compare the result. If the values differ, delete the file and download it again.</p>`,
       },
       {
         h2: 'Already installed an earlier build?',
-        html: `<p>Early 1.1.0 APKs could crash with “Chatgram keeps stopping” because of a packaging error; 1.1.2 fixed the crash. 1.1.3 adds in-app updates (download, checksum check, tap to install). Install 1.1.4 over the old app — the signing key is the same, so Android updates it in place and your account is untouched. If the crashing app still opens afterwards, uninstall it once and install 1.1.2 again.</p>`,
+        html: `<p>Early 1.1.0 APKs could crash with “Chatgram keeps stopping” because of a packaging error; 1.1.2 fixed the crash. 1.1.3 adds in-app updates (download, checksum check, tap to install). 1.1.5 adds new-message notifications. Install 1.1.5 over the old app — the signing key is the same, so Android updates it in place and your account is untouched. If the crashing app still opens afterwards, uninstall it once and install 1.1.2 again.</p>`,
       },
       {
         h2: 'First launch and permissions',

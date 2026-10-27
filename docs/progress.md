@@ -1,3 +1,36 @@
+## CALLING FIXES + NATIVE NOTIFICATIONS (web live 2026-10-27, APK 1.1.5/6)
+
+**Microphone/camera permission (A1)**
+- New `apps/web/src/lib/mediaPermissions.ts` + `components/MediaPermissionDialog.tsx`: secure-context and Permissions-API preflight (a remembered "denied" never prompts again, so we stop before it), error mapping for `NotAllowedError`, `NotFoundError`/`DevicesNotFoundError`, `NotReadableError`/`TrackStartError`, `OverconstrainedError`, `SecurityError`, `AbortError` and `TypeError`, numbered instructions per platform (Android app, Android Chrome, iOS Safari, other iOS browsers, desktop) and a "Try again" that re-runs the real action. Wired into `startCall`, `joinActiveCall`, `acceptCall` and the voice recorder; a failed capture while answering no longer declines the incoming call.
+- Verified the Android path needs no custom plugin: Capacitor 6's `BridgeWebChromeClient.onPermissionRequest()` (source in `apps/mobile/node_modules/@capacitor/android`) requests `CAMERA` + `RECORD_AUDIO` at runtime and grants only after the OS prompt; both are declared in the manifest, which is what `PermissionHelper.hasDefinedPermission` checks. Manifest gained `BLUETOOTH_CONNECT` (+ legacy pair) for call audio routing and optional `uses-feature` entries.
+- `Permissions-Policy: camera=(self), microphone=(self), display-capture=(self), fullscreen=(self)` now actually ships: the Build Output API ignores a top-level `headers` block, so `scripts/deploy-web.ps1` emits route-level header rules (verified live with curl). The header was absent before, i.e. media was allowed by default — it is hardening, not the cause of the denial.
+
+**Remote media and signalling (A2)**
+- `pc.addTrack()` built the SDP from local tracks, so an audio-only participant answered with one m-line and *rejected* the caller's video section — that is why a receiver sometimes never saw the caller. Peer setup now creates explicit `audio` + `video` transceivers and attaches tracks with `replaceTrack()`.
+- `pc.ontrack` no longer trusts `event.streams[0]` (a transceiver track has no stream id) and drops ended tracks, so toggling a camera off/on cannot leave a dead video element.
+- ICE `disconnected` now gets a 6 s grace period (was 2 s, which killed connections that were about to recover) before a restart with refreshed TURN credentials; `failed` restarts immediately; the 15 s window ends with "Connection lost — check your network" instead of a vague "connection dropped".
+- Remote autoplay: `.play()` retry plus a "Tap to enable sound" overlay when the browser blocks autoplay; local preview stays muted.
+- **TURN is configured but unreachable** (the likely cause of "Reconnecting…" on mobile data): the API mints short-lived coturn REST credentials for `turn:…:3478?transport=udp|tcp` and `turns:…:5349?transport=tcp`, `turnserver` listens on 3478/5349, the VM's iptables allows them, but both ports time out from the internet — the Oracle VCN security list only allows 22/80/443. The exact ingress rules (UDP 3478, TCP 3478, TCP/UDP 5349, UDP 49160-49200) are in `docs/reports/calling-permissions.md`. TURN/TLS on 443 is impossible here because nginx owns 443.
+
+**Call screen and history (A3/A4)**
+- One `statusLine()` mapping for every state (calling/incoming/connecting/active timer/reconnecting/ended), one `<h2 data-testid="call-status">` per state; the quality pill renders only when the call is active and quality is known, so "Reconnecting…" and "Good connection" can never appear together again.
+- Five labelled controls (Mute, Camera, Speaker, Flip, End) with 44 px targets and safe-area padding; everything else moved to a "More" bottom sheet (Participants, Add person, Chat, layout, fullscreen, PiP, screen share only when `getDisplayMedia` exists, incoming video, devices, audio only, minimise). Draggable self-view persisted in `localStorage["chatgram.call.selfView"]`, clamped clear of the header and controls. Adaptive grid 1→full, 2→2 cols, 3-4→2×2, 5-6→2 cols.
+- Removed the permanent "Screen sharing is not supported in the Android app yet" text.
+- Call history in chat is a compact one-line row (icon, "Missed voice call", "· 2:14", time) with tap-to-call-back.
+
+**Notifications on Android and Windows**
+- Web seam: `apps/web/src/lib/nativeNotifications.ts` detects the shell; `notify.ts` delegates (sender name becomes the title, chat id travels so a tap opens the chat) and keeps the Web Notification fallback; `App.tsx` drains notification taps into `openChat`.
+- Windows/Electron: `app.setAppUserModelId('com.chatgram.desktop')` (without it Windows toasts are attributed to `electron.exe`, lose the icon and drop the click), `chatgram:notify` is chat-aware, keeps the toast alive, and on click restores/focuses the window and sends `chatgram:open-chat`; preload exposes the payload form plus `onOpenChat`.
+- Android: new native plugin `Notifier` (`NotifierPlugin`/`NotifierNotifications`/`NotifierStore`, registered in `MainActivity`): `messages` channel (high importance, vibration), `POST_NOTIFICATIONS` request, one notification per chat via `(tag, id)`, tap → singleTask activity → pending chat id → `consumePending()`; `cancelAll()` is channel-scoped so the updater notification survives. `VIBRATE` added. Verified with `gradlew :app:assembleDebug` (BUILD SUCCESSFUL) and `apkanalyzer`/`aapt2`.
+- **Limit:** local notifications only. A killed Android process cannot be woken without FCM (credentials + server sender), which is a later round; iOS needs APNs.
+
+**Android 1.1.5 published (versionCode 6, 1,276,921 bytes, sha256 0954e485…9d35cd)**
+- `apps/mobile/build-apk.ps1` refused the build because its version guard hardcoded `versionCode 5`; the guard now reads `app/build.gradle` and compares both versionCode and versionName, so a bump cannot silently ship the wrong APK.
+- Release path used: signed release APK built and verified (`aapt2` badging + `apkanalyzer`), old file backed up on the server as `chatgram-android-1.1.4.apk.bak`, new bytes uploaded to `/var/www/downloads/chatgram-android.apk` (size + SHA-256 verified on the server), `checksums.txt` updated, then the `android` AppRelease row updated (version 1.1.5, versionCode 6, new sha/size, notes) and the feed checked: `GET /api/app/version?platform=android&current=1.1.4&build=5` returns `latestVersion 1.1.5`, `updateAvailable true` and the live download serves exactly 1,276,921 bytes. Landing constants, guides, `scripts/validate.mjs` and four locale files moved to 1.1.5 and redeployed (live page + guide verified).
+- `docs/android-build.md` gained section 14 (how the notification plugin works, its limits, and the missing monochrome notification icon before any Play Store release).
+
+Docs: `docs/reports/calling-permissions.md`, `docs/reports/native-notifications.md`.
+
 ## MOBILE UI + OTP + REMOTE KILL SWITCH (deployed 2026-10-27, backend #119)
 
 **Mobile UI (web, live)**

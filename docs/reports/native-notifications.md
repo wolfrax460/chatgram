@@ -56,24 +56,43 @@ muted chats) and the shell decides **how**.
 - `onOpenChat(callback)` subscribes to `chatgram:open-chat` and returns an unsubscribe
   function; the renderer receives nothing else from Node.
 
-## Android changes
+## Android changes (APK 1.1.5 / versionCode 6)
 
-See the Java plugin in `apps/mobile/android/app/src/main/java/app/chatgram/android/`
-(`NotifierPlugin`) plus its registration in `MainActivity`:
+New Java files in `apps/mobile/android/app/src/main/java/app/chatgram/android/`:
 
-- channel `messages` (high importance, vibration, default sound) created before the first
-  notification;
-- `requestPermission()` / `getPermission()` for Android 13+ `POST_NOTIFICATIONS`;
-- `notify({ title, body, chatId, tag })` posts/replaces one notification per chat, with a
-  tap that launches `MainActivity` single-task and stores the chat id for
-  `consumePending()`;
-- `cancel()` / `cancelAll()`.
+- `NotifierPlugin.java` — Capacitor plugin `@CapacitorPlugin(name = "Notifier")` with
+  `requestPermission()`, `getPermission()` (Android 13+ `POST_NOTIFICATIONS`, resolving
+  only after the user answers; below API 33 resolves granted immediately), `notify()`,
+  `cancel()`, `cancelAll()` and `consumePending()`. The `messages` channel is created in
+  `load()`, before the first notification.
+- `NotifierNotifications.java` — channel `messages` (`IMPORTANCE_HIGH`, vibration, default
+  sound, badge on), permission/enabled checks, `NotificationCompat` post/replace keyed by
+  Android's `(tag, id)` pair (one notification per chat), per-chat `setGroup`, and an
+  immutable content `PendingIntent` (`SINGLE_TOP | CLEAR_TOP`, activity is `singleTask`).
+  `cancelAll()` filters by the `messages` channel, so the updater's notification survives.
+- `NotifierStore.java` — the tapped chat id lives in `chatgram_notifier` SharedPreferences,
+  cleared atomically by `consumePending()`, with a tap token so activity/process recreation
+  cannot re-open a chat the user already visited.
+- `MainActivity.java` — registers the plugin and captures the launch intent plus
+  `onNewIntent()`.
+- `AndroidManifest.xml` — `VIBRATE` added (channel vibration silently does nothing without
+  it); `POST_NOTIFICATIONS` was already declared.
+
+No new Gradle dependencies (AndroidX core/appcompat already provide `NotificationCompat`).
+The small icon is the existing `@mipmap/ic_launcher_foreground` — the project has no
+dedicated notification icon asset, and adding a binary asset was out of scope.
+
+Verification: `gradlew :app:assembleDebug` → `BUILD SUCCESSFUL`; `apkanalyzer dex packages`
+lists the plugin and all six methods plus `MainActivity.onNewIntent`; `aapt2 dump badging`
+shows `POST_NOTIFICATIONS` and `VIBRATE`.
 
 **Honest limit:** this is a *local* notification. It is posted by our own process while the
-WebView is alive (backgrounded app, locked screen with the process still running). If
-Android has killed the process, nothing can wake it without a remote push: that needs FCM
-(project credentials + a server-side sender), which is a separate round. Also, iOS is not
-covered at all — Capacitor iOS would need APNs.
+web app (and its socket) is alive — backgrounded app, locked screen with the process still
+running. If Android has killed the process nothing can wake it without a remote push: that
+needs FCM (project credentials, a server sender keyed to device tokens, and a data message
+that starts the call/message flow), which is a separate round. The comment saying so is in
+`NotifierPlugin` and `NotifierNotifications`. iOS is not covered at all (APNs + Capacitor
+iOS would be a separate shell).
 
 ## Manual test checklist
 

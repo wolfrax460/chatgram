@@ -162,9 +162,19 @@ $badging = & $aapt2 dump badging $builtApk
 $pkgLine = ($badging | Select-String -Pattern '^package:' | Select-Object -First 1).Line
 Write-Host "  $pkgLine"
 if ($pkgLine -notmatch "name='app\.chatgram\.android'") { Fail 'Wrong applicationId in the APK' }
-if ($pkgLine -notmatch "versionCode='5'") {
-    Fail "Unexpected versionCode (expected 5). Bump versionCode for every release or Android refuses the update: $pkgLine"
+# Read the expected version from Gradle instead of hardcoding it: the old constant
+# said 5 and refused a perfectly good 1.1.5 (versionCode 6) build.
+$gradleText = Get-Content (Join-Path $repoDir 'apps\mobile\android\app\build.gradle') -Raw
+$expectedCode = [regex]::Match($gradleText, 'versionCode\s+(\d+)').Groups[1].Value
+$expectedName = [regex]::Match($gradleText, 'versionName\s+"([^"]+)"').Groups[1].Value
+if (-not $expectedCode) { Fail 'Could not read versionCode from apps/mobile/android/app/build.gradle' }
+if ($pkgLine -notmatch "versionCode='$expectedCode'") {
+    Fail "APK versionCode does not match app/build.gradle ($expectedCode). Bump both together: $pkgLine"
 }
+if ($expectedName -and $pkgLine -notmatch "versionName='$([regex]::Escape($expectedName))'") {
+    Fail "APK versionName does not match app/build.gradle ($expectedName): $pkgLine"
+}
+Ok "versionCode $expectedCode / versionName $expectedName match app/build.gradle"
 
 $tree = & $aapt2 dump xmltree $builtApk --file AndroidManifest.xml
 $activityLine = ($tree | Select-String -Pattern 'MainActivity' | Select-Object -First 1).Line
@@ -216,7 +226,7 @@ Step 'Done'
 Write-Host ("  APK     : {0}" -f $outputApk)
 Write-Host ("  size    : {0:N0} bytes ({1:N2} MB)" -f $size, ($size / 1MB))
 Write-Host ("  sha256  : {0}" -f $sha)
-Write-Host  '  version : 1.1.4 (versionCode 5), applicationId app.chatgram.android'
+Write-Host ("  version : {0} (versionCode {1}), applicationId app.chatgram.android" -f $expectedName, $expectedCode)
 Write-Host ''
 Write-Host '  Install on a phone with USB debugging:  adb install -r release-artifacts\chatgram-android.apk'
 Write-Host '  BACK UP C:\Users\<you>\.android\debug.keystore - without it updates fail.' -ForegroundColor Yellow
