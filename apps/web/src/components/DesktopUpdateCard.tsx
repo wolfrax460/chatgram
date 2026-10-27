@@ -32,6 +32,17 @@ function statusLine(state: DesktopUpdateState): string {
   }
 }
 
+/** Open the download page in the shell (or the browser) when auto-update is unavailable. */
+function openDownloadPage(): void {
+  const bridge = (window as unknown as { chatgramDesktop?: { updates?: { openDownloads?: () => Promise<boolean> } } })
+    .chatgramDesktop;
+  const open = bridge?.updates?.openDownloads;
+  if (open) {
+    void open().catch(() => undefined);
+    return;
+  }
+  window.open('https://chatgram-xi.vercel.app/downloads', '_blank', 'noopener');
+}
 export function DesktopUpdateCard() {
   const { state, busy, check, download, install, setAutoDownload } = useDesktopUpdate();
   const [installed, setInstalled] = useState<string | null>(null);
@@ -94,9 +105,21 @@ export function DesktopUpdateCard() {
                 <RotateCcw className="h-3.5 w-3.5" /> Restart to install
               </button>
             ) : null}
-            {state.status === 'available' || state.status === 'error' ? (
+            {state.status === 'available' ? (
               <button type="button" className="btn-primary !h-8 !px-3 !text-[12px]" onClick={() => void download()}>
                 <Download className="h-3.5 w-3.5" /> Download update
+              </button>
+            ) : null}
+            {state.status === 'error' || state.devMode ? (
+              // Auto-update cannot work in this build (electron-updater missing), so
+              // give a button that actually does something: open the download page.
+              <button
+                type="button"
+                className="btn-primary !h-8 !px-3 !text-[12px]"
+                onClick={() => openDownloadPage()}
+                data-testid="desktop-update-download-page"
+              >
+                <Download className="h-3.5 w-3.5" /> Download installer
               </button>
             ) : null}
             <button
