@@ -34,14 +34,16 @@ function statusLine(state: DesktopUpdateState): string {
 
 /** Open the download page in the shell (or the browser) when auto-update is unavailable. */
 function openDownloadPage(): void {
+  // Open the installer itself from the direct host: an installed 1.1.3 has a
+  // broken updater and its shell "downloads" page points at the wrong screen, so
+  // the reliable action is the 82 MB file (Range-capable, resumable) straight
+  // from the VM. Install it once; 1.1.4+ updates itself in the background.
+  const direct = 'https://chatgram.duckdns.org/downloads/chatgram-windows-setup.exe';
+  const opened = window.open(direct, '_blank', 'noopener');
+  if (opened) return;
   const bridge = (window as unknown as { chatgramDesktop?: { updates?: { openDownloads?: () => Promise<boolean> } } })
     .chatgramDesktop;
-  const open = bridge?.updates?.openDownloads;
-  if (open) {
-    void open().catch(() => undefined);
-    return;
-  }
-  window.open('https://chatgram-xi.vercel.app/#download', '_blank', 'noopener');
+  void bridge?.updates?.openDownloads?.().catch(() => undefined);
 }
 export function DesktopUpdateCard() {
   const { state, busy, check, download, install, setAutoDownload } = useDesktopUpdate();
