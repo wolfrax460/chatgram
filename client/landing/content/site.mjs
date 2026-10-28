@@ -63,13 +63,13 @@ export const SCREENSHOTS = {
 export const RELEASES = {
   windows: {
     platform: 'windows',
-    version: '1.1.2',
+    version: '1.1.3',
     fileName: 'chatgram-windows-setup.exe',
     fileUrl: '/downloads/chatgram-windows-setup.exe',
-    sizeBytes: 81830905,
-    sizeMB: '78.0',
-    shaShort: '078e3f50…e87e89',
-    shaFull: '078e3f50bfee2e5bb10ea8ed8528b56651182e3ba50d54781241900996e87e89',
+    sizeBytes: 82151571,
+    sizeMB: '78.3',
+    shaShort: '85365a85…61d4aa',
+    shaFull: '85365a8562f37c56c4d3e87bd9e66cca5638331d22f8ebcd8c24e1207a61d4aa',
     releasedText: '27 October 2026',
     releasedISO: '2026-10-27',
     requirements: 'Windows 10 or newer, 64-bit',
@@ -89,7 +89,7 @@ export const RELEASES = {
   },
   web: {
     platform: 'web',
-    version: '1.1.2',
+    version: '1.1.3',
     fileName: '',
     fileUrl: '/web/',
     sizeBytes: 0,
