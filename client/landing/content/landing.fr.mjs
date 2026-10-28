@@ -13,6 +13,7 @@ export default {
   ui: {
     skipToContent: 'Aller au contenu',
     mainNavigation: 'Navigation principale',
+    downloadLabel: 'Téléchargements Chatgram',
     toggleMenu: 'Ouvrir le menu',
     themeGroup: 'Thème de couleur',
     themeLight: 'Thème clair',
@@ -26,6 +27,7 @@ export default {
     lead: "Chatgram vous rapproche des personnes qui comptent : discussions en temps réel avec notes vocales et médias, groupes avec demandes d'adhésion, statuts de 24 h, appels audio et vidéo, et Chatgram AI pour vos questions et vos textes. Un compte partout, en français, kinyarwanda, anglais et swahili.",
     ctaPrimary: { label: 'Ouvrir Chatgram dans le navigateur', href: '/web/' },
     ctaSecondary: { label: "Télécharger l'application", href: '#download' },
+    ctaWeb: 'Ouvrir l’application web',
     platformAndroid: 'Android',
     platformWindows: 'Windows',
     platformWeb: 'Web — sans installation',

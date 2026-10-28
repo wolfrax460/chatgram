@@ -13,6 +13,7 @@ export default {
   ui: {
     skipToContent: 'Simbuka ujye ku birimo',
     mainNavigation: "Urutonde rw'ibanze",
+    downloadLabel: 'Gukurura Chatgram',
     toggleMenu: 'Fungura urutonde',
     themeGroup: "Ibara ry'urubuga",
     themeLight: 'Ibara ryera',
@@ -26,6 +27,7 @@ export default {
     lead: "Chatgram ikugira hafi y'abantu ukunda: ikiganiro mu gihe nyacyo gifite ubutumwa bw'amajwi n'ibifitishijwe, amatsinda asaba kwemererwa kwinjira, status y'amasaha 24, guhamagara mu majwi no mu mashusho, na Chatgram AI isubiza ibibazo ikagufasha kwandika. Konti imwe ku bikoresho byose, mu Kinyarwanda, Icyongereza, Igifaransa n'Ikiswahili.",
     ctaPrimary: { label: 'Fungura Chatgram mu mushakishamakuru', href: '/web/' },
     ctaSecondary: { label: 'Kurura porogaramu', href: '#download' },
+    ctaWeb: 'Fungura urubuga',
     platformAndroid: 'Android',
     platformWindows: 'Windows',
     platformWeb: 'Urubuga — nta gushyira',

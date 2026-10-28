@@ -13,6 +13,7 @@ export default {
   ui: {
     skipToContent: 'Ruka hadi maudhui',
     mainNavigation: 'Urambazaji mkuu',
+    downloadLabel: 'Vipakuliwa vya Chatgram',
     toggleMenu: 'Fungua menyu',
     themeGroup: 'Rangi ya mandhari',
     themeLight: 'Mandhari nyepesi',
@@ -26,6 +27,7 @@ export default {
     lead: 'Chatgram inakuweka karibu na watu unaowajali: gumzo la papo hapo lenye ujumbe wa sauti na maudhui, vikundi vinavyoidhinisha maombi ya kujiunga, hali ya saa 24, simu za sauti na video, na Chatgram AI kwa maswali na kusaidia kuandika. Akaunti moja kila mahali, kwa Kiswahili, Kiingereza, Kinyarwanda na Kifaransa.',
     ctaPrimary: { label: 'Fungua Chatgram kwenye kivinjari', href: '/web/' },
     ctaSecondary: { label: 'Pakua programu', href: '#download' },
+    ctaWeb: 'Fungua programu ya wavuti',
     platformAndroid: 'Android',
     platformWindows: 'Windows',
     platformWeb: 'Wavuti — hakuna usakinishaji',

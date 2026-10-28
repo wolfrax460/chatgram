@@ -84,6 +84,76 @@
     }
   }
 
+  /* --------------------------------------------------- install guide dialogs */
+  /* The download buttons are real links to the real files; this only opens the
+     install guide when the browser supports <dialog>. No storage, no cookies. */
+  var guideDialogs = document.querySelectorAll('dialog[data-install-guide]');
+  var guideOpeners = document.querySelectorAll('[data-install-guide-open]');
+  var lastOpener = null;
+
+  function openGuide(platform, opener) {
+    var dialog = document.getElementById('install-guide-' + platform);
+    if (!dialog || typeof dialog.showModal !== 'function') return false;
+    lastOpener = opener || null;
+    try {
+      dialog.showModal();
+    } catch (error) {
+      return false;
+    }
+    root.classList.add('guide-open');
+    var closeButton = dialog.querySelector('[data-install-guide-close]');
+    if (closeButton) closeButton.focus();
+    return true;
+  }
+
+  for (var o = 0; o < guideOpeners.length; o += 1) {
+    guideOpeners[o].addEventListener('click', function (event) {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      var platform = event.currentTarget.getAttribute('data-install-guide-open');
+      if (openGuide(platform, event.currentTarget)) event.preventDefault();
+    });
+  }
+
+  function wireGuideDialog(dialog) {
+    var closeButton = dialog.querySelector('[data-install-guide-close]');
+    if (closeButton) {
+      closeButton.addEventListener('click', function () {
+        dialog.close();
+      });
+    }
+    /* Clicking the backdrop (the dialog element itself) closes it. */
+    dialog.addEventListener('click', function (event) {
+      if (event.target === dialog) dialog.close();
+    });
+    dialog.addEventListener('close', function () {
+      root.classList.remove('guide-open');
+      if (lastOpener && typeof lastOpener.focus === 'function') lastOpener.focus();
+    });
+    /* A native dialog handles Escape itself; this keeps the fallback tidy. */
+    dialog.addEventListener('cancel', function () {
+      root.classList.remove('guide-open');
+    });
+  }
+
+  for (var gd = 0; gd < guideDialogs.length; gd += 1) wireGuideDialog(guideDialogs[gd]);
+
+  /* ---------------------------------------------------- sticky download bar */
+  var quickBar = document.querySelector('[data-quick-bar]');
+  if (quickBar) {
+    var barVisible = false;
+    var updateQuickBar = function () {
+      var y = window.scrollY || document.documentElement.scrollTop || 0;
+      var shouldShow = y > 600;
+      if (shouldShow === barVisible) return;
+      barVisible = shouldShow;
+      if (shouldShow) quickBar.removeAttribute('hidden');
+      else quickBar.setAttribute('hidden', '');
+    };
+    window.addEventListener('scroll', updateQuickBar, { passive: true });
+    updateQuickBar();
+  }
+
   /* ------------------------------------------------------- release feed data */
   var cards = document.querySelectorAll('.dl-card[data-platform]');
   if (!cards.length) return;

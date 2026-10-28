@@ -5,6 +5,7 @@
  * the markup reuses the design tokens/classes from src/styles.css so the existing
  * look and feel is preserved.
  */
+import { DIRECT_DOWNLOADS, INSTALL_GUIDE } from '../content/install-guide.mjs';
 import { ICON, PHOTOS } from '../content/media.mjs';
 import { GUIDES, LANGUAGES, OG_IMAGE, RELEASES, SCREENSHOTS, SITE } from '../content/site.mjs';
 
@@ -178,15 +179,17 @@ function photoFigure(photo, { className = '', loading = 'lazy', high = false }) 
 
 /* ---------------------------------------------------------------- sections */
 function hero(locale) {
+  const dl = locale.downloads;
   return `    <section class="hero">
       <div class="wrap hero-inner">
         <div class="hero-copy">
           <span class="hero-badge"><span class="dot"></span>${e(locale.hero.badge)}</span>
           <h1>${locale.hero.h1}</h1>
           <p class="lead">${e(locale.hero.lead)}</p>
-          <div class="hero-actions">
-            <a class="btn btn-primary btn-lg" href="${locale.hero.ctaPrimary.href}">${e(locale.hero.ctaPrimary.label)}</a>
-            <a class="btn btn-light btn-lg" href="${locale.hero.ctaSecondary.href}">${e(locale.hero.ctaSecondary.label)}</a>
+          <div class="hero-download" role="group" aria-label="${e(locale.ui.downloadLabel)}">
+            <a class="btn btn-primary" href="${RELEASES.windows.fileUrl}" data-install-guide-open="windows">${ICONS.windows}<span>${e(dl.windows.cta)}</span></a>
+            <a class="btn btn-light" href="${RELEASES.android.fileUrl}" data-install-guide-open="android">${ICONS.android}<span>${e(dl.android.cta)}</span></a>
+            <a class="btn btn-ghost" href="${SITE.appPath}">${ICONS.globe}<span>${e(locale.hero.ctaWeb)}</span></a>
           </div>
           <div class="hero-platforms">
             <span>${ICONS.android} ${e(locale.hero.platformAndroid)} ${RELEASES.android.sizeMB} MB</span>
@@ -209,6 +212,79 @@ ${locale.facts
   .join('\n')}
       </div>
     </div>`;
+}
+
+/* ------------------------------------------- download requests within reach */
+function quickBar(locale) {
+  const dl = locale.downloads;
+  return `  <nav class="quick-bar" data-quick-bar hidden aria-label="${e(locale.ui.downloadLabel)}">
+    <a class="quick-btn" href="${RELEASES.windows.fileUrl}" data-install-guide-open="windows" aria-label="${e(dl.windows.cta)}">${ICONS.windows}<span>${e(dl.windows.label)}</span></a>
+    <a class="quick-btn" href="${RELEASES.android.fileUrl}" data-install-guide-open="android" aria-label="${e(dl.android.cta)}">${ICONS.android}<span>${e(dl.android.label)}</span></a>
+    <a class="quick-btn" href="${SITE.appPath}" aria-label="${e(locale.hero.ctaWeb)}">${ICONS.globe}<span>${e(dl.web.label)}</span></a>
+  </nav>`;
+}
+
+/* ------------------------------------------------------ install guide dialogs */
+function fillRelease(text, release) {
+  return e(
+    text
+      .replace(/\{version\}/g, release.version)
+      .replace(/\{sizeMB\}/g, release.sizeMB)
+      .replace(/\{sizeBytes\}/g, formatBytes(release.sizeBytes))
+      .replace(/\{sha\}/g, release.shaFull || release.shaShort),
+  );
+}
+
+function stepsList(steps) {
+  return steps.map((step) => `          <li>${e(step)}</li>`).join('\n');
+}
+
+export function installDialogs(locale) {
+  const copy = INSTALL_GUIDE[locale.code];
+  const windows = RELEASES.windows;
+  const android = RELEASES.android;
+  const what = copy.what.map((item) => `          <li><span class="tick">${ICONS.check}</span>${e(item)}</li>`).join('\n');
+  const sha = (release) => e(release.shaFull || release.shaShort);
+
+  return `  <dialog class="install-guide install-guide-windows" id="install-guide-windows" data-install-guide="windows" data-testid="install-guide" aria-labelledby="install-guide-windows-title" aria-modal="true">
+    <div class="install-guide-panel">
+      <button type="button" class="install-guide-close" data-install-guide-close data-testid="install-guide-close" aria-label="${e(copy.close)}"><span aria-hidden="true">×</span></button>
+      <span class="eyebrow install-guide-kicker">${e(copy.kicker)}</span>
+      <h2 id="install-guide-windows-title">${e(copy.windows.title)}</h2>
+      <p class="install-guide-file">${fillRelease(copy.windows.file, windows)}</p>
+      <ol class="install-guide-steps">
+${stepsList(copy.windows.steps)}
+      </ol>
+      <p class="install-guide-verify"><code>${e(copy.windows.verify)}</code></p>
+      <p class="install-guide-sha"><span>${e(copy.shaLabel)}</span> <code>${sha(windows)}</code></p>
+      <a class="btn btn-primary install-guide-start" data-install-guide-start data-testid="install-guide-start" href="${DIRECT_DOWNLOADS.windows}" rel="noopener">${e(copy.start)}</a>
+      <h3>${e(copy.whatTitle)}</h3>
+      <ul class="install-guide-what">
+${what}
+      </ul>
+      <p class="install-guide-meta">${e(copy.noStore)}</p>
+    </div>
+  </dialog>
+
+  <dialog class="install-guide install-guide-android" id="install-guide-android" data-install-guide="android" data-testid="install-guide" aria-labelledby="install-guide-android-title" aria-modal="true">
+    <div class="install-guide-panel">
+      <button type="button" class="install-guide-close" data-install-guide-close data-testid="install-guide-close" aria-label="${e(copy.close)}"><span aria-hidden="true">×</span></button>
+      <span class="eyebrow install-guide-kicker">${e(copy.kicker)}</span>
+      <h2 id="install-guide-android-title">${e(copy.android.title)}</h2>
+      <p class="install-guide-file">${fillRelease(copy.android.file, android)}</p>
+      <ol class="install-guide-steps">
+${stepsList(copy.android.steps)}
+      </ol>
+      <p class="install-guide-sha"><span>${e(copy.shaLabel)}</span> <code>${sha(android)}</code></p>
+      <a class="btn btn-primary install-guide-start" data-install-guide-start data-testid="install-guide-start" href="${android.fileUrl}" rel="noopener">${e(copy.start)}</a>
+      <a class="install-guide-web" href="${SITE.appPath}">${e(copy.android.webInstead)}</a>
+      <h3>${e(copy.whatTitle)}</h3>
+      <ul class="install-guide-what">
+${what}
+      </ul>
+      <p class="install-guide-meta">${e(copy.noStore)}</p>
+    </div>
+  </dialog>`;
 }
 
 function sectionHead(block) {
@@ -619,6 +695,7 @@ export function renderLocalePage({ locale, siteUrl, cssHref, jsHref }) {
   })}
 <body>
 ${header(locale)}
+${quickBar(locale)}
   <main id="main">
 ${hero(locale)}
 ${features(locale)}
@@ -632,6 +709,7 @@ ${whatsNew(locale)}
 ${faq(locale)}
   </main>
 ${footer(locale)}
+${installDialogs(locale)}
 </body>
 </html>
 `;
