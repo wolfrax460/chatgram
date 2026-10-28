@@ -439,5 +439,17 @@ becomes one content-free AdminInbox row (`type: push_failure`,
 `normalized: push:<tokenId>`, `count++`) containing only the sanitized Firebase
 error code and platform.
 
+## Group AI membership (2026-10-28, fix)
+
+Adding the built-in Chatgram AI account to a group is the opt-in for group AI
+replies: `POST /api/chats` with the AI user id in `participantIds`, or
+`POST /api/chats/:id/participants` with that id, sets
+`groupSettings.aiMentions = true`, so members can write `@Chatgram AI ...`
+without enabling the separate toggle. Removing the AI account from the group sets
+`aiMentions = false` again, so a later mention cannot silently re-add it through
+the reply path. `aiReplyVisibility` is unchanged (`asker` by default, `everyone`
+optional). Admins can still turn the flag off/on explicitly from group settings.
+
+
 
 

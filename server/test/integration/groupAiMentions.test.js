@@ -319,6 +319,9 @@ async function main() {
   }
 
   const created = { chats: [], users: [], reports: [] };
+  // The built-in assistant account used by the "add Chatgram AI to a group" flow.
+  const aiAccount = require('../../src/utils/aiAccount');
+  const aiId = await aiAccount.ensureAiUser();
   // Snapshot the Telegram module functions: some notifier assertions run in this
   // process (the staging API has no bot token, so its real send is skipped and
   // not observable from here), and they are restored in the finally block.
@@ -350,6 +353,61 @@ async function main() {
     check('mention request accepted while the toggle is off', offMention.status === 201, offMention.status);
     check('toggle off: no AI reply', (await countAi(alice.accessToken, offChat)) === 0);
     await api('PATCH', `/api/chats/${offChat}`, { token: owner.accessToken, body: { groupSettings: { aiMentions: true } } });
+
+    // ---- 1b. adding the Chatgram AI member opts the group in ----------------
+    // The "add the assistant as a member" flow must be the opt-in: a group that
+    // shows "added Chatgram AI" and still has aiMentions=false silently drops
+    // every mention as feature_off (the reported production regression).
+    check('the Chatgram AI account exists', Boolean(aiId), aiId);
+    const aiMemberGroup = await api('POST', '/api/chats', {
+      token: owner.accessToken,
+      body: { type: 'group', groupName: `E2E AI MEMBER ${run}`, participantIds: [alice.user.id] },
+    });
+    check('a group can be created without enabling AI mentions', aiMemberGroup.status === 201 && aiMemberGroup.body?.groupSettings?.aiMentions !== true, aiMemberGroup.status);
+    const aiMemberChat = String(aiMemberGroup.body._id || aiMemberGroup.body.id);
+    created.chats.push(aiMemberChat);
+
+    const addAiMember = await api('POST', `/api/chats/${aiMemberChat}/participants`, {
+      token: owner.accessToken,
+      body: { participantIds: [String(aiId)] },
+    });
+    check('adding the Chatgram AI account as a member succeeds', addAiMember.status === 200, addAiMember.status);
+    const settingsAfterAdd = (await api('GET', `/api/chats/${aiMemberChat}`, { token: owner.accessToken })).body?.groupSettings;
+    check('adding the Chatgram AI member enables AI mention replies', settingsAfterAdd?.aiMentions === true, settingsAfterAdd);
+
+    const memberMention = await sendMention(alice, aiMemberChat, '@Chatgram AI AI_MEMBER_TEST explain DNS briefly');
+    check('the mention in the AI-member group is accepted', memberMention.status === 201, memberMention.status);
+    const memberReplies = await waitForAi(
+      alice.accessToken,
+      aiMemberChat,
+      (rows) => rows.some((row) => /AI_MEMBER_TEST/.test(textOf(row))),
+      { timeoutMs: 15000 },
+    );
+    check('a group with the Chatgram AI member answers a mention (no manual toggle)', memberReplies.length >= 1, memberReplies.length);
+
+    // Removing the AI member must opt the group out again: otherwise the
+    // mention path silently re-adds the account and keeps answering.
+    const removeAiMember = await api('DELETE', `/api/chats/${aiMemberChat}/participants/${String(aiId)}`, { token: owner.accessToken });
+    check('removing the Chatgram AI member succeeds', removeAiMember.status === 200, removeAiMember.status);
+    const settingsAfterRemove = (await api('GET', `/api/chats/${aiMemberChat}`, { token: owner.accessToken })).body?.groupSettings;
+    check('removing the Chatgram AI member disables AI mention replies', settingsAfterRemove?.aiMentions === false, settingsAfterRemove);
+    const repliesAfterRemove = await countAi(alice.accessToken, aiMemberChat);
+    await sendMention(alice, aiMemberChat, '@Chatgram AI AFTER_REMOVE should not answer');
+    await mute(2500);
+    check(
+      'a mention after the AI member was removed neither answers nor re-adds it',
+      (await countAi(alice.accessToken, aiMemberChat)) === repliesAfterRemove,
+      repliesAfterRemove,
+    );
+
+    // Creating a group with the AI account already in the member list opts in too.
+    const groupCreatedWithAi = await api('POST', '/api/chats', {
+      token: owner.accessToken,
+      body: { type: 'group', groupName: `E2E AI CREATE ${run}`, participantIds: [alice.user.id, String(aiId)] },
+    });
+    const chatCreatedWithAi = String(groupCreatedWithAi.body._id || groupCreatedWithAi.body.id);
+    created.chats.push(chatCreatedWithAi);
+    check('creating a group with the Chatgram AI member enables AI mention replies', groupCreatedWithAi.status === 201 && groupCreatedWithAi.body?.groupSettings?.aiMentions === true, groupCreatedWithAi.body?.groupSettings);
 
     // ---- 2. aliases + exactly one response per mention ---------------------
     const g2 = await createGroup(owner.accessToken, `E2E ALIAS ${run}`, alice.user.id);

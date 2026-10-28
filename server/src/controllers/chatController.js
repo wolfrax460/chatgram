@@ -145,7 +145,7 @@ const createChat = async (req, res) => {
     }
 
     const existingUsers = await User.find({ _id: { $in: ids } }).select(
-      '_id displayName whoCanAddToGroups contacts'
+      '_id displayName whoCanAddToGroups contacts isAiAccount'
     );
     if (existingUsers.length !== ids.length) {
       return res.status(404).json({ message: 'One or more members were not found' });
@@ -167,6 +167,10 @@ const createChat = async (req, res) => {
       });
     }
 
+    // Adding the built-in Chatgram AI account is the group's opt-in: the same
+    // `aiMentions` flag the AI toggle writes. Without this a group that shows
+    // "added Chatgram AI" would silently never answer a mention.
+    const includesAiMember = existingUsers.some((member) => member.isAiAccount === true);
     const chat = await Chat.create({
       type: 'group',
       groupName,
@@ -174,6 +178,7 @@ const createChat = async (req, res) => {
       groupCreatedBy: req.user._id,
       participants: [req.user._id, ...ids],
       groupAdmins: [req.user._id],
+      ...(includesAiMember ? { groupSettings: { aiMentions: true } } : {}),
     });
 
     const populatedChat = await Chat.findById(chat._id).populate(
@@ -519,7 +524,7 @@ const addParticipants = async (req, res) => {
     // "Who can add me to groups" privacy: when the target chose "only my
     // contacts", the requester must be one of their contacts.
     const targets = await User.find({ _id: { $in: toAdd } }).select(
-      '_id displayName whoCanAddToGroups contacts'
+      '_id displayName whoCanAddToGroups contacts isAiAccount'
     );
     const knownIds = new Set(targets.map((user) => String(user._id)));
     const onlyContacts = targets.filter(
@@ -543,7 +548,15 @@ const addParticipants = async (req, res) => {
       return res.status(400).json({ message: 'No matching users to add' });
     }
 
+    const addedAiMember = targets.some(
+      (user) => user.isAiAccount === true && addable.includes(String(user._id)),
+    );
     chat.participants.push(...addable);
+    if (addedAiMember && chat.groupSettings) {
+      // Adding the AI account itself opts the group in, so a mention right after
+      // "added Chatgram AI" is answered instead of silently dropped as feature_off.
+      chat.groupSettings.aiMentions = true;
+    }
     await chat.save();
 
     const actor = await User.findById(req.user._id).select('displayName');
@@ -591,9 +604,16 @@ const removeParticipant = async (req, res) => {
       return res.json({ message: 'Group deleted' });
     }
 
+    const removedUser = await User.findById(userId).select('displayName isAiAccount');
+    // Removing the AI member opts the group out. Without this, the mention path
+    // (groupMentions.ensureParticipant) would silently re-add the AI account on
+    // the next "@Chatgram AI ..." and keep answering a member who was removed.
+    if (removedUser?.isAiAccount === true && chat.groupSettings) {
+      chat.groupSettings.aiMentions = false;
+    }
+
     await chat.save();
 
-    const removedUser = await User.findById(userId).select('displayName');
     const actor = await User.findById(req.user._id).select('displayName');
     const actorName = isSelf ? (removedUser?.displayName || 'A member') : (actor?.displayName || 'An admin');
     await groupSystem.postSystemMessage(
