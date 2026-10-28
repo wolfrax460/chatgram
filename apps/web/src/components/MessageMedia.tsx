@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Image as ImageIcon, Mic, Paperclip } from 'lucide-react';
+import { Image as ImageIcon, Paperclip } from 'lucide-react';
 import type { Message } from '@chatgram/core';
+import { VoiceNotePlayer } from './VoiceNotePlayer';
 
 /**
  * Renders an attachment according to the message type.
@@ -47,14 +48,7 @@ export function MessageMedia({ message, mine }: { message: Message; mine: boolea
   }
 
   if (message.type === 'audio') {
-    return (
-      <div className={`mb-1 flex items-center gap-2 rounded-xl px-1 py-1 ${mine ? 'bg-white/15' : 'bg-black/5 dark:bg-white/10'}`}>
-        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${mine ? 'bg-white/25' : 'bg-brand-600 text-white'}`}>
-          <Mic className="h-4 w-4" />
-        </span>
-        <audio src={url} controls preload="metadata" className="h-8 w-56 max-w-full" />
-      </div>
-    );
+    return <VoiceNotePlayer src={url} mine={mine} />;
   }
 
   return (

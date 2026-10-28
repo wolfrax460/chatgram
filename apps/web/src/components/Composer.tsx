@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Smile, Paperclip, Send, Mic, Image as ImageIcon, FileText, Camera, X } from 'lucide-react';
 import { useRealtime } from '@chatgram/core';
-import { formatDuration, useVoiceRecorder } from '../lib/useVoiceRecorder';
+import { useVoiceRecorder } from '../lib/useVoiceRecorder';
 import { READ_ONLY_BANNER } from '../lib/readOnly';
+import { VoiceRecorderBar } from './VoiceRecorderBar';
 
 const EMOJIS = [
   '😀', '😂', '😊', '😍', '😎', '🤔', '😅', '🙃',
@@ -10,6 +11,13 @@ const EMOJIS = [
   '🔥', '❤️', '💚', '🎉', '✅', '❌', '⭐', '💯',
   '☕', '🍕', '⚽', '🎵', '📷', '📎', '💬', '🚀',
 ];
+
+/** Presses longer than this are "hold to record": releasing sends the clip. */
+const HOLD_TO_SEND_MS = 350;
+/** Slide this far left from the mic to arm the cancel target. */
+const CANCEL_DRAG_PX = 90;
+/** Slide this far up from the mic to lock the recording (hands-free). */
+const LOCK_DRAG_PX = 64;
 
 export interface ComposerProps {
   chatId: string;
@@ -58,12 +66,19 @@ export default function Composer({
 }: ComposerProps) {
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
+  // Voice-note gestures: `holding` is true while the mic is pressed (slide
+  // gestures possible); `cancelArmed` turns the bar's X red once the finger is
+  // over the cancel target.
+  const [holding, setHolding] = useState(false);
+  const [cancelArmed, setCancelArmed] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const typingTimer = useRef<number | null>(null);
+  const pressRef = useRef<{ pointerId: number; x: number; y: number; at: number; cancelArmed: boolean } | null>(null);
+  const clickHandledByPointer = useRef(false);
   const connected = useRealtime((s) => s.connected);
 
   const recorder = useVoiceRecorder((file) => onSendFile(file, 'audio'));
@@ -84,6 +99,20 @@ export default function Composer({
   useEffect(() => {
     if (recorder.error) onDismissNotice();
   }, [recorder.error, onDismissNotice]);
+
+  // Move focus into the recording bar when it opens: the composer underneath is
+  // hidden from assistive tech, and cancel/lock/pause/send are keyboard
+  // reachable from the bar. When recording ends, hand focus back to the input.
+  const wasRecording = useRef(false);
+  useEffect(() => {
+    if (!recorder.recording && wasRecording.current) {
+      requestAnimationFrame(() => textRef.current?.focus());
+    }
+    wasRecording.current = recorder.recording;
+    if (!recorder.recording || typeof document === 'undefined') return;
+    const bar = document.querySelector<HTMLElement>('[data-testid="voice-recording-bar"]');
+    bar?.focus({ preventScroll: true });
+  }, [recorder.recording]);
 
   function change(value: string) {
     if (readOnly) return;
@@ -116,31 +145,110 @@ export default function Composer({
     setAttachOpen(false);
   }
 
-  if (recorder.recording) {
-    return (
-      <div className="border-t border-ink-200 p-3 dark:border-white/10">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            className="btn-ghost !px-2 text-rose-600"
-            onClick={() => recorder.stop(true)}
-            title="Cancel"
-          >
-            ✕
-          </button>
-          <div className="flex flex-1 items-center gap-2 rounded-xl bg-rose-500/10 px-3 py-2">
-            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-rose-500" />
-            <span className="text-sm font-semibold text-rose-600 dark:text-rose-300">
-              Recording {formatDuration(recorder.seconds)}
-            </span>
-            <span className="ml-auto text-xs text-ink-500 dark:text-ink-400">tap ✓ to send</span>
-          </div>
-          <button type="button" className="btn-primary !px-3" onClick={() => recorder.stop(false)} title="Send">
-            ✓
-          </button>
-        </div>
-      </div>
-    );
+  /* ------------------------------------------------- voice-note gestures */
+
+  function startHandsFreeRecording() {
+    if (busy || readOnly || recorder.recording) return;
+    void recorder.start();
+  }
+
+  /** Pointer down on the mic: start recording immediately (hold or tap). */
+  function onMicPointerDown(event: React.PointerEvent<HTMLButtonElement>) {
+    if (busy || readOnly) return;
+    event.preventDefault();
+    // The compatibility click that follows this gesture must not start a
+    // second recording; keyboard activation (no pointerdown) still works.
+    clickHandledByPointer.current = true;
+    pressRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      at: Date.now(),
+      cancelArmed: false,
+    };
+    setHolding(true);
+    setCancelArmed(false);
+    try {
+      // Keep receiving moves/up even when the finger leaves the button.
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* older WebViews: the bar's buttons still work */
+    }
+    void recorder.start();
+  }
+
+  /** Drag left to cancel, drag up to lock (WhatsApp gestures). */
+  function onMicPointerMove(event: React.PointerEvent<HTMLButtonElement>) {
+    const press = pressRef.current;
+    if (!press || press.pointerId !== event.pointerId || recorder.locked) return;
+    const dx = event.clientX - press.x;
+    const dy = event.clientY - press.y;
+
+    if (dy <= -LOCK_DRAG_PX) {
+      pressRef.current = null;
+      setHolding(false);
+      setCancelArmed(false);
+      recorder.setLocked(true);
+      return;
+    }
+
+    const armed = dx <= -CANCEL_DRAG_PX;
+    if (armed !== press.cancelArmed) {
+      press.cancelArmed = armed;
+      setCancelArmed(armed);
+    }
+  }
+
+  function onMicPointerUp(event: React.PointerEvent<HTMLButtonElement>) {
+    // The click fired by this release is not a keyboard activation. Clear the
+    // flag shortly after, in case the browser does not send the click at all.
+    window.setTimeout(() => {
+      clickHandledByPointer.current = false;
+    }, 500);
+    const press = pressRef.current;
+    setHolding(false);
+    setCancelArmed(false);
+    if (press && press.pointerId === event.pointerId) {
+      pressRef.current = null;
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {
+        /* already released */
+      }
+    }
+    if (!press || press.pointerId !== event.pointerId) return;
+
+    if (recorder.locked) return;
+    if (press.cancelArmed) {
+      recorder.cancel();
+      return;
+    }
+    if (Date.now() - press.at >= HOLD_TO_SEND_MS) {
+      // Held long enough: release sends. A clip under 1 s is discarded by the
+      // recorder itself, so a slip of the finger never uploads an empty note.
+      recorder.stop(false);
+    }
+    // A quick tap keeps recording hands-free (the bar's send button finishes).
+  }
+
+  function onMicPointerCancel(event: React.PointerEvent<HTMLButtonElement>) {
+    const press = pressRef.current;
+    clickHandledByPointer.current = false;
+    pressRef.current = null;
+    setHolding(false);
+    setCancelArmed(false);
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      /* already released */
+    }
+    if (press && recorder.recording) recorder.cancel();
+  }
+
+  /** Click from keyboard activation (Enter/Space); pointer taps are handled above. */
+  function onMicClick() {
+    if (clickHandledByPointer.current) return;
+    startHandsFreeRecording();
   }
 
   return (
@@ -229,7 +337,11 @@ export default function Composer({
         </div>
       ) : null}
 
-      <form onSubmit={submit} className="flex items-end gap-1.5 p-2.5">
+      <form
+        onSubmit={submit}
+        aria-hidden={recorder.recording ? true : undefined}
+        className="flex items-end gap-1.5 p-2.5"
+      >
         <button
           type="button"
           className="btn-ghost !px-2"
@@ -298,15 +410,37 @@ export default function Composer({
         ) : (
           <button
             type="button"
-            className="btn-ghost !px-3"
-            onClick={() => void recorder.start()}
+            data-testid="voice-record-button"
+            className="btn-ghost touch-none !px-3"
+            onClick={onMicClick}
+            onPointerDown={onMicPointerDown}
+            onPointerMove={onMicPointerMove}
+            onPointerUp={onMicPointerUp}
+            onPointerCancel={onMicPointerCancel}
             disabled={busy || readOnly}
-            title={readOnly ? READ_ONLY_BANNER : 'Record a voice note'}
+            title={readOnly ? READ_ONLY_BANNER : 'Record voice message'}
+            aria-label={readOnly ? READ_ONLY_BANNER : 'Record voice message'}
           >
             <Mic className="h-5 w-5" />
           </button>
         )}
       </form>
+
+      {/* The composer stays mounted under the bar so the mic keeps its pointer
+          capture while the recording UI replaces the row visually. */}
+      {recorder.recording ? (
+        <VoiceRecorderBar
+          seconds={recorder.seconds}
+          paused={recorder.paused}
+          locked={recorder.locked}
+          holding={holding}
+          cancelArmed={cancelArmed}
+          onCancel={recorder.cancel}
+          onTogglePause={recorder.togglePause}
+          onLock={() => recorder.setLocked(true)}
+          onSend={() => recorder.stop(false)}
+        />
+      ) : null}
     </div>
   );
 }
