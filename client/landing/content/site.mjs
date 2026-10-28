@@ -63,15 +63,15 @@ export const SCREENSHOTS = {
 export const RELEASES = {
   windows: {
     platform: 'windows',
-    version: '1.1.3',
+    version: '1.1.4',
     fileName: 'chatgram-windows-setup.exe',
-    fileUrl: '/downloads/chatgram-windows-setup.exe',
-    sizeBytes: 82151571,
+    fileUrl: 'https://chatgram.duckdns.org/downloads/chatgram-windows-setup.exe',
+    sizeBytes: 82151734,
     sizeMB: '78.3',
-    shaShort: '85365a85…61d4aa',
-    shaFull: '85365a8562f37c56c4d3e87bd9e66cca5638331d22f8ebcd8c24e1207a61d4aa',
-    releasedText: '27 October 2026',
-    releasedISO: '2026-10-27',
+    shaShort: 'd62411e8…339de5',
+    shaFull: 'd62411e885bc4ac4c490cc41f0c0b4f7f34edc6615243e6be82fb197e2339de5',
+    releasedText: '28 October 2026',
+    releasedISO: '2026-10-28',
     requirements: 'Windows 10 or newer, 64-bit',
   },
   android: {

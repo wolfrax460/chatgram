@@ -72,7 +72,7 @@ for (const [url, rel] of pages) {
   ok(Boolean(faqLd) && faqLd.mainEntity.length === faqVisible, 'FAQPage JSON-LD matches the visible FAQ count');
   ok(html.includes('hreflang="x-default"'), 'hreflang x-default present');
   ok(html.includes('/assets/og-image-1200x630.png'), '1200x630 og:image present');
-  ok(html.includes('href="/downloads/chatgram-windows-setup.exe"') && html.includes('href="/downloads/chatgram-android.apk"'), 'real download links present');
+  ok(html.includes('href="https://chatgram.duckdns.org/downloads/chatgram-windows-setup.exe"') && html.includes('href="/downloads/chatgram-android.apk"'), 'real download links present');
 }
 
 for (const rel of guides) {

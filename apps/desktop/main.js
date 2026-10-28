@@ -24,6 +24,10 @@ if (!app || typeof app.getPath !== 'function') {
   process.exit(1);
 }
 const WEB_ORIGIN = 'https://chatgram-xi.vercel.app';
+// Large binaries must come from the VM directly: the Vercel /downloads/* proxy
+// mangles Range responses (a 1 MB range came back as ~19 MB), which breaks the
+// 82 MB installer download. latest.yml, the .blockmap and the .exe all live here.
+const DOWNLOAD_ORIGIN = 'https://chatgram.duckdns.org';
 const DOWNLOAD_PAGE = WEB_ORIGIN + '/docs#downloads';
 
 /**
@@ -330,7 +334,7 @@ function setupUpdater() {
   }
 
   try {
-    updater.setFeedURL({ provider: 'generic', url: WEB_ORIGIN + '/downloads' });
+    updater.setFeedURL({ provider: 'generic', url: DOWNLOAD_ORIGIN + '/downloads' });
   } catch (error) {
     logUpdate('warn', 'could not set the update feed: ' + (error && error.message));
   }

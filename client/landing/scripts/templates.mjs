@@ -562,7 +562,7 @@ export function softwareJsonLd(siteUrl, lang = 'en') {
       applicationCategory: 'SocialNetworkingApplication',
       softwareVersion: RELEASES.windows.version,
       fileSize: String(RELEASES.windows.sizeBytes),
-      downloadUrl: `${siteUrl}/downloads/chatgram-windows-setup.exe`,
+      downloadUrl: RELEASES.windows.fileUrl,
       url: `${siteUrl}/`,
       offers: {
         '@type': 'Offer',
