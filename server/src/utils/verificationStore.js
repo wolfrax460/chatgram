@@ -8,8 +8,14 @@
  *
  * The 10-minute lifetime was also too tight in practice: transactional mail and
  * SMS are routinely delivered minutes late, so the user only had a few minutes
- * of usable window. Codes now live for 15 minutes (see TTL_MS) and the email /
- * SMS copy is generated from that same constant so it can never drift.
+ * of usable window. Codes now live 15 minutes by default (VERIFICATION_CODE_TTL_MINUTES
+ * can raise that without a deploy), and the email / SMS copy is generated from
+ * the same constant so it can never drift.
+ *
+ * Resending a code never invalidates the copies the user was already emailed:
+ * every still-live code is kept (bounded) until its own expiry. Submitted codes
+ * are normalized (whitespace stripped, zero-padded to 6) because a client that
+ * sends the code as a JSON number silently drops a leading zero.
  *
  * A TTL index on `expiresAt` is the cleanup path, but it deletes a few minutes
  * after expiry (EXPIRED_RETENTION_MS) so `check()` can distinguish `expired`
@@ -34,10 +40,25 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const VerificationCode = require('../models/VerificationCode');
 
-const TTL_MS = 15 * 60 * 1000; // 15 minutes — long enough for slow mail/SMS delivery
-const TTL_MINUTES = Math.floor(TTL_MS / 60_000);
+/**
+ * Code lifetime. Configurable because real SMTP/SMS delivery can queue: the
+ * product default is 15 minutes and an operator can raise it with
+ * VERIFICATION_CODE_TTL_MINUTES (5..120) without a code change.
+ */
+const DEFAULT_TTL_MINUTES = 15;
+const TTL_MINUTES = (() => {
+  const raw = process.env.VERIFICATION_CODE_TTL_MINUTES ?? process.env.OTP_TTL_MINUTES;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return DEFAULT_TTL_MINUTES;
+  return Math.min(120, Math.max(5, Math.round(value)));
+})();
+const TTL_MS = TTL_MINUTES * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000; // min gap between sends
 const MAX_ATTEMPTS = 5;
+// A resend keeps every code still inside its own lifetime, up to this many, so a
+// user who pressed "Resend" while mail was slow can still type whichever email
+// arrived (only the newest code used to verify before this).
+const MAX_PREVIOUS_CODES = 5;
 // How long an expired row is kept so `check()` can report `expired` instead of
 // `missing`. Must match the TTL index delay in models/VerificationCode.js.
 const EXPIRED_RETENTION_MS = 10 * 60 * 1000;
@@ -86,6 +107,19 @@ function generateCode() {
   return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
 }
 
+/**
+ * Canonical form of a submitted code: digits only, padded to 6 characters.
+ * A client that serializes the code as a JSON number drops a leading zero
+ * ("012345" arrives as 12345); padding restores it instead of rejecting a code
+ * the user actually received. Returns null when the input is not 1..6 digits.
+ * @returns {string|null}
+ */
+function normalizeCode(raw) {
+  const text = String(raw === undefined || raw === null ? '' : raw).replace(/\s+/g, '');
+  if (!/^[0-9]{1,6}$/.test(text)) return null;
+  return text.padStart(6, '0');
+}
+
 function safeEqual(a, b) {
   const bufA = Buffer.from(String(a));
   const bufB = Buffer.from(String(b));
@@ -94,7 +128,28 @@ function safeEqual(a, b) {
 }
 
 /**
+ * All previous codes that are still inside their own lifetime, plus the current
+ * one (which becomes previous on a re-send). Keeps both the new list format and
+ * the legacy single-previous fields readable. Bounded to MAX_PREVIOUS_CODES.
+ */
+function livePreviousCodes(record, nowMs) {
+  const list = [];
+  const push = (codeHash, expiresAt) => {
+    if (!codeHash || !expiresAt) return;
+    const at = new Date(expiresAt);
+    if (!Number.isFinite(at.getTime()) || at.getTime() <= nowMs) return;
+    if (list.some((entry) => entry.codeHash === codeHash)) return;
+    list.push({ codeHash, expiresAt: at });
+  };
+  for (const entry of record.previousCodes || []) push(entry && entry.codeHash, entry && entry.expiresAt);
+  push(record.previousCodeHash, record.previousExpiresAt); // legacy rows
+  push(record.codeHash, record.expiresAt); // the code being replaced
+  return list.slice(-MAX_PREVIOUS_CODES);
+}
+
+/**
  * Shared code check used by both stores.
+ * `code` must already be normalized (see normalizeCode).
  * @returns {{outcome: {ok: true} | {ok: false, reason: string}, action: 'delete'|'increment'|'keep'}}
  */
 function evaluate(record, code, nowMs) {
@@ -106,13 +161,23 @@ function evaluate(record, code, nowMs) {
   }
 
   const submitted = hashCode(code);
-  const currentOk = safeEqual(submitted, record.codeHash);
-  const previousExpired =
-    !record.previousExpiresAt || new Date(record.previousExpiresAt).getTime() <= nowMs;
-  const previousOk =
-    Boolean(record.previousCodeHash) && !previousExpired && safeEqual(submitted, record.previousCodeHash);
+  const matches = (hash) => Boolean(hash) && safeEqual(submitted, hash);
+  let accepted = matches(record.codeHash);
+  if (!accepted) {
+    for (const previous of record.previousCodes || []) {
+      if (!previous || !previous.expiresAt || new Date(previous.expiresAt).getTime() <= nowMs) continue;
+      if (matches(previous.codeHash)) {
+        accepted = true;
+        break;
+      }
+    }
+  }
+  if (!accepted && record.previousCodeHash && record.previousExpiresAt
+    && new Date(record.previousExpiresAt).getTime() > nowMs) {
+    accepted = matches(record.previousCodeHash);
+  }
 
-  if (!currentOk && !previousOk) {
+  if (!accepted) {
     return { outcome: { ok: false, reason: 'invalid' }, action: 'increment' };
   }
   return { outcome: { ok: true }, action: 'delete' };
@@ -139,11 +204,9 @@ function issueMemory(key, nowMs) {
   }
 
   const code = generateCode();
-  const keepPrevious = Boolean(existing) && existing.expiresAt > nowMs;
   memoryStore.set(key, {
     codeHash: hashCode(code),
-    previousCodeHash: keepPrevious ? existing.codeHash : null,
-    previousExpiresAt: keepPrevious ? existing.expiresAt : null,
+    previousCodes: existing ? livePreviousCodes(existing, nowMs) : [],
     expiresAt: nowMs + TTL_MS,
     attempts: 0,
     lastSentAt: nowMs,
@@ -196,13 +259,15 @@ async function issue(channel, target) {
     }
 
     const code = generateCode();
-    const keepPrevious = Boolean(existing) && new Date(existing.expiresAt).getTime() > nowMs;
     const record = {
       channel,
       target: normalized,
       codeHash: hashCode(code),
-      previousCodeHash: keepPrevious ? existing.codeHash : null,
-      previousExpiresAt: keepPrevious ? new Date(existing.expiresAt) : null,
+      // Keep every still-live emailed code, not just one: users hit "Resend"
+      // when SMTP is slow and then type whichever message arrives first.
+      previousCodes: existing ? livePreviousCodes(existing, nowMs) : [],
+      previousCodeHash: null,
+      previousExpiresAt: null,
       expiresAt: new Date(nowMs + TTL_MS),
       attempts: 0,
       lastSentAt: new Date(nowMs),
@@ -230,21 +295,24 @@ async function issue(channel, target) {
  */
 async function check(channel, target, code) {
   const normalized = normalizeTarget(target);
+  const submitted = normalizeCode(code);
+  // Non-numeric or oversized input is a plain wrong code, not a server error.
+  if (!submitted) return { ok: false, reason: 'invalid' };
   const nowMs = clock();
 
   if (!dbAvailable()) {
     warnFallbackOnce();
-    return checkMemory(keyOf(channel, normalized), code, nowMs);
+    return checkMemory(keyOf(channel, normalized), submitted, nowMs);
   }
 
   try {
     const record = await VerificationCode.findOne({ channel, target: normalized });
     if (!record) {
       // The code may have been issued while the DB was down (memory fallback).
-      return checkMemory(keyOf(channel, normalized), code, nowMs);
+      return checkMemory(keyOf(channel, normalized), submitted, nowMs);
     }
 
-    const { outcome, action } = evaluate(record, code, nowMs);
+    const { outcome, action } = evaluate(record, submitted, nowMs);
     if (action === 'delete') {
       // A correct code is consumed atomically: two parallel requests with the
       // same code cannot both succeed, because only one findOneAndDelete gets
@@ -262,7 +330,7 @@ async function check(channel, target, code) {
     return outcome;
   } catch (error) {
     warnFallbackOnce(error);
-    return checkMemory(keyOf(channel, normalized), code, nowMs);
+    return checkMemory(keyOf(channel, normalized), submitted, nowMs);
   }
 }
 
@@ -281,10 +349,13 @@ module.exports = {
   issue,
   check,
   clear,
+  normalizeCode,
   TTL_MS,
   TTL_MINUTES,
+  DEFAULT_TTL_MINUTES,
   RESEND_COOLDOWN_MS,
   MAX_ATTEMPTS,
+  MAX_PREVIOUS_CODES,
   EXPIRED_RETENTION_MS,
   setClockForTests,
 };

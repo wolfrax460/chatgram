@@ -350,14 +350,14 @@ code values.
 
 ### One-time verification codes
 
-`POST /api/auth/verification/send` now reports `expiresInSeconds: 900`
-(15 minutes, was 10) and `POST /api/auth/verification/check` can answer with
-distinct failure codes so the client can offer "send a new code":
+`POST /api/auth/verification/send` reports `expiresInSeconds` (the configured
+lifetime) and `POST /api/auth/verification/check` can answer with distinct
+failure codes so the client can offer "send a new code":
 
 | HTTP | `code` | `reason` | Meaning |
 |---|---|---|---|
 | 400 | `CODE_MISSING` | `missing` | no pending code (never sent, already used, or purged) |
-| 400 | `CODE_EXPIRED` | `expired` | the code existed but its 15 minutes are over |
+| 400 | `CODE_EXPIRED` | `expired` | the code existed but its lifetime is over |
 | 400 | `CODE_INVALID` | `invalid` | wrong code; the pending code is still usable |
 | 429 | `CODE_TOO_MANY_ATTEMPTS` | `too_many_attempts` | 5 wrong guesses burned the code |
 
@@ -366,9 +366,23 @@ Every failure body also has `canResend` (true except for `CODE_INVALID`).
 `canResend` values for a failed code (it used to answer only `INVALID_CODE`).
 
 Codes are stored in MongoDB (hashed with a server pepper), so they survive a
-restart and are shared by every API instance. A re-send replaces the code but
-the previous code keeps working until its own expiry, so a second email/SMS
-arriving late does not invalidate the one the user is typing.
+restart and are shared by every API instance.
+
+- **Lifetime:** `VERIFICATION_CODE_TTL_MINUTES` (5–120, default **15**; production
+  runs 20). The email/SMS copy is generated from the same value. An expired row
+  is retained briefly so the API can answer `CODE_EXPIRED` rather than `missing`.
+- **Resend never invalidates an emailed code:** every code still inside its own
+  lifetime is kept (up to 5 previous codes) and verifies, so someone who pressed
+  "Resend" while mail was slow can type whichever email arrived. The 60 s resend
+  cooldown and the 5-attempt cap are unchanged; a successful check consumes the
+  whole pending record (single use).
+- **Input normalization:** submitted codes are stripped of whitespace and
+  zero-padded to six digits, so `"012345"`, `12345` (a JSON number dropping the
+  leading zero) and `" 012 345 "` are the same code. Non-digits/oversized input
+  is rejected as a wrong code.
+- **Observability:** every failed check logs a content-free line
+  (`[otp] check failed reason=<reason> channel=<channel>`) — no target, no code.
+
 
 ### Maintenance / read-only gate
 

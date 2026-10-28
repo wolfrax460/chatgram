@@ -158,13 +158,18 @@ const checkCode = async (req, res) => {
       return res.status(400).json({ message: 'Enter a valid email address or phone number.' });
     }
 
-    const code = String(req.body.code || '').trim();
-    if (!/^[0-9]{6}$/.test(code)) {
+    // Codes are digits, zero-padded to six: "012345" and a JSON number 12345
+    // (which drops the leading zero) are the same code.
+    const code = store.normalizeCode(req.body.code);
+    if (!code) {
       return res.status(400).json({ message: 'Enter the 6-digit code.' });
     }
 
     const result = await store.check(parsed.channel, parsed.target, code);
     if (!result.ok) {
+      // Content-free diagnostic (never the target or the code): makes future
+      // "the code does not work" reports measurable in the PM2 log.
+      console.warn(`[otp] check failed reason=${result.reason} channel=${parsed.channel}`);
       const { status, body } = codeFailureBody(result.reason);
       return res.status(status).json(body);
     }

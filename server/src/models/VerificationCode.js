@@ -19,9 +19,18 @@ const verificationCodeSchema = new mongoose.Schema(
     // maps to one row.
     target: { type: String, required: true },
     codeHash: { type: String, required: true },
-    // A re-send replaces the code above, but the copy already in the user's
-    // inbox stays usable until its own expiry (see issue() in the store): users
-    // tap "resend" when delivery is slow, then type whichever mail arrived.
+    // Every still-valid code this user was emailed, so hammering "Resend code"
+    // while mail is slow cannot invalidate an older email that then arrives.
+    // Bounded in utils/verificationStore (MAX_PREVIOUS_CODES).
+    previousCodes: [
+      {
+        _id: false,
+        codeHash: { type: String, required: true },
+        expiresAt: { type: Date, required: true },
+      },
+    ],
+    // Legacy single-previous fields kept so rows written before the list
+    // existed keep verifying; new rows leave them null.
     previousCodeHash: { type: String, default: null },
     previousExpiresAt: { type: Date, default: null },
     attempts: { type: Number, default: 0 },

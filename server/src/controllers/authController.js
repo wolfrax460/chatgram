@@ -771,8 +771,9 @@ const confirmIdentifierChange = async (req, res) => {
     if (!parsed) {
       return res.status(400).json({ message: 'Enter a valid email address or phone number.', code: 'INVALID_IDENTIFIER' });
     }
-    const code = String(req.body.code || '').trim();
-    if (!/^[0-9]{6}$/.test(code)) {
+    // Zero-padded digits, same normalization as POST /verification/check.
+    const code = store.normalizeCode(req.body.code);
+    if (!code) {
       return res.status(400).json({ message: 'Enter the 6-digit code.', code: 'INVALID_CODE' });
     }
 
@@ -791,6 +792,7 @@ const confirmIdentifierChange = async (req, res) => {
 
     const checked = await store.check(parsed.channel, parsed.target, code);
     if (!checked.ok) {
+      console.warn(`[otp] identifier-change check failed reason=${checked.reason} channel=${parsed.channel}`);
       // Same distinct reasons as POST /api/auth/verification/check, so the
       // account-settings screen can offer "send a new code" on an expiry.
       const { status, body } = codeFailureBody(checked.reason);
