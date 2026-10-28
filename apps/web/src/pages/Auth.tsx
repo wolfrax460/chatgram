@@ -11,6 +11,7 @@ import {
   COUNTRIES, DEFAULT_COUNTRY, looksLikePhone, passwordStrength, resolveIdentifier,
   type Country,
 } from '../lib/phone';
+import { verificationFailure } from '../lib/verificationMessages';
 
 type Screen = 'signin' | 'signup' | 'forgot' | 'reset';
 
@@ -573,6 +574,16 @@ function SignUp({ onGo }: { onGo: (screen: Screen) => void }) {
       });
       setUser(result.user);
     } catch (error) {
+      // The server tells expired / wrong / missing / too-many-attempts apart
+      // (CODE_* codes); say what actually happened. The typed digits stay in the
+      // input because `code` is not cleared here.
+      const verification = verificationFailure(error);
+      if (verification) {
+        setFormError(
+          t(verification.key, verification.retryAfterSeconds ? { seconds: verification.retryAfterSeconds } : undefined),
+        );
+        return;
+      }
       const mapped = errorKey(error);
       setFormError(t(mapped.key === 'errWrongCredentials' ? 'errInvalidCode' : mapped.key));
     } finally {

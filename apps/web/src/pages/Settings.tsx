@@ -26,6 +26,7 @@ import {
   type BatteryOptimizationState,
 } from '../lib/nativeNotifications';
 import { LOCALES, LOCALE_LABELS, useI18n } from '../lib/i18n';
+import { verificationFailure } from '../lib/verificationMessages';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -311,6 +312,7 @@ function NotificationSetup() {
 /* ------------------------------------------------------- change identifier */
 
 function ChangeIdentifier({ onDone }: { onDone: (message: string) => void }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -350,6 +352,16 @@ function ChangeIdentifier({ onDone }: { onDone: (message: string) => void }) {
       setCode('');
       setPassword('');
     } catch (err) {
+      // The identifier confirm checks a 6-digit code and returns the same
+      // CODE_EXPIRED / CODE_INVALID / CODE_MISSING / too-many-attempts codes as
+      // sign-up; say which one it was instead of the raw server sentence.
+      const verification = verificationFailure(err);
+      if (verification) {
+        setError(
+          t(verification.key, verification.retryAfterSeconds ? { seconds: verification.retryAfterSeconds } : undefined),
+        );
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Could not save the new address');
     } finally {
       setBusy(false);

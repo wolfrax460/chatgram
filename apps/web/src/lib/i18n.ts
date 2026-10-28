@@ -84,6 +84,10 @@ const en: Dict = {
   infoVerifyEmail: 'Enter the 6-digit code we emailed you to verify your address.',
   verifyAndCreate: 'Verify and create account',
   errInvalidCode: 'That code is not valid or has expired.',
+  // Distinct wording for the server's CODE_* failures (see lib/verificationMessages.ts).
+  errCodeExpired: 'That code has expired. Tap Resend code to get a new one.',
+  errCodeInvalid: 'That code is not correct. Check the 6 digits and try again.',
+  errCodeMissing: 'Enter the 6-digit code from the email.',
   or: 'or',
   continueWithGoogle: 'Continue with Google',
   errGoogleTimeout: 'Google sign-in timed out. Please try again.',

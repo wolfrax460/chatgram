@@ -189,7 +189,7 @@ function hero(locale) {
           <div class="hero-download" role="group" aria-label="${e(locale.ui.downloadLabel)}">
             <a class="btn btn-primary" href="${RELEASES.windows.fileUrl}" data-install-guide-open="windows">${ICONS.windows}<span>${e(dl.windows.cta)}</span></a>
             <a class="btn btn-light" href="${RELEASES.android.fileUrl}" data-install-guide-open="android">${ICONS.android}<span>${e(dl.android.cta)}</span></a>
-            <a class="btn btn-ghost" href="${SITE.appPath}">${ICONS.globe}<span>${e(locale.hero.ctaWeb)}</span></a>
+            <a class="btn btn-ghost" href="${SITE.appPath}" data-install-guide-open="web">${ICONS.globe}<span>${e(locale.hero.ctaWeb)}</span></a>
           </div>
           <div class="hero-platforms">
             <span>${ICONS.android} ${e(locale.hero.platformAndroid)} ${RELEASES.android.sizeMB} MB</span>
@@ -220,7 +220,7 @@ function quickBar(locale) {
   return `  <nav class="quick-bar" data-quick-bar hidden aria-label="${e(locale.ui.downloadLabel)}">
     <a class="quick-btn" href="${RELEASES.windows.fileUrl}" data-install-guide-open="windows" aria-label="${e(dl.windows.cta)}">${ICONS.windows}<span>${e(dl.windows.label)}</span></a>
     <a class="quick-btn" href="${RELEASES.android.fileUrl}" data-install-guide-open="android" aria-label="${e(dl.android.cta)}">${ICONS.android}<span>${e(dl.android.label)}</span></a>
-    <a class="quick-btn" href="${SITE.appPath}" aria-label="${e(locale.hero.ctaWeb)}">${ICONS.globe}<span>${e(dl.web.label)}</span></a>
+    <a class="quick-btn" href="${SITE.appPath}" data-install-guide-open="web" aria-label="${e(locale.hero.ctaWeb)}">${ICONS.globe}<span>${e(dl.web.label)}</span></a>
   </nav>`;
 }
 
@@ -277,12 +277,30 @@ ${stepsList(copy.android.steps)}
       </ol>
       <p class="install-guide-sha"><span>${e(copy.shaLabel)}</span> <code>${sha(android)}</code></p>
       <a class="btn btn-primary install-guide-start" data-install-guide-start data-testid="install-guide-start" href="${android.fileUrl}" rel="noopener">${e(copy.start)}</a>
-      <a class="install-guide-web" href="${SITE.appPath}">${e(copy.android.webInstead)}</a>
+      <a class="install-guide-web-instead" href="${SITE.appPath}">${e(copy.android.webInstead)}</a>
       <h3>${e(copy.whatTitle)}</h3>
       <ul class="install-guide-what">
 ${what}
       </ul>
       <p class="install-guide-meta">${e(copy.noStore)}</p>
+    </div>
+  </dialog>
+
+  <dialog class="install-guide install-guide-web" id="install-guide-web" data-install-guide="web" data-testid="install-guide-web" aria-labelledby="install-guide-web-title" aria-modal="true">
+    <div class="install-guide-panel">
+      <button type="button" class="install-guide-close" data-install-guide-close data-testid="install-guide-close" aria-label="${e(copy.close)}"><span aria-hidden="true">×</span></button>
+      <span class="eyebrow install-guide-kicker">${e(copy.web.kicker)}</span>
+      <h2 id="install-guide-web-title">${e(copy.web.title)}</h2>
+      <p class="install-guide-lead">${e(copy.web.lead)}</p>
+      <ul class="install-guide-what">
+${copy.web.points.map((point) => `        <li><span class="tick">${ICONS.check}</span>${e(point)}</li>`).join('\n')}
+      </ul>
+      <a class="btn btn-primary install-guide-start" data-install-guide-start data-testid="install-guide-start" href="${SITE.appPath}">${e(copy.web.start)}</a>
+      <h3>${e(copy.web.secondaryTitle)}</h3>
+      <div class="install-guide-secondary">
+        <a class="btn btn-light" href="${RELEASES.windows.fileUrl}">${ICONS.windows}<span>${e(locale.downloads.windows.cta)}</span></a>
+        <a class="btn btn-light" href="${RELEASES.android.fileUrl}">${ICONS.android}<span>${e(locale.downloads.android.cta)}</span></a>
+      </div>
     </div>
   </dialog>`;
 }

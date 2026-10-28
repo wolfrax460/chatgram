@@ -617,6 +617,11 @@ html.guide-open {
   font-size: 13px;
   color: var(--muted);
 }
+.install-guide-lead {
+  margin: 0 0 14px;
+  font-size: 14.5px;
+  color: var(--text-soft);
+}
 .install-guide-steps {
   margin: 0 0 12px;
   padding-left: 20px;
@@ -659,7 +664,7 @@ html.guide-open {
 .install-guide-start {
   width: 100%;
 }
-.install-guide-web {
+.install-guide-web-instead {
   display: inline-block;
   margin: 10px 0 0;
   font-size: 13.5px;
@@ -701,6 +706,21 @@ html.guide-open {
   margin: 12px 0 0;
   font-size: 12.5px;
   color: var(--muted);
+}
+.install-guide-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.install-guide-secondary .btn {
+  flex: 1 1 190px;
+  font-size: 14px;
+  padding: 11px 14px;
+  gap: 8px;
+}
+.install-guide-secondary .btn svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* Keep the hero download buttons above the fold on short desktop viewports. */

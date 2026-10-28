@@ -58,6 +58,19 @@ export const INSTALL_GUIDE = {
       ],
       webInstead: 'Open the web app instead',
     },
+    web: {
+      kicker: 'Web app',
+      title: 'Open Chatgram in your browser',
+      lead: 'Nothing to install — Chatgram runs in the browser tab you already have.',
+      points: [
+        'Sign in with the same account you use on your phone or PC: your conversations are the same everywhere.',
+        'Works in Chrome, Edge, Firefox and Safari.',
+        'Notifications work while the Chatgram tab is open — there is no push when the tab is closed.',
+        'For notifications with the app closed, install the Android or Windows app.',
+      ],
+      start: 'Open Chatgram web',
+      secondaryTitle: 'Prefer an app?',
+    },
   },
   fr: {
     close: 'Fermer',
@@ -95,6 +108,19 @@ export const INSTALL_GUIDE = {
         "Il s'installe par-dessus une version précédente de Chatgram signée avec la même clé.",
       ],
       webInstead: 'Ouvrir plutôt l’application web',
+    },
+    web: {
+      kicker: 'Application web',
+      title: 'Ouvrir Chatgram dans votre navigateur',
+      lead: 'Rien à installer — Chatgram s’ouvre dans l’onglet de votre navigateur.',
+      points: [
+        'Connectez-vous avec le même compte que sur votre téléphone ou votre PC : vos conversations sont les mêmes partout.',
+        'Fonctionne dans Chrome, Edge, Firefox et Safari.',
+        'Les notifications fonctionnent tant que l’onglet Chatgram est ouvert — il n’y a pas de notification push quand l’onglet est fermé.',
+        'Pour des notifications avec l’application fermée, installez l’application Android ou Windows.',
+      ],
+      start: 'Ouvrir Chatgram web',
+      secondaryTitle: 'Vous préférez une application ?',
     },
   },
   rw: {
@@ -134,6 +160,19 @@ export const INSTALL_GUIDE = {
       ],
       webInstead: 'Fungura urubuga aho kuyishyira',
     },
+    web: {
+      kicker: 'Urubuga',
+      title: 'Fungura Chatgram mu mushakishamakuru wawe',
+      lead: 'Nta kintu cyo gushyira — Chatgram ikorera mu idirishya rya mushakishamakuru usanzwe ufite.',
+      points: [
+        'Injira n’konti imwe ukoresha kuri telefoni cyangwa mudasobwa: ibiganiro byawe ni bimwe ahantu hose.',
+        'Ikora mu Chrome, Edge, Firefox na Safari.',
+        'Kumenyesha gukora igihe idirishya rya Chatgram rifunguye — nta push iyo idirishya rifunze.',
+        'Kugira ngo ubone kumenyesha iyo porogaramu ifunze, shyira porogaramu ya Android cyangwa Windows.',
+      ],
+      start: 'Fungura Chatgram ku rubuga',
+      secondaryTitle: 'Uhitamo porogaramu?',
+    },
   },
   sw: {
     close: 'Funga',
@@ -171,6 +210,19 @@ export const INSTALL_GUIDE = {
         'Husakinisha juu ya toleo la awali la Chatgram lenye ufunguo uleule wa sahihi.',
       ],
       webInstead: 'Fungua programu ya wavuti badala yake',
+    },
+    web: {
+      kicker: 'Wavuti',
+      title: 'Fungua Chatgram kwenye kivinjari chako',
+      lead: 'Hakuna cha kusakinisha — Chatgram hufanya kazi kwenye kichupo cha kivinjari ulicho nacho.',
+      points: [
+        'Ingia kwa akaunti ile ile unayotumia kwenye simu au kompyuta: mazungumzo yako ni yale yale kila mahali.',
+        'Inafanya kazi kwenye Chrome, Edge, Firefox na Safari.',
+        'Arifa hufanya kazi wakati kichupo cha Chatgram kiko wazi — hakuna push kichupo kinapofungwa.',
+        'Ili upate arifa programu ikiwa imefungwa, sakinisha programu ya Android au Windows.',
+      ],
+      start: 'Fungua Chatgram wavuti',
+      secondaryTitle: 'Unapendelea programu?',
     },
   },
 };

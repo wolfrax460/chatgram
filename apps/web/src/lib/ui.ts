@@ -112,22 +112,57 @@ export function statusOf(
   return 'sent';
 }
 
-/** Text preview for the chat list, with a "You:" prefix for own messages. */
+/**
+ * Text preview for the chat list, with a "You:" prefix for own messages.
+ * Replies are stored as `> Author: snippet\n` markup, which must never leak
+ * into the row ("You: > Alice: …"): the preview shows the reply text only, on
+ * one line (the row truncates it with an ellipsis).
+ */
 export function previewText(message: Message | undefined, meId: string): string {
   if (!message) return 'No messages yet';
-  const body =
-    message.content?.trim() ||
-    (message.type === 'image'
-      ? 'Photo'
-      : message.type === 'video'
-        ? 'Video'
-        : message.type === 'audio'
-          ? 'Voice message'
-          : message.type === 'file'
-            ? 'Document'
-            : '');
+  const body = previewBody(message);
   const mine = message.senderId === meId;
   return mine ? `You: ${body}` : body;
+}
+
+/** One-line preview of what a message says (media labels, no reply markup). */
+function previewBody(message: Message): string {
+  const raw = message.content ?? '';
+  if (message.type !== 'text') {
+    return raw.trim() || mediaPreviewLabel(message.type);
+  }
+  const quoted = splitReplyMarkup(raw);
+  if (quoted) return collapse(quoted.body) || quoted.text;
+  // Malformed quote markup: still never show a leading "> …" line.
+  const withoutQuoteLines = collapse(stripLeadingQuoteLines(raw));
+  return withoutQuoteLines || collapse(raw).replace(/^>+ ?/, '');
+}
+
+function mediaPreviewLabel(type: Message['type']): string {
+  switch (type) {
+    case 'image':
+      return 'Photo';
+    case 'video':
+      return 'Video';
+    case 'audio':
+      return 'Voice message';
+    case 'file':
+      return 'Document';
+    default:
+      return '';
+  }
+}
+
+/**
+ * Drop every leading `> …` line (reply markup) from raw, multiline text — used
+ * even when the markup does not parse, so a row can never render it.
+ */
+function stripLeadingQuoteLines(value: string): string {
+  let rest = value.replace(/^\s+/, '');
+  while (rest.startsWith('>')) {
+    rest = rest.slice(1).replace(/^[^\n]*(\n|$)/, '');
+  }
+  return rest;
 }
 
 export function partnerOf(

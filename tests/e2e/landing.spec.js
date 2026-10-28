@@ -48,13 +48,24 @@ test.describe('landing downloads', () => {
 
     const windowsHref = await section.getByRole('link', { name: 'Download for Windows' }).getAttribute('href');
     const androidHref = await section.getByRole('link', { name: 'Download APK' }).getAttribute('href');
-    expect(windowsHref).toBe(windows.fileUrl);
+    // The Windows installer is advertised as the direct API-host URL
+    // (https://chatgram.duckdns.org/downloads/...) or as the same-origin proxy
+    // path; both must point at the real installer. Android stays same-origin.
+    expect(windowsHref, 'Windows download link').toBeTruthy();
+    expect(windowsHref, 'Windows download link').toContain('chatgram-windows-setup.exe');
+    const windowsIsAbsolute = /^https:\/\//i.test(windowsHref);
+    if (windowsIsAbsolute) {
+      expect(windowsHref).toBe(windows.fileUrl);
+    }
     expect(androidHref).toBe(android.fileUrl);
 
-    const exe = await firstBytes(`${LANDING}${windowsHref}`);
+    // Request each link as-is: absolute URLs are fetched directly, relative
+    // paths are resolved against the landing origin.
+    const resolveDownloadUrl = (href) => (/^https?:\/\//i.test(href) ? href : `${LANDING}${href}`);
+    const exe = await firstBytes(resolveDownloadUrl(windowsHref));
     expect([200, 206]).toContain(exe.status);
     expect(exe.magic).toBe('MZ');
-    const apk = await firstBytes(`${LANDING}${androidHref}`);
+    const apk = await firstBytes(resolveDownloadUrl(androidHref));
     expect([200, 206]).toContain(apk.status);
     expect(apk.magic).toBe('PK');
 
