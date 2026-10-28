@@ -41,7 +41,7 @@ function openDownloadPage(): void {
     void open().catch(() => undefined);
     return;
   }
-  window.open('https://chatgram-xi.vercel.app/downloads', '_blank', 'noopener');
+  window.open('https://chatgram-xi.vercel.app/#download', '_blank', 'noopener');
 }
 export function DesktopUpdateCard() {
   const { state, busy, check, download, install, setAutoDownload } = useDesktopUpdate();

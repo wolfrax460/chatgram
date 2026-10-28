@@ -28,7 +28,7 @@ const WEB_ORIGIN = 'https://chatgram-xi.vercel.app';
 // mangles Range responses (a 1 MB range came back as ~19 MB), which breaks the
 // 82 MB installer download. latest.yml, the .blockmap and the .exe all live here.
 const DOWNLOAD_ORIGIN = 'https://chatgram.duckdns.org';
-const DOWNLOAD_PAGE = WEB_ORIGIN + '/docs#downloads';
+const DOWNLOAD_PAGE = WEB_ORIGIN + '/#download';
 
 /**
  * Windows toast notifications are attributed to an Application User Model ID.
