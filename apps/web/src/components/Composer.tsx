@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Smile, Paperclip, Send, Mic, Image as ImageIcon, FileText, Camera } from 'lucide-react';
+import { Smile, Paperclip, Send, Mic, Image as ImageIcon, FileText, Camera, X } from 'lucide-react';
 import { useRealtime } from '@chatgram/core';
 import { formatDuration, useVoiceRecorder } from '../lib/useVoiceRecorder';
 import { READ_ONLY_BANNER } from '../lib/readOnly';
@@ -105,6 +105,12 @@ export default function Composer({
     requestAnimationFrame(() => textRef.current?.focus());
   }
 
+  /** Dismiss the reply preview without stealing focus from the input. */
+  function cancelReply() {
+    onCancelReply();
+    requestAnimationFrame(() => textRef.current?.focus());
+  }
+
   function pick(ref: React.RefObject<HTMLInputElement>) {
     ref.current?.click();
     setAttachOpen(false);
@@ -139,15 +145,34 @@ export default function Composer({
 
   return (
     <div className="relative border-t border-ink-200 dark:border-white/10">
-      {/* reply preview */}
+      {/* reply preview — WhatsApp-style bar above the input */}
       {replyTo ? (
-        <div className="mx-3 mt-2 flex items-start gap-2 rounded-xl border-l-4 border-brand-600 bg-ink-100 px-3 py-2 dark:bg-white/5">
-          <div className="min-w-0 flex-1">
-            <p className="text-[12px] font-semibold text-brand-700 dark:text-brand-300">{replyTo.name}</p>
+        <div
+          data-testid="reply-preview"
+          className="mx-3 mt-2 flex items-stretch gap-2 overflow-hidden rounded-lg bg-ink-100 dark:bg-white/5"
+        >
+          <span
+            aria-hidden="true"
+            className="w-1 shrink-0 rounded-full bg-brand-600 dark:bg-brand-400"
+          />
+          <div className="min-w-0 flex-1 py-1.5">
+            <p
+              data-testid="reply-preview-author"
+              className="text-[12px] font-bold leading-tight text-brand-700 dark:text-brand-300"
+            >
+              {replyTo.name}
+            </p>
             <p className="truncate text-[12.5px] text-ink-600 dark:text-ink-300">{replyTo.preview}</p>
           </div>
-          <button type="button" className="text-ink-500 hover:text-ink-800 dark:hover:text-white" onClick={onCancelReply}>
-            ✕
+          <button
+            type="button"
+            data-testid="reply-preview-close"
+            aria-label="Cancel reply"
+            title="Cancel reply"
+            onClick={cancelReply}
+            className="shrink-0 px-2 text-ink-500 transition hover:text-ink-800 dark:hover:text-white"
+          >
+            <X className="h-4 w-4" />
           </button>
         </div>
       ) : null}
@@ -252,6 +277,11 @@ export default function Composer({
           data-chatgram-composer="1"
           data-chat-id={chatId}
           onKeyDown={(e) => {
+            if (e.key === 'Escape' && replyTo) {
+              e.preventDefault();
+              cancelReply();
+              return;
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               submit();

@@ -136,3 +136,101 @@ export function partnerOf(
 ): User | undefined {
   return participants.find((p) => p.id !== meId);
 }
+
+/* ---------------------------------------------------------------- replies */
+
+/**
+ * WhatsApp-style replies are carried as text markup on the message itself
+ * (`> Author: snippet\n` + the reply text) — the API has no reply field. These
+ * helpers keep that one contract in a single place: the composer preview, the
+ * quoted card in the bubble and the "jump to the original" lookup all use them.
+ */
+export interface ReplyQuote {
+  /** Display name of the original sender ("You" for my own messages). */
+  author: string;
+  /** One-line snippet of the original message (media labels included). */
+  text: string;
+}
+
+function collapse(value: string | undefined): string {
+  return (value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * What a quoted reply should show for `message`: the media label instead of a
+ * URL/markup, the file name for documents, otherwise the text itself.
+ * Single line, so it is safe to embed in the `> Author: snippet` markup.
+ */
+export function quoteSnippetOf(message: Message): string {
+  switch (message.type) {
+    case 'image':
+      return 'Photo';
+    case 'video':
+      return 'Video';
+    case 'audio':
+      return 'Voice message';
+    case 'file': {
+      const name = collapse(message.content);
+      return name ? `Document · ${name}` : 'Document';
+    }
+    case 'call':
+      return 'Call';
+    case 'system':
+      return collapse(message.content);
+    default: {
+      const quoted = splitReplyMarkup(message.content);
+      if (!quoted) return collapse(message.content);
+      // Replying to a reply quotes what *that* message said, not its own quote
+      // (and never the raw `> Author: snippet` markup).
+      return collapse(quoted.body) || quoted.text;
+    }
+  }
+}
+
+/**
+ * Split the reply markup off a message's text.
+ * Returns null when the message is not a reply.
+ */
+export function splitReplyMarkup(
+  content: string | undefined,
+): (ReplyQuote & { body: string }) | null {
+  const value = content ?? '';
+  const match = value.match(/^> ([^:\n]{1,120}): (.*)(?:\n([\s\S]*))?$/);
+  if (!match) return null;
+  const author = collapse(match[1]);
+  const text = collapse(match[2]);
+  const body = (match[3] ?? '').replace(/^\n/, '');
+  if (!author) return null;
+  return { author, text, body };
+}
+
+/**
+ * Find the loaded message a quote points at. The markup carries no id, so the
+ * author + snippet are matched against the loaded page (newest match wins).
+ */
+export function findQuotedMessage(
+  messages: Message[],
+  quote: ReplyQuote,
+  meId: string,
+): Message | undefined {
+  const wanted = collapse(quote.text).toLowerCase();
+  if (!wanted) return undefined;
+  const author = collapse(quote.author).toLowerCase();
+  const sameAuthor = (message: Message): boolean => {
+    if (author === 'you') return message.senderId === meId;
+    const name = collapse(message.sender?.displayName).toLowerCase();
+    return Boolean(name) && name === author;
+  };
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || !sameAuthor(message)) continue;
+    const snippet = collapse(quoteSnippetOf(message)).toLowerCase();
+    if (!snippet) continue;
+    // The snippet was capped when the reply was written, so compare prefixes.
+    if (snippet === wanted || snippet.startsWith(wanted) || wanted.startsWith(snippet)) {
+      return message;
+    }
+  }
+  return undefined;
+}
+

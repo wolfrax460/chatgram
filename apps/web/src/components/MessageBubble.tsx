@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { Reply, Copy, Trash2, MoreVertical, Smile, Pin, Eye, Pencil, Star, Forward, Flag, Check, X, Lock, Share2 } from 'lucide-react';
+import { Reply, Copy, Trash2, MoreVertical, Smile, Pin, Eye, Pencil, Star, Forward, Flag, Check, X, Lock, Share2, Image as ImageIcon, Mic, Video, FileText } from 'lucide-react';
 import type { CallCardInfo, Message, MessageStatus } from '@chatgram/core';
 import { MessageMedia } from './MessageMedia';
 import { MessageTicks } from './MessageTicks';
 import { CallMessageCard } from './CallMessageCard';
-import { formatTime, type TimeFormat } from '../lib/ui';
+import { formatTime, quoteSnippetOf, splitReplyMarkup, type ReplyQuote, type TimeFormat } from '../lib/ui';
 
 export interface BubbleActions {
   onReply: (message: Message) => void;
+  /** Jump to the message this one is replying to (loaded-list lookup). */
+  onQuoteClick?: (quote: ReplyQuote) => void;
   onDelete: (message: Message, scope: 'me' | 'everyone') => void;
   onReact: (message: Message, emoji: string) => void;
   /** Open the sender's profile panel (used in groups). */
@@ -36,6 +38,15 @@ export interface BubbleActions {
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
+/** Icon shown in a quoted reply for media/attachment labels (none for text). */
+function quotedIcon(text: string) {
+  if (text.startsWith('Photo')) return ImageIcon;
+  if (text.startsWith('Video')) return Video;
+  if (text.startsWith('Voice message') || text.startsWith('Audio')) return Mic;
+  if (text.startsWith('Document') || text.startsWith('File')) return FileText;
+  return null;
+}
+
 /**
  * One message bubble: grouping, hover actions (react / reply / copy / delete),
  * reaction chips and delivery ticks.
@@ -47,6 +58,7 @@ export function MessageBubble({
   timeFormat,
   firstInGroup,
   lastInGroup,
+  highlighted = false,
   actions,
 }: {
   message: Message;
@@ -55,6 +67,8 @@ export function MessageBubble({
   timeFormat: TimeFormat;
   firstInGroup: boolean;
   lastInGroup: boolean;
+  /** Briefly ringed after "jump to replied message". */
+  highlighted?: boolean;
   actions: BubbleActions;
 }) {
   const [copied, setCopied] = useState(false);
@@ -67,6 +81,12 @@ export function MessageBubble({
   // Chunk 1C: hidden AI questions/answers only ever reach the asker, so a
   // non-empty visibleTo means "only you can see this".
   const isPrivate = message.private === true || (message.visibleTo?.length ?? 0) > 0;
+  // WhatsApp-style reply: the quote travels as `> Author: snippet\n` markup, so
+  // split it off and render the card above the reply text (the markup itself is
+  // never shown). Anything unparsable keeps rendering exactly as before.
+  const quoted = message.type === 'text' ? splitReplyMarkup(message.content) : null;
+  const body = quoted ? quoted.body : message.content;
+  const QuoteIcon = quoted ? quotedIcon(quoted.text) : null;
 
   const grouped = message.reactions.reduce<Record<string, number>>((acc, reaction) => {
     acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
@@ -75,7 +95,8 @@ export function MessageBubble({
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(message.content ?? message.mediaUrl ?? '');
+      // Copy the reply text, never the `> Author: snippet` reply markup.
+      await navigator.clipboard.writeText(body ?? message.mediaUrl ?? '');
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
     } catch {
@@ -129,6 +150,9 @@ export function MessageBubble({
 
   return (
     <div
+      data-message-id={message.id}
+      data-message-author={mine ? 'You' : (senderName ?? '')}
+      data-message-quote={quoteSnippetOf(message)}
       className={`group flex w-full ${mine ? 'justify-end' : 'justify-start'} ${
         firstInGroup ? 'mt-2' : 'mt-[3px]'
       }`}
@@ -306,13 +330,18 @@ export function MessageBubble({
 
         <div className={`min-w-0 ${message.reactions.length > 0 ? 'pb-4' : ''}`}>
           <div
+            data-testid={highlighted ? 'message-highlight' : undefined}
             className={`relative min-w-0 max-w-full break-words rounded-2xl px-3.5 py-2 text-[14.5px] shadow-sm ${
               mine
                 ? `bg-brand-600 text-white ${lastInGroup ? 'rounded-br-md' : 'rounded-br-2xl'}`
                 : `border border-ink-200/70 bg-white text-ink-800 dark:border-white/[.06] dark:bg-ink-700 dark:text-ink-100 ${
                     lastInGroup ? 'rounded-bl-md' : 'rounded-bl-2xl'
                   }`
-            } ${message.failed ? 'opacity-60' : ''}`}
+            } ${message.failed ? 'opacity-60' : ''} ${
+              highlighted
+                ? 'ring-2 ring-brand-500 ring-offset-2 ring-offset-white/50 transition-shadow dark:ring-brand-300 dark:ring-offset-ink-900/50'
+                : ''
+            }`}
           >
             {!mine && firstInGroup && senderName ? (
               <button
@@ -322,6 +351,41 @@ export function MessageBubble({
                 title={`Open ${senderName}'s profile`}
               >
                 {senderName}
+              </button>
+            ) : null}
+
+            {quoted ? (
+              <button
+                type="button"
+                data-testid="reply-quote"
+                aria-label="Go to replied message"
+                title="Go to replied message"
+                onClick={() => actions.onQuoteClick?.(quoted)}
+                className={`mb-1.5 flex w-full min-w-0 flex-col overflow-hidden rounded-md border-l-4 px-2 py-1 text-left transition ${
+                  mine
+                    ? 'border-white bg-white/15 hover:bg-white/20'
+                    : 'border-brand-600 bg-ink-900/[.04] hover:bg-ink-900/[.07] dark:border-brand-400 dark:bg-white/[.07] dark:hover:bg-white/[.12]'
+                }`}
+              >
+                <span
+                  data-testid="reply-quote-author"
+                  className={`text-[11px] font-bold leading-tight ${
+                    mine ? 'text-white' : 'text-brand-700 dark:text-brand-300'
+                  }`}
+                >
+                  {quoted.author}
+                </span>
+                <span
+                  data-testid="reply-quote-text"
+                  className={`mt-0.5 line-clamp-2 break-words text-[12.5px] leading-snug ${
+                    mine ? 'text-white/85' : 'text-ink-600 dark:text-ink-200'
+                  }`}
+                >
+                  {QuoteIcon ? (
+                    <QuoteIcon className="mr-1 inline h-3 w-3 align-[-2px]" aria-hidden="true" />
+                  ) : null}
+                  {quoted.text || 'Message unavailable'}
+                </span>
               </button>
             ) : null}
 
@@ -374,8 +438,8 @@ export function MessageBubble({
               </div>
             ) : (
               <>
-                {message.content && message.type !== 'file' ? (
-                  <span className="whitespace-pre-wrap break-words">{renderContent(message.content)}</span>
+                {body && message.type !== 'file' ? (
+                  <span className="whitespace-pre-wrap break-words">{renderContent(body)}</span>
                 ) : null}
                 {message.starred ? (
                   <Star className={`ml-1 inline h-3 w-3 align-baseline ${mine ? 'fill-amber-300 text-amber-300' : 'fill-amber-400 text-amber-500'}`} aria-label="Starred" />

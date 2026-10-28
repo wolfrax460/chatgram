@@ -50,7 +50,7 @@ import { MediaPermissionDialog } from './components/MediaPermissionDialog';
 import { initNativeNotifications, unregisterPushToken } from './lib/nativeNotifications';
 import { takeRefreshDraft } from './lib/appUpdate';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
-import { dateSeparatorLabel, sameDay, statusOf } from './lib/ui';
+import { dateSeparatorLabel, findQuotedMessage, quoteSnippetOf, sameDay, statusOf, type ReplyQuote } from './lib/ui';
 
 type Tab = 'chats' | 'calls' | 'status' | 'groups' | 'settings' | 'ai';
 
@@ -137,6 +137,8 @@ function ChatWindow({
   const [inChatSearch, setInChatSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [showJump, setShowJump] = useState(false);
+  /** Message briefly ringed after "jump to replied message". */
+  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   // Live group-call room for this chat (banner + call card "Join").
   const callState = useSyncExternalStore(subscribeCalls, getCallState);
@@ -275,12 +277,47 @@ function ChatWindow({
     ? list.filter((m) => (m.content ?? '').toLowerCase().includes(inChatSearch.trim().toLowerCase()))
     : list;
 
+  /**
+   * Reply quotes carry no message id (the API has no reply field — the quote is
+   * `> Author: snippet` text markup), so resolve the original from the loaded
+   * page. If it is not loaded, say so instead of failing silently.
+   */
+  const goToQuoted = useCallback(
+    (quote: ReplyQuote) => {
+      const target = findQuotedMessage(list, quote, meId);
+      if (!target) {
+        setNotice('Original message is older');
+        return;
+      }
+      // The in-chat search filter can hide the original: clear it first so the
+      // bubble is rendered by the time we scroll.
+      setInChatSearch('');
+      setHighlightId(target.id);
+    },
+    [list, meId],
+  );
+
+  // Scroll to + ring the quoted message for ~1.5 s. Runs after the render that
+  // adds the bubble (and after a search filter was cleared).
+  useEffect(() => {
+    if (!highlightId) return undefined;
+    const scope = scrollRef.current ?? document;
+    const node =
+      scope.querySelector<HTMLElement>(`[data-message-id="${highlightId}"]`) ??
+      document.querySelector<HTMLElement>(`[data-message-id="${highlightId}"]`);
+    node?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const timer = window.setTimeout(() => setHighlightId(null), 1500);
+    return () => window.clearTimeout(timer);
+  }, [highlightId]);
+
   async function sendText(text: string) {
     if (readOnly) {
       setNotice(READ_ONLY_NOTICE);
       return;
     }
     const body = replyTo ? `> ${replyTo.name}: ${replyTo.preview}\n${text}` : text;
+    // Sending always ends the reply: the quote is now part of the message body.
+    setReplyTo(null);
     const clientId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimistic: Message = {
       id: clientId,
@@ -346,6 +383,9 @@ function ChatWindow({
       });
       queryClient.setQueryData<Message[]>(['messages', chat.id], (prev) => [...(prev ?? []), saved]);
       void queryClient.invalidateQueries({ queryKey: ['chats'] });
+      // The quote cannot travel with a media message (the API has no reply
+      // field), so do not leave a dangling "replying to…" bar behind.
+      setReplyTo(null);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Upload failed');
     }
@@ -354,8 +394,13 @@ function ChatWindow({
   function reply(message: Message) {
     setReplyTo({
       id: message.id,
-      name: message.senderId === meId ? 'You' : (chatPartner(chat, meId)?.displayName ?? 'Contact'),
-      preview: message.content ?? (message.type === 'audio' ? 'Voice message' : message.type),
+      name:
+        message.senderId === meId
+          ? 'You'
+          : (message.sender?.displayName ?? chatPartner(chat, meId)?.displayName ?? 'Contact'),
+      // Media replies quote "Photo" / "Voice message" / "Document · name" etc.,
+      // single line so the `> Author: snippet` markup stays on one line.
+      preview: quoteSnippetOf(message).slice(0, 120),
     });
   }
 
@@ -759,8 +804,10 @@ function ChatWindow({
                   timeFormat={timeFormat}
                   firstInGroup={firstInGroup}
                   lastInGroup={lastInGroup}
+                  highlighted={message.id === highlightId}
                   actions={{
                     onReply: reply,
+                    onQuoteClick: goToQuoted,
                     onDelete: readOnly
                       ? () => setNotice(READ_ONLY_NOTICE)
                       : removeMessage,
