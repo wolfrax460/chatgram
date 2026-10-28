@@ -235,7 +235,11 @@ export function ChatList({
                     </>
                   )}
                   {unread > 0 ? (
-                    <span className="ml-auto grid h-5 min-w-[20px] shrink-0 place-items-center rounded-full bg-brand-600 px-1.5 text-[11px] font-bold text-white">
+                    <span
+                      data-testid="chat-unread-badge"
+                      data-chat-id={chat.id}
+                      className="ml-auto grid h-5 min-w-[20px] shrink-0 place-items-center rounded-full bg-brand-600 px-1.5 text-[11px] font-bold text-white"
+                    >
                       {unread > 99 ? '99+' : unread}
                     </span>
                   ) : null}

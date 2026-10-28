@@ -49,28 +49,59 @@ export function useRealtimeBridge(): void {
     const token = api.accessToken;
     if (!token) return undefined;
 
-    realtime.connect({
-      url: SOCKET_URL,
-      token,
-      handlers: {
-        onConnected: () => {
-          setConnected(true);
-          // Re-sync presence snapshots after a reconnect or a cold start.
-          void queryClient.invalidateQueries({ queryKey: ['chats'] });
-          void queryClient.invalidateQueries({ queryKey: ['contacts'] });
-          // Seed live call banners: the server broadcasts rooms on authenticate,
-          // the REST snapshot covers a reconnect that missed that broadcast.
-          void api
-            .callState()
-            .then((result) => seedCallRooms(result.calls ?? []))
-            .catch(() => undefined);
-        },
-        onDisconnected: () => {
-          // Presence is unknown while we are offline: drop every cached value
-          // instead of leaving green dots behind on a dead connection.
-          setConnected(false);
-          clearOnline();
-        },
+    let cancelled = false;
+    let authRetries = 0;
+
+    let handlers: Parameters<typeof realtime.connect>[0]['handlers'];
+
+    /**
+     * The socket's access token expired while the socket stayed connected.
+     * REST keeps working because the API client refreshes on 401 and retries,
+     * but the socket keeps its dead token — the server then rejects every
+     * `message:send` with "Not authenticated", so the optimistic bubble is never
+     * confirmed and disappears on the next refetch (the "my message vanished"
+     * bug). Mint a fresh token via REST and re-authenticate the same socket.
+     */
+    async function reauthenticateSocket(): Promise<void> {
+      if (cancelled || authRetries >= 3) return;
+      authRetries += 1;
+      try {
+        await api.me();
+      } catch {
+        return; // the refresh token is dead too: the auth layer ends the session
+      }
+      const fresh = api.accessToken;
+      if (!fresh || fresh === realtime.currentToken()) return;
+      realtime.connect({ url: SOCKET_URL, token: fresh, handlers });
+      // Anything that happened while this socket was unauthenticated is missing
+      // from the cache: re-read chats (unread/preview) and open conversations.
+      void queryClient.invalidateQueries({ queryKey: ['chats'] });
+      void queryClient.invalidateQueries({ queryKey: ['messages'] });
+    }
+
+    handlers = {
+      onConnected: () => {
+        setConnected(true);
+        authRetries = 0;
+        // Re-sync presence snapshots after a reconnect or a cold start.
+        void queryClient.invalidateQueries({ queryKey: ['chats'] });
+        void queryClient.invalidateQueries({ queryKey: ['contacts'] });
+        // Seed live call banners: the server broadcasts rooms on authenticate,
+        // the REST snapshot covers a reconnect that missed that broadcast.
+        void api
+          .callState()
+          .then((result) => seedCallRooms(result.calls ?? []))
+          .catch(() => undefined);
+      },
+      onDisconnected: () => {
+        // Presence is unknown while we are offline: drop every cached value
+        // instead of leaving green dots behind on a dead connection.
+        setConnected(false);
+        clearOnline();
+      },
+      onAuthError: () => {
+        void reauthenticateSocket();
+      },
 
         onMessageNew: (message: Message) => {
           const hadCache = Boolean(queryClient.getQueryData<Message[]>(['messages', message.chatId]));
@@ -238,8 +269,9 @@ export function useRealtimeBridge(): void {
           }
           void queryClient.invalidateQueries({ queryKey: ['chats'] });
         },
-      },
-    });
+    };
+
+    realtime.connect({ url: SOCKET_URL, token, handlers });
 
     // Presence heartbeat: the server drops a socket that has not pinged for
     // PRESENCE_STALE_MS (60s in production), which keeps a dead tab or a
@@ -251,6 +283,7 @@ export function useRealtimeBridge(): void {
     if (realtime.isConnected()) realtime.emit('presence:ping', {});
 
     return () => {
+      cancelled = true;
       window.clearInterval(heartbeat);
       realtime.disconnect();
       setConnected(false);

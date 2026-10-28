@@ -280,17 +280,28 @@ export class RealtimeClient {
   private socket: Socket | null = null;
   private token = '';
   private handlers: RealtimeHandlers = {};
+  /**
+   * Whether the SERVER has accepted our token for this socket. `connected`
+   * (transport) turns true before the `authenticate` round-trip completes and
+   * stays true when the handshake token has expired, so it must never be used
+   * to decide whether a `message:send` will be accepted.
+   */
+  private authenticated = false;
 
   connect(options: RealtimeOptions): void {
     this.token = options.token;
     this.handlers = options.handlers ?? {};
 
     if (this.socket?.connected) {
-      // Already live — just make sure the server knows the current identity.
+      // Already live — re-authenticate this same socket. Used after the REST
+      // client refreshes an expired access token: without this the socket keeps
+      // the dead token and the server drops every message:send it emits.
+      this.authenticated = false;
       this.socket.emit('authenticate', this.token);
       return;
     }
 
+    this.authenticated = false;
     this.socket?.disconnect();
     this.socket = io(options.url, {
       auth: { token: options.token },
@@ -314,6 +325,21 @@ export class RealtimeClient {
     return Boolean(this.socket?.connected);
   }
 
+  /**
+   * True only when the server accepted this socket's token, i.e. events the
+   * client emits will be handled. A connected-but-unauthenticated socket (the
+   * handshake token expired, or the server never authenticated it) answers
+   * `message:error` and stores nothing, so sends must use REST instead.
+   */
+  isAuthenticated(): boolean {
+    return Boolean(this.socket?.connected) && this.authenticated;
+  }
+
+  /** The access token this socket last authenticated (or tried to). */
+  currentToken(): string {
+    return this.token;
+  }
+
   private bind(): void {
     const socket = this.socket;
     if (!socket) return;
@@ -321,17 +347,31 @@ export class RealtimeClient {
 
     socket.on('connect', () => {
       // Rooms are lost on reconnect, so always re-authenticate.
+      this.authenticated = false;
       socket.emit('authenticate', this.token);
       h.onConnected?.();
     });
 
-    socket.on('disconnect', (reason: string) => h.onDisconnected?.(reason));
-    socket.on('connect_error', (error: Error) => h.onDisconnected?.(error.message));
+    socket.on('disconnect', (reason: string) => {
+      this.authenticated = false;
+      h.onDisconnected?.(reason);
+    });
+    socket.on('connect_error', (error: Error) => {
+      this.authenticated = false;
+      h.onDisconnected?.(error.message);
+    });
 
-    socket.on('authenticated', () => h.onConnected?.());
-    socket.on('auth_error', (data: { message?: string }) =>
-      h.onAuthError?.(data?.message ?? 'Invalid token'),
-    );
+    socket.on('authenticated', () => {
+      this.authenticated = true;
+      h.onConnected?.();
+    });
+    socket.on('auth_error', (data: { message?: string }) => {
+      // The token was rejected (usually: it expired while the socket stayed
+      // open). Report it so the app can mint a fresh token and re-authenticate;
+      // until then `isAuthenticated()` stays false and sends must go over REST.
+      this.authenticated = false;
+      h.onAuthError?.(data?.message ?? 'Invalid token');
+    });
 
     socket.on('message:new', (data: unknown) => h.onMessageNew?.(messageFromJson(data)));
     socket.on('message:delivered', (data: RealtimeHandlers extends never ? never : { messageId: string; chatId: string; userId: string }) =>
@@ -457,6 +497,7 @@ export class RealtimeClient {
   }
 
   disconnect(): void {
+    this.authenticated = false;
     this.socket?.disconnect();
     this.socket = null;
   }

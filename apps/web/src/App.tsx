@@ -195,11 +195,25 @@ function ChatWindow({
     return () => realtime.leaveChat(chat.id);
   }, [chat.id]);
 
+  /**
+   * Clear this chat's sidebar unread badge in the cached chat list. Reading the
+   * conversation marks the messages read on the server, but the ['chats'] query
+   * is not refetched on every read, so without this the badge stayed on the row
+   * ("(1)" on a conversation the user had already read).
+   */
+  const clearUnreadBadge = useCallback(() => {
+    queryClient.setQueryData<Chat[]>(['chats'], (prev) =>
+      prev?.map((row) =>
+        row.id === chat.id && (row.unreadCount ?? 0) !== 0 ? { ...row, unreadCount: 0 } : row,
+      ),
+    );
+  }, [chat.id, queryClient]);
+
   useEffect(() => {
     if (readOnly) return;
-    api.markChatRead(chat.id).catch(() => {});
+    api.markChatRead(chat.id).then(clearUnreadBadge).catch(() => {});
     void queryClient.invalidateQueries({ queryKey: ['chats'] });
-  }, [chat.id, queryClient, readOnly]);
+  }, [chat.id, queryClient, readOnly, clearUnreadBadge]);
 
   // While this conversation is open and the window is focused, incoming
   // messages must be marked read — otherwise the sender never gets blue ticks.
@@ -213,11 +227,14 @@ function ChatWindow({
     const timer = window.setTimeout(() => {
       api
         .markChatRead(chat.id)
-        .then(() => queryClient.invalidateQueries({ queryKey: ['messages', chat.id] }))
+        .then(() => {
+          clearUnreadBadge();
+          return queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
+        })
         .catch(() => undefined);
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [messages.data, meId, chat.id, queryClient, readOnly]);
+  }, [messages.data, meId, chat.id, queryClient, readOnly, clearUnreadBadge]);
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }));
@@ -280,14 +297,21 @@ function ChatWindow({
     queryClient.setQueryData<Message[]>(['messages', chat.id], (prev) => [...(prev ?? []), optimistic]);
     setDraft('');
 
-    if (realtime.connected) {
+    if (realtime.isAuthenticated()) {
       realtime.sendMessage({ chatId: chat.id, type: 'text', content: body, clientId });
     } else {
+      // No authenticated socket (offline, reconnecting, or the handshake token
+      // expired and has not been refreshed yet): send over REST. Sending over a
+      // connected-but-unauthenticated socket is dropped by the server, which is
+      // what made the optimistic bubble sit on "sending" and then vanish.
       try {
         const saved = await api.sendMessage({ chatId: chat.id, type: 'text', content: body, clientId });
         queryClient.setQueryData<Message[]>(['messages', chat.id], (prev) =>
           (prev ?? []).map((m) => (m.clientId === clientId ? saved : m)),
         );
+        // No socket echo for this message: refresh the sidebar preview/unread
+        // from the server, otherwise the row keeps showing the previous message.
+        void queryClient.invalidateQueries({ queryKey: ['chats'] });
       } catch (err) {
         setNotice(err instanceof Error ? err.message : 'Could not send');
       }
