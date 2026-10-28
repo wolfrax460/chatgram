@@ -16,6 +16,7 @@
  */
 const http = require('http');
 const mongoose = require('mongoose');
+const { io } = require('socket.io-client');
 const reportsModule = require('../../src/ai/reports');
 const reportTelegramModule = require('../../src/support/reportTelegram');
 
@@ -298,10 +299,57 @@ function textOf(row) {
   return String(row?.content || '');
 }
 
+/* ---------------------------------------------------------- realtime helper */
+
+/** Connect an authenticated socket (handshake `auth.token`) and wait for it. */
+async function connectSocket(token) {
+  const socket = io(API, { auth: { token }, reconnection: false, timeout: 8000 });
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('socket did not authenticate within 10s')), 10000);
+      socket.once('authenticated', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      socket.once('connect_error', (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+    });
+    return socket;
+  } catch (error) {
+    socket.close();
+    throw error;
+  }
+}
+
+/** Poll a synchronous predicate; returns the value or undefined on timeout. */
+async function waitForValue(read, { timeoutMs = 15000, interval = 250 } = {}) {
+  const started = Date.now();
+  for (;;) {
+    const value = read();
+    if (value) return value;
+    if (Date.now() - started >= timeoutMs) return value;
+    await mute(interval);
+  }
+}
+
 /* ------------------------------------------------------------------- main */
 
 async function main() {
   console.log('\ngroup @Chatgram AI mentions\n');
+
+  // Fail fast with an actionable message. Without a running staging API the old
+  // harness died with an opaque "TypeError: fetch failed" before any assertion,
+  // which hid whether the product or the environment was broken.
+  const health = await api('GET', '/api/health').catch((error) => ({ status: 0, healthError: error.message }));
+  if (health.status !== 200) {
+    console.error(`Staging API is not reachable at ${API} (${health.healthError || `HTTP ${health.status}`}).`);
+    console.error('Start it first, e.g.: powershell -ExecutionPolicy Bypass -File scripts/start-staging.ps1 -Port 5004 -Database chatgram_staging_ai');
+    console.error('Then run: E2E_API_URL=http://127.0.0.1:5004 node server/test/integration/groupAiMentions.test.js');
+    process.exit(1);
+  }
+
   process.env.MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/chatgram_staging';
   await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
   const db = mongoose.connection.db;
@@ -384,6 +432,37 @@ async function main() {
       { timeoutMs: 15000 },
     );
     check('a group with the Chatgram AI member answers a mention (no manual toggle)', memberReplies.length >= 1, memberReplies.length);
+
+    // The answer must also be delivered live to the group room (here: a
+    // non-asker member's socket), not only stored in the thread. This covers the
+    // complete reported path: stored -> AI participant detected -> provider ->
+    // reply stored -> broadcast to the room.
+    const publicReplies = await api('PATCH', `/api/chats/${aiMemberChat}`, {
+      token: owner.accessToken,
+      body: { groupSettings: { aiReplyVisibility: 'everyone' } },
+    });
+    check('the AI-member group can show replies to everyone', publicReplies.status === 200, publicReplies.status);
+    const ownerSocket = await connectSocket(owner.accessToken);
+    const roomMessages = [];
+    ownerSocket.on('message:new', (message) => roomMessages.push(message));
+    try {
+      await sendMention(alice, aiMemberChat, '@Chatgram AI ROOM_BROADCAST_TEST explain an MX record');
+      const broadcast = await waitForValue(() =>
+        roomMessages.find((message) => {
+          const sender = message?.senderId?.displayName || message?.sender?.displayName || '';
+          return sender === 'Chatgram AI' && /ROOM_BROADCAST_TEST/.test(textOf(message));
+        }),
+      );
+      check(
+        'the group AI reply is broadcast to the group room in real time',
+        Boolean(broadcast),
+        roomMessages
+          .filter((message) => (message?.senderId?.displayName || message?.sender?.displayName || '') === 'Chatgram AI')
+          .map((message) => textOf(message).slice(0, 60)),
+      );
+    } finally {
+      ownerSocket.close();
+    }
 
     // Removing the AI member must opt the group out again: otherwise the
     // mention path silently re-adds the account and keeps answering.
