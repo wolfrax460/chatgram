@@ -724,12 +724,6 @@ export function CallOverlay({ call }: { call: CallState }) {
   const sharers = call.participants.filter((participant) => participant.screenSharing);
   useRingTone(call.status === 'calling' ? 'ringback' : call.status === 'incoming' ? 'incoming' : null);
 
-  // A remote share is the main content. If the user had swapped the self view and
-  // the main stage, put the share back on the big stage instead of hiding it.
-  useEffect(() => {
-    if (sharers.length > 0) setSwapped(false);
-  }, [sharers.length]);
-
   // Contact picker for "Add participant" (turns a 1:1 call into a group room).
   useEffect(() => {
     if (!addParticipantOpen) return undefined;
@@ -1140,14 +1134,15 @@ export function CallOverlay({ call }: { call: CallState }) {
 
   const QualityIcon = qualityIcon(call.quality);
   const others = call.participants;
-  // The stage shows our own video when we swapped self/remote OR while we share
-  // our screen: a share is the thing the user is pointing at, so it is always
-  // the big stage (not the camera-off avatar, not the small self preview).
-  const mainShowsLocal = swapped || call.screenSharing;
+  // Stage precedence: a REMOTE share always owns the main stage (the receiver was
+  // just told about it), then our own share, then the swap choice. `call.screenSharing`
+  // is only MY share flag, so on its own it must never override a remote share —
+  // doing that put my screen on the big stage while the remote share was demoted
+  // to the floating thumbnail (the inverted layout bug).
+  const remoteSharer = sharers[0] ?? null;
+  const mainShowsLocal = remoteSharer === null && (swapped || call.screenSharing);
   const mainParticipant = mainShowsLocal ? null : prominent;
-  // The floating tile is always the other side of the main stage: when the main
-  // stage is our screen we show the remote person in it, so a share can never
-  // hide the person we are talking to (and vice versa).
+  // The floating tile always shows the side that is NOT on the main stage.
   const counterpart = mainShowsLocal ? prominent : null;
   const gridClass = galleryGridClass(remoteCount);
 
