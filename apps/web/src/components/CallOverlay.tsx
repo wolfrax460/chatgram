@@ -69,7 +69,12 @@ function diagnosticsLine(diagnostics: CallDiagnostics | null): string {
     `in ${formatBytes(diagnostics.audioIn)} audio / ${formatBytes(diagnostics.videoIn)} video`,
     `out ${formatBytes(diagnostics.audioOut)} audio / ${formatBytes(diagnostics.videoOut)} video`,
     `${diagnostics.remoteTracks} remote tracks (${diagnostics.remoteMuted} muted)`,
-  ].join(' · ');
+    `${diagnostics.receiverCount} receivers`,
+    `remote ${diagnostics.remoteDirections ?? 'unknown'}`,
+    diagnostics.missingMediaPeers > 0 ? `${diagnostics.missingMediaPeers} peer(s) not sending` : null,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ');
 }
 
 /** Bottom-sheet / floating-tile geometry. */
@@ -1150,7 +1155,17 @@ export function CallOverlay({ call }: { call: CallState }) {
           data-testid="call-media-warning"
           role="alert"
         >
-          <p className="font-semibold">No audio or video is arriving</p>
+          <p className="font-semibold">
+            {(call.diagnostics?.missingMediaPeers ?? 0) > 0
+              ? 'They are not sending audio or video to you'
+              : 'No audio or video is arriving'}
+          </p>
+          {(call.diagnostics?.missingMediaPeers ?? 0) > 0 ? (
+            <p className="mt-0.5 text-[11px] leading-snug text-rose-100/85">
+              The connection is up and our own audio/video is being sent — the other side negotiated no send
+              direction. Retrying re-negotiates the media path.
+            </p>
+          ) : null}
           <p className="mt-0.5 break-words text-[11px] leading-snug text-rose-100/85" data-testid="call-diagnostics">
             {diagnosticsLine(call.diagnostics)}
           </p>

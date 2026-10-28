@@ -125,6 +125,15 @@ export interface CallDiagnostics {
   videoOut: number;
   remoteTracks: number;
   remoteMuted: number;
+  /** Remote receivers whose track is live (0 = `ontrack` never produced media). */
+  receiverCount: number;
+  /**
+   * The other side's negotiated m-line directions, e.g. `audio:recvonly,video:recvonly`.
+   * `recvonly`/`inactive` is the one-way-call signature: they do not send to us.
+   */
+  remoteDirections: string | null;
+  /** Connected peers that keep sending while we receive zero bytes (after 5 s). */
+  missingMediaPeers: number;
   /** True when the ICE server list contains a TURN url (a relay was available). */
   relayConfigured: boolean;
   /** Seconds since media was expected with zero bytes received. */
@@ -270,6 +279,10 @@ interface PeerHandle {
   /** Stable sender references so tracks can be swapped/removed reliably. */
   videoSender: RTCRtpSender | null;
   audioSender: RTCRtpSender | null;
+  /** When a connected peer was first seen sending media with zero bytes received. */
+  noInboundSince: number | null;
+  /** True once the "we receive 0 B" warning was logged for this peer. */
+  missingMediaLogged: boolean;
 }
 
 let current: ActiveCall | null = null;
@@ -280,6 +293,12 @@ let mediaWatchStartedAt = 0;
 let stallReported = false;
 /** How long with zero received media before the in-call warning appears. */
 const MEDIA_STALL_MS = 8_000;
+/**
+ * A connected peer that keeps SENDING while we receive nothing has no receive
+ * direction in the negotiated SDP. ICE is fine, so an ICE restart cannot fix it;
+ * detect it sooner than the generic stall so the UI can say who is not sending.
+ */
+const MISSING_MEDIA_MS = 5_000;
 let localStream: MediaStream | null = null;
 /** The display-capture stream while screen sharing (separate from the camera). */
 let screenStream: MediaStream | null = null;
@@ -554,12 +573,10 @@ async function replaceLocalTrack(kind: 'audio' | 'video', track: MediaStreamTrac
     // has a track, so looking it up by track.kind would fail on the way back.
     const sender = kind === 'video' ? handle.videoSender : handle.audioSender;
     try {
+      // No sender yet means this peer has not negotiated yet: adding a track
+      // here would create an unassociated transceiver and reintroduce the
+      // recvonly-answer bug. The next negotiation creates the sender instead.
       if (sender) await sender.replaceTrack(track);
-      else if (track && localStream) {
-        const added = handle.pc.addTrack(track, localStream);
-        if (kind === 'video') handle.videoSender = added;
-        else handle.audioSender = added;
-      }
     } catch {
       /* renegotiation will catch up */
     }
@@ -592,6 +609,33 @@ function serversForPeer(): RTCIceServer[] {
 }
 
 /* ------------------------------------------------------------------ quality */
+
+/**
+ * The other side's negotiated direction per m-line, read from the transceivers.
+ * `currentDirection` is OUR direction, so it is inverted to describe the peer:
+ * our `sendonly` means the peer answered `recvonly` and never sends to us — the
+ * exact one-way-call signature this diagnostics line exists to expose.
+ */
+function transceiverDirections(pc: RTCPeerConnection): string | null {
+  const entries: string[] = [];
+  for (const transceiver of pc.getTransceivers()) {
+    const kind = transceiver.receiver.track?.kind;
+    if (kind !== 'audio' && kind !== 'video') continue;
+    const current = transceiver.currentDirection;
+    const remote =
+      current === 'sendrecv'
+        ? 'sendrecv'
+        : current === 'sendonly'
+          ? 'recvonly'
+          : current === 'recvonly'
+            ? 'sendonly'
+            : current === 'inactive'
+              ? 'inactive'
+              : 'pending';
+    entries.push(`${kind}:${remote}`);
+  }
+  return entries.length ? entries.join(',') : null;
+}
 
 function targetBitrate(peerCount: number): number {
   if (peerCount <= 1) return 1_500_000;
@@ -647,12 +691,23 @@ async function measureQuality(): Promise<void> {
   let videoOut = 0;
   let remoteTracks = 0;
   let remoteMuted = 0;
+  let receiverCount = 0;
+  let missingMediaPeers = 0;
   for (const handle of handles) {
     for (const track of handle.stream.getTracks()) {
       if (track.readyState !== 'live') continue;
       remoteTracks += 1;
       if (track.muted) remoteMuted += 1;
     }
+    try {
+      receiverCount += handle.pc
+        .getReceivers()
+        .filter((receiver) => Boolean(receiver.track) && receiver.track.readyState === 'live').length;
+    } catch {
+      /* the peer may be closing */
+    }
+    let peerIn = 0;
+    let peerOut = 0;
     try {
       const stats = await handle.pc.getStats();
       stats.forEach((report) => {
@@ -661,6 +716,7 @@ async function measureQuality(): Promise<void> {
         }
         if (report.type === 'inbound-rtp') {
           const bytes = Number(report.bytesReceived || 0);
+          peerIn += bytes;
           if (report.kind === 'video') {
             videoIn += bytes;
             const received = report.packetsReceived || 0;
@@ -677,6 +733,7 @@ async function measureQuality(): Promise<void> {
         }
         if (report.type === 'outbound-rtp') {
           const bytes = Number(report.bytesSent || 0);
+          peerOut += bytes;
           if (report.kind === 'video') videoOut += bytes;
           else if (report.kind === 'audio') audioOut += bytes;
         }
@@ -685,6 +742,27 @@ async function measureQuality(): Promise<void> {
       else if (worst !== 'poor' && (latencyMs ?? 0) > 220) worst = 'fair';
     } catch {
       /* ignore a peer that just closed */
+    }
+
+    // One-way-call detector: ICE/DTLS are connected and we keep sending, but the
+    // peer's negotiated receive direction (from our side) is missing, so inbound
+    // stays at 0 B. That is an SDP direction problem — an ICE restart cannot fix
+    // it; the overlay says who is not sending and Retry renegotiates.
+    const connected = handle.pc.connectionState === 'connected';
+    if (connected && peerOut > 0 && peerIn === 0) {
+      handle.noInboundSince ??= Date.now();
+    } else {
+      handle.noInboundSince = null;
+      handle.missingMediaLogged = false;
+    }
+    if (handle.noInboundSince !== null && Date.now() - handle.noInboundSince >= MISSING_MEDIA_MS) {
+      missingMediaPeers += 1;
+      if (!handle.missingMediaLogged) {
+        handle.missingMediaLogged = true;
+        console.warn(
+          `[call] ${handle.info.displayName || handle.info.id.slice(0, 8)} is connected and we send ${peerOut} B but receive 0 B · remote directions ${transceiverDirections(handle.pc) ?? 'unknown'}`,
+        );
+      }
     }
   }
 
@@ -731,7 +809,14 @@ async function measureQuality(): Promise<void> {
   if (mediaExpected && !mediaWatchStartedAt) mediaWatchStartedAt = Date.now();
   const waited = mediaWatchStartedAt ? Date.now() - mediaWatchStartedAt : 0;
   const stalledSeconds = Math.round(waited / 1000);
-  const mediaStalled = mediaExpected && waited >= MEDIA_STALL_MS && audioIn + videoIn === 0;
+  const remoteDirections =
+    [...new Set(handles.map((handle) => transceiverDirections(handle.pc)).filter((value): value is string => Boolean(value)))].join(
+      ' | ',
+    ) || null;
+  const mediaMissing = mediaExpected && missingMediaPeers > 0;
+  // The banner appears as soon as a one-way peer is proven (5 s), or later for a
+  // plain stall when no peer is sending anything at all.
+  const mediaStalled = mediaExpected && (mediaMissing || (waited >= MEDIA_STALL_MS && audioIn + videoIn === 0));
   const diagnostics: CallDiagnostics = {
     iceConnectionState,
     connectionState,
@@ -742,6 +827,9 @@ async function measureQuality(): Promise<void> {
     videoOut,
     remoteTracks,
     remoteMuted,
+    receiverCount,
+    remoteDirections,
+    missingMediaPeers,
     relayConfigured,
     stalledSeconds,
   };
@@ -759,14 +847,30 @@ async function measureQuality(): Promise<void> {
 }
 
 /**
- * Retry the media path: ICE restart on every peer plus a fresh stall clock.
- * Wired to the "Retry connection" button of the in-call warning.
+ * Retry the media path: a FULL renegotiation per peer — rebuild sendrecv
+ * directions, re-attach local tracks, refresh ICE and send a new offer. An ICE
+ * restart alone cannot repair the one-way state: the transport is connected and
+ * the missing half is the SDP receive direction. Wired to the in-call "Retry
+ * connection" button.
  */
 export function retryCallMedia(): void {
   mediaWatchStartedAt = Date.now();
   stallReported = false;
-  setState({ mediaStalled: false, quality: 'unknown', notice: 'Retrying the connection…' });
-  for (const handle of peers.values()) void restartIce(handle);
+  setState({ mediaStalled: false, quality: 'unknown', notice: 'Re-negotiating the media path…' });
+  for (const handle of peers.values()) {
+    handle.noInboundSince = null;
+    handle.missingMediaLogged = false;
+    void (async () => {
+      try {
+        await iceServers(Date.now() - (iceServersCache?.fetchedAt ?? 0) > (iceServersCache?.ttlMs ?? 0));
+        handle.pc.setConfiguration({ iceServers: serversForPeer() });
+        handle.pc.restartIce();
+      } catch {
+        /* fresh TURN credentials are best effort; the offer still renegotiates */
+      }
+      await sendOffer(handle);
+    })();
+  }
 }
 
 /**
@@ -905,6 +1009,8 @@ async function createPeer(info: CallParticipant): Promise<PeerHandle | null> {
   const existing = peers.get(info.id);
   if (existing) {
     existing.info = info;
+    // A peer that already told us they stopped receiving video keeps that state.
+    if (info.incomingVideoOff) setPeerVideoDelivery(info.id, false);
     return existing;
   }
   const cap = current.capacity;
@@ -927,27 +1033,23 @@ async function createPeer(info: CallParticipant): Promise<PeerHandle | null> {
     disconnectedAt: null,
     videoSender: null,
     audioSender: null,
+    noInboundSince: null,
+    missingMediaLogged: false,
   };
   peers.set(info.id, handle);
 
-  // Always negotiate one audio and one video m-line. With addTrack() an
-  // audio-only participant answers with a single m-line, which rejects the
-  // video section of the offer — that is exactly why a caller's camera stayed
-  // invisible to somebody who joined without a camera. Explicit transceivers
-  // keep the answer compatible (recvonly video is still a video m-line), so
-  // either side can switch its camera on later without a broken SDP.
-  handle.audioSender = pc.addTransceiver('audio', { direction: 'sendrecv' }).sender;
-  handle.videoSender = pc.addTransceiver('video', { direction: 'sendrecv' }).sender;
-  for (const track of localStream.getTracks()) {
-    const sender = track.kind === 'video' ? handle.videoSender : handle.audioSender;
-    try {
-      await sender.replaceTrack(track);
-    } catch {
-      /* an unsupported track kind keeps the m-line without a source */
-    }
-  }
-  // If this person told us they stopped receiving video, do not send them any.
-  if (info.incomingVideoOff) setPeerVideoDelivery(info.id, false);
+  // Negotiation is ROLE-specific and the ordering is critical:
+  //  - the OFFERER creates the explicit audio+video transceivers itself, right
+  //    before its offer (see ensureOfferSenders) — one video m-line always, even
+  //    without a camera, so an audio-only answer cannot reject it and the camera
+  //    can be switched on later;
+  //  - the ANSWERER must NOT create transceivers before setRemoteDescription:
+  //    Chrome does not associate pre-created transceivers with the offer's
+  //    m-lines, it creates fresh recvonly ones instead, the answer then
+  //    negotiates recvonly and the caller receives zero bytes forever while the
+  //    connection shows "connected" (the one-way call bug). handleOffer applies
+  //    the offer first, then attaches our tracks to the offer's transceivers.
+  // The sender refs stay null here; whichever role path runs first fills them.
 
   pc.ontrack = (event) => {
     // With explicit transceivers an incoming track carries no stream id, so
@@ -1022,6 +1124,7 @@ async function restartIce(handle: PeerHandle): Promise<void> {
     handle.pc.restartIce();
     if (!handle.polite) {
       // The impolite side re-offers; the polite side waits and yields.
+      await ensureOfferSenders(handle);
       const offer = await handle.pc.createOffer({ iceRestart: true });
       await handle.pc.setLocalDescription(offer);
       realtime.emit('call:offer', {
@@ -1035,10 +1138,111 @@ async function restartIce(handle: PeerHandle): Promise<void> {
   }
 }
 
+/** The local track for one kind (null when the camera is off or absent). */
+function localTrackFor(kind: 'audio' | 'video'): MediaStreamTrack | null {
+  return kind === 'audio'
+    ? (localStream?.getAudioTracks()[0] ?? null)
+    : (localStream?.getVideoTracks()[0] ?? null);
+}
+
+/**
+ * OFFERER/caller path: create the explicit sendrecv audio+video m-lines and
+ * attach our local tracks. Always one video m-line, even with no camera track:
+ * it stays sendrecv so an audio-only answer cannot reject it, and the camera can
+ * be switched on later by renegotiation. Safe to call again before any
+ * renegotiation (it reuses the stored senders).
+ */
+async function ensureOfferSenders(handle: PeerHandle): Promise<void> {
+  const pc = handle.pc;
+  const ensure = async (kind: 'audio' | 'video'): Promise<void> => {
+    let sender = kind === 'audio' ? handle.audioSender : handle.videoSender;
+    if (!sender) {
+      try {
+        sender = pc.addTransceiver(kind, { direction: 'sendrecv' }).sender;
+      } catch {
+        return;
+      }
+      if (kind === 'audio') handle.audioSender = sender;
+      else handle.videoSender = sender;
+    }
+    const transceiver = pc.getTransceivers().find((candidate) => candidate.sender === sender);
+    if (transceiver && transceiver.direction !== 'sendrecv') {
+      try {
+        transceiver.direction = 'sendrecv';
+      } catch {
+        /* a stopped transceiver cannot change direction */
+      }
+    }
+    // Respect a peer that told us they stopped receiving video.
+    const track = kind === 'video' && handle.info.incomingVideoOff ? null : localTrackFor(kind);
+    try {
+      await sender.replaceTrack(track);
+    } catch {
+      /* the m-line still negotiates; renegotiation can attach the track later */
+    }
+  };
+  await ensure('audio');
+  await ensure('video');
+}
+
+/**
+ * ANSWERER/callee path, called AFTER setRemoteDescription(offer): attach our
+ * tracks to the transceivers the offer created and make them sendrecv. Never
+ * call addTransceiver before the offer — that is what made Chrome answer
+ * recvonly and broke our receive direction (see the comment in createPeer).
+ */
+async function attachAnswererSenders(handle: PeerHandle, stopOrphans = false): Promise<void> {
+  const pc = handle.pc;
+  const chosen = new Set<RTCRtpSender>();
+  for (const kind of ['audio', 'video'] as const) {
+    // Only transceivers created by the applied offer carry a mid. A transceiver
+    // WE created for an offer that lost a glare collision has mid === null: using
+    // it for the answer would answer recvonly again, so it is ignored here.
+    const associated = pc
+      .getTransceivers()
+      .filter((candidate) => candidate.receiver.track?.kind === kind && candidate.sender && candidate.mid !== null);
+    const known = kind === 'audio' ? handle.audioSender : handle.videoSender;
+    const transceiver = (known ? associated.find((candidate) => candidate.sender === known) : undefined) ?? associated[0];
+    if (!transceiver) continue;
+    chosen.add(transceiver.sender);
+    if (transceiver.direction !== 'sendrecv') {
+      try {
+        transceiver.direction = 'sendrecv';
+      } catch {
+        /* a stopped transceiver cannot change direction */
+      }
+    }
+    if (kind === 'audio') handle.audioSender = transceiver.sender;
+    else handle.videoSender = transceiver.sender;
+    const track = kind === 'video' && handle.info.incomingVideoOff ? null : localTrackFor(kind);
+    try {
+      await transceiver.sender.replaceTrack(track);
+    } catch {
+      /* the answer still negotiates; the retry path can attach the track later */
+    }
+  }
+  if (!stopOrphans) return;
+  // Clean up the transceivers that lost the glare collision. They are not part of
+  // the negotiated SDP; leaving them would add duplicate m-lines to our next offer.
+  for (const transceiver of pc.getTransceivers()) {
+    if (transceiver.mid !== null || chosen.has(transceiver.sender)) continue;
+    const stopper = transceiver as RTCRtpTransceiver & { stop?: () => void };
+    try {
+      stopper.stop?.();
+    } catch {
+      /* nothing to stop */
+    }
+  }
+}
+
 async function sendOffer(handle: PeerHandle): Promise<void> {
   if (!current) return;
   try {
     handle.makingOffer = true;
+    // The offerer owns the m-lines: create them (sendrecv, audio then video) and
+    // attach local tracks BEFORE the offer so the answer cannot be audio-only
+    // and cannot reject our video section.
+    await ensureOfferSenders(handle);
     const offer = await handle.pc.createOffer();
     if (handle.pc.signalingState !== 'stable') return;
     await handle.pc.setLocalDescription(offer);
@@ -1538,6 +1742,11 @@ export async function handleOffer(payload: {
     for (const candidate of handle.pendingCandidates.splice(0)) {
       await pc.addIceCandidate(candidate).catch(() => undefined);
     }
+    // Attach our media to the m-lines the offer created, BEFORE createAnswer.
+    // Doing this after setRemoteDescription is what keeps the answer sendrecv
+    // instead of the recvonly answer that silently broke the caller's receive
+    // direction (connected, sending, 0 B received, ontrack never fired).
+    await attachAnswererSenders(handle, offerCollision);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     realtime.emit('call:answer', {
