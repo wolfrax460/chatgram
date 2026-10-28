@@ -647,8 +647,12 @@ function targetBitrate(peerCount: number): number {
 /** Reduce video bitrate/resolution as more people join the mesh. */
 async function applyVideoQuality(): Promise<void> {
   if (!state.video) return;
-  const bitrate = targetBitrate(peers.size);
-  const degradation = peers.size <= 1 ? 1 : peers.size <= 3 ? 2 : 4;
+  // A screen share is read from the same video sender as the camera. Never
+  // downscale it like a face cam: text must stay readable, so keep full
+  // resolution and give it a higher bitrate even in a group call.
+  const sharingScreen = state.screenSharing;
+  const bitrate = sharingScreen ? 2_500_000 : targetBitrate(peers.size);
+  const degradation = sharingScreen ? 1 : peers.size <= 1 ? 1 : peers.size <= 3 ? 2 : 4;
   for (const handle of peers.values()) {
     const sender = handle.pc.getSenders().find((s) => s.track?.kind === 'video');
     if (!sender) continue;
@@ -1786,8 +1790,22 @@ function applySignal(signal: CallSignal, from: CallParticipant): void {
       hasSystemAudio: signal.hasSystemAudio === true,
     });
     if (screenSharing) {
+      // A share is video content and must be visible even in a call this device
+      // joined audio-only: the video m-line is always negotiated, so switch the
+      // stage to video mode instead of silently showing nothing.
+      if (!state.video || state.audioOnly) setState({ video: true, audioOnly: false });
+      // A share must never be silently swallowed by the data-saving switches: if
+      // local incoming video was off, re-enable it (and say so) so the shared
+      // screen is actually visible instead of showing nothing.
+      const wasSuppressed = state.incomingVideoOff;
+      if (wasSuppressed) {
+        for (const track of peers.get(source.id)?.stream.getVideoTracks() ?? []) track.enabled = true;
+        setState({ incomingVideoOff: false, lowBandwidth: false });
+      }
       setState({
-        notice: `${name} is sharing their screen${signal.hasSystemAudio ? ' with system audio' : ''}.`,
+        notice: `${name} is sharing their screen${signal.hasSystemAudio ? ' with system audio' : ''}.${
+          wasSuppressed ? ' Incoming video was turned back on to show it.' : ''
+        }`,
       });
     }
   } else if (signal.kind === 'incoming-video-off') {

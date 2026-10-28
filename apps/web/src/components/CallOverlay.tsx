@@ -361,6 +361,32 @@ function RemoteAudioSink({ participantId }: { participantId: string }) {
   return <audio ref={element} autoPlay playsInline className="hidden" aria-hidden="true" />;
 }
 
+/**
+ * Whether a remote tile should mount its `<video>`.
+ *
+ * A screen share is a real video track on the SAME video transceiver as the
+ * camera. The sharer normally turns the camera off while sharing, so
+ * `cameraOn === false` / `videoOff` / an `audioOnly` roster entry must NOT hide
+ * it: the avatar is only correct when the peer genuinely has no video to show.
+ * When sharing, mount the video as soon as the peer stream exists (the first
+ * track can arrive a moment later; the waiting overlay covers that gap).
+ *
+ * Exported so the screen-share reproduction check exercises the real predicate.
+ */
+export function remoteVideoVisible(
+  participant: Pick<CallParticipant, 'cameraOn' | 'videoOff' | 'audioOnly' | 'screenSharing'>,
+  options: { videoEnabled: boolean; screenSharing: boolean; hasStream: boolean },
+): boolean {
+  const sharing = options.screenSharing || participant.screenSharing === true;
+  if (sharing) return options.hasStream;
+  return (
+    options.videoEnabled &&
+    participant.cameraOn !== false &&
+    !participant.audioOnly &&
+    participant.videoOff !== true
+  );
+}
+
 function RemoteTile({
   participant,
   speaking,
@@ -385,12 +411,14 @@ function RemoteTile({
   const retryAttempts = useRef(0);
   const attemptPlayRef = useRef<() => void>(() => undefined);
   const stream = getPeerStream(participant.id);
-  const showVideo =
-    videoEnabled &&
-    participant.cameraOn !== false &&
-    !participant.audioOnly &&
-    participant.videoOff !== true;
   const sharing = screenSharing || participant.screenSharing === true;
+  // Camera state is irrelevant while sharing: the screen is delivered on the
+  // video transceiver and must be rendered even if cameraOn === false.
+  const showVideo = remoteVideoVisible(participant, {
+    videoEnabled,
+    screenSharing,
+    hasStream: stream !== null,
+  });
 
   const clearRetry = useCallback(() => {
     if (retryTimer.current !== null) {
@@ -531,7 +559,11 @@ function RemoteTile({
           <audio ref={audio} autoPlay playsInline className="hidden" aria-hidden="true" />
           <Avatar name={participant.displayName} url={participant.avatarUrl} className="h-20 w-20 text-2xl" />
           <span className="text-sm font-semibold">{participant.displayName ?? 'Chatgram user'}</span>
-          {participant.incomingVideoOff ? (
+          {sharing ? (
+            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-200/90" data-testid="remote-screen-waiting">
+              <ScreenShare className="h-3.5 w-3.5" /> Screen share connecting…
+            </span>
+          ) : participant.incomingVideoOff ? (
             <span className="inline-flex items-center gap-1 text-[11px] text-white/70" data-testid="remote-video-off-for-you">
               <VolumeX className="h-3.5 w-3.5" /> Incoming video off for you
             </span>
@@ -691,6 +723,12 @@ export function CallOverlay({ call }: { call: CallState }) {
   const speaking = useSpeaking(participantIds);
   const sharers = call.participants.filter((participant) => participant.screenSharing);
   useRingTone(call.status === 'calling' ? 'ringback' : call.status === 'incoming' ? 'incoming' : null);
+
+  // A remote share is the main content. If the user had swapped the self view and
+  // the main stage, put the share back on the big stage instead of hiding it.
+  useEffect(() => {
+    if (sharers.length > 0) setSwapped(false);
+  }, [sharers.length]);
 
   // Contact picker for "Add participant" (turns a 1:1 call into a group room).
   useEffect(() => {
@@ -936,10 +974,11 @@ export function CallOverlay({ call }: { call: CallState }) {
   }, []);
 
   const prominent = useMemo<CallParticipant | null>(() => {
-    if (pinnedId) return call.participants.find((participant) => participant.id === pinnedId) ?? null;
-    // A shared screen is shown large by default: it is the main content.
+    // A shared screen is the main content and wins over a pin: pinning someone
+    // else must not hide the share the receiver was just told about.
     const sharer = call.participants.find((participant) => participant.screenSharing);
     if (sharer) return sharer;
+    if (pinnedId) return call.participants.find((participant) => participant.id === pinnedId) ?? null;
     if (remoteCount === 1) return call.participants[0] ?? null;
     const loud = Object.entries(speaking).find(([, value]) => value);
     return call.participants.find((participant) => participant.id === loud?.[0]) ?? call.participants[0] ?? null;
@@ -1101,7 +1140,15 @@ export function CallOverlay({ call }: { call: CallState }) {
 
   const QualityIcon = qualityIcon(call.quality);
   const others = call.participants;
-  const mainParticipant = swapped ? null : prominent;
+  // The stage shows our own video when we swapped self/remote OR while we share
+  // our screen: a share is the thing the user is pointing at, so it is always
+  // the big stage (not the camera-off avatar, not the small self preview).
+  const mainShowsLocal = swapped || call.screenSharing;
+  const mainParticipant = mainShowsLocal ? null : prominent;
+  // The floating tile is always the other side of the main stage: when the main
+  // stage is our screen we show the remote person in it, so a share can never
+  // hide the person we are talking to (and vice versa).
+  const counterpart = mainShowsLocal ? prominent : null;
   const gridClass = galleryGridClass(remoteCount);
 
   return (
@@ -1220,9 +1267,9 @@ export function CallOverlay({ call }: { call: CallState }) {
 
         {showVideo ? (
           <div className="flex h-full min-h-0 flex-col gap-2">
-            {layout === 'speaker' && remoteCount > 0 ? (
+            {(layout === 'speaker' && remoteCount > 0) || call.screenSharing ? (
               <div className="relative h-full min-h-0 flex-1">
-                {swapped ? (
+                {mainShowsLocal ? (
                   <div className="relative flex h-full items-center justify-center overflow-hidden rounded-2xl bg-ink-800">
                     {call.cameraOn || call.screenSharing ? (
                       <video ref={localVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${call.screenSharing ? '' : 'scale-x-[-1]'}`} aria-label="Your video" />
@@ -1232,7 +1279,14 @@ export function CallOverlay({ call }: { call: CallState }) {
                         <span className="text-[12px] text-white/70">Camera off · others can still hear you</span>
                       </div>
                     )}
-                    <span className="absolute bottom-2 left-2 rounded-md bg-black/50 px-2 py-0.5 text-xs font-medium">You</span>
+                    <span className="absolute bottom-2 left-2 rounded-md bg-black/50 px-2 py-0.5 text-xs font-medium">
+                      {call.screenSharing ? 'Your screen · You' : 'You'}
+                    </span>
+                    {call.screenSharing ? (
+                      <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-emerald-600/90 px-2 py-0.5 text-[10px] font-semibold" data-testid="local-screen-main">
+                        <ScreenShare className="h-3 w-3" aria-hidden="true" /> Sharing
+                      </span>
+                    ) : null}
                   </div>
                 ) : mainParticipant ? (
                   <RemoteTile
@@ -1316,14 +1370,26 @@ export function CallOverlay({ call }: { call: CallState }) {
           onPointerCancel={cancelSelfViewDrag}
         >
           <div className="relative h-full w-full cursor-grab active:cursor-grabbing" data-testid="self-view">
-            {call.cameraOn || call.screenSharing ? (
+            {counterpart ? (
+              // Main stage shows our own video (swap or our screen share): the
+              // floating tile is the remote person, so nothing ever disappears.
+              <RemoteTile
+                participant={counterpart}
+                speaking={Boolean(speaking[counterpart.id])}
+                pinned={pinnedId === counterpart.id}
+                videoEnabled={!call.incomingVideoOff}
+                screenSharing={Boolean(counterpart.screenSharing)}
+                onPin={() => setPinnedId(pinnedId === counterpart.id ? null : counterpart.id)}
+                onRegisterVideo={(element) => { remoteVideoRef.current = element; }}
+              />
+            ) : call.cameraOn || call.screenSharing ? (
               <video ref={localSelfVideo} autoPlay playsInline muted className={`h-full w-full object-cover ${call.screenSharing ? '' : 'scale-x-[-1]'}`} aria-label="Your video" />
             ) : (
               <div className="grid h-full w-full place-items-center bg-ink-800" data-testid="self-camera-off">
                 <CameraOff className="h-6 w-6 text-white/60" aria-label="Your camera is off" />
               </div>
             )}
-            {call.muted ? <MicOff className="absolute right-1 top-1 h-3.5 w-3.5 text-rose-300" aria-label="You are muted" /> : null}
+            {!counterpart && call.muted ? <MicOff className="absolute right-1 top-1 h-3.5 w-3.5 text-rose-300" aria-label="You are muted" /> : null}
           </div>
         </div>
       ) : null}
