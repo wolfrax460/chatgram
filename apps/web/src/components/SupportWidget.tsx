@@ -1,24 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ArrowLeft, BookOpen, CheckCircle2, ChevronDown, Database, HardDrive, Home as HomeIcon,
+  ArrowLeft, BookOpen, Bug, CheckCircle2, ChevronDown, Database, HardDrive, Home as HomeIcon,
   LifeBuoy, Loader2, MessageSquareText, Paperclip, Search, Send, ShieldAlert, Smile,
   ThumbsDown, ThumbsUp, UserRound, Wifi, X,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { flushPendingErrorReports } from '../lib/errorReport';
+import HelpErrorsTab from './HelpErrorsTab';
 import type { HelpMessageWire } from '@chatgram/api-client';
 import { useSession } from '@chatgram/core';
 
 /**
- * Chatgram help-centre widget: Home / Messages / Help tabs.
+ * Chatgram help-centre widget: Home / Messages / Help / Errors tabs.
  *
  * Everything is server-backed (`/api/help/...`): articles, search and the
  * conversations themselves, so the Messages tab survives a reload and the
  * support team can see the transcript and reply. AI answers come from the
  * existing assistant endpoint; when it is unavailable the server falls back to
- * keyword matching over the same articles.
+ * keyword matching over the same articles. The Errors tab turns a bug report or
+ * feature request into a debugging prompt (see lib/errorReport.ts).
  */
 
-type Tab = 'home' | 'messages' | 'help';
+type Tab = 'home' | 'messages' | 'help' | 'errors';
 
 interface ConversationSummary {
   id: string;
@@ -108,6 +111,10 @@ export default function SupportWidget({ hideLauncher = false }: { hideLauncher?:
   const [attachments, setAttachments] = useState<{ url: string; type: string; name: string; size: number }[]>([]);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  /** Last meaningful thing the user did here, passed to the Errors tab. */
+  const [lastAction, setLastAction] = useState('');
+  /** Bumped after a saved error report is delivered, so the tab reloads the queue. */
+  const [errorReportsVersion, setErrorReportsVersion] = useState(0);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -202,6 +209,24 @@ export default function SupportWidget({ hideLauncher = false }: { hideLauncher?:
     }
   }, [open, tab]);
 
+  // Retry error reports that were saved while the endpoint was unavailable:
+  // one attempt per Help visit, only when a session exists (the endpoint is
+  // auth-only). A report the server rejects is dropped; transient failures stay.
+  useEffect(() => {
+    if (!open || !user) return undefined;
+    let cancelled = false;
+    void flushPendingErrorReports().then(({ delivered }) => {
+      if (cancelled || delivered === 0) return;
+      setNotice(
+        `${delivered} saved error report${delivered === 1 ? '' : 's'} delivered to the team.`,
+      );
+      setErrorReportsVersion((value) => value + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, user]);
+
   useEffect(() => {
     if (scrollerRef.current) scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
   }, [messages, typing]);
@@ -280,7 +305,9 @@ export default function SupportWidget({ hideLauncher = false }: { hideLauncher?:
     setTab('help');
     setArticle(null);
     try {
-      setArticle(await api.helpArticle(slug));
+      const loaded = await api.helpArticle(slug);
+      setArticle(loaded);
+      setLastAction(`Opened the help article “${loaded.title}”`);
     } catch (articleError) {
       setError(articleError instanceof Error ? articleError.message : 'Could not load the article');
     }
@@ -291,6 +318,7 @@ export default function SupportWidget({ hideLauncher = false }: { hideLauncher?:
     try {
       const id = await ensureConversation();
       setTab('messages');
+      setLastAction('Started a chat with the support assistant');
       await loadConversation(id);
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : 'Could not start the chat');
@@ -301,6 +329,7 @@ export default function SupportWidget({ hideLauncher = false }: { hideLauncher?:
     setConversationId(id);
     setTab('messages');
     setArticle(null);
+    setLastAction('Continued a support chat');
     await loadConversation(id);
   }
 
@@ -439,16 +468,18 @@ export default function SupportWidget({ hideLauncher = false }: { hideLauncher?:
               ['home', 'Home', HomeIcon],
               ['messages', 'Messages', MessageSquareText],
               ['help', 'Help', BookOpen],
+              ['errors', 'Errors', Bug],
             ] as const).map(([key, label, Icon]) => (
               <button
                 key={key}
                 type="button"
+                data-testid={key === 'errors' ? 'help-errors-tab' : undefined}
                 onClick={() => {
                   setTab(key);
                   setArticle(null);
                 }}
                 aria-current={tab === key ? 'page' : undefined}
-                className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 ${
+                className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 px-1 py-2.5 ${
                   tab === key
                     ? 'border-b-2 border-brand-600 text-brand-700 dark:text-brand-300'
                     : 'text-ink-500 dark:text-ink-400'
@@ -853,6 +884,15 @@ export default function SupportWidget({ hideLauncher = false }: { hideLauncher?:
                   </div>
                 )}
               </div>
+            ) : null}
+
+            {/* -------------------------------------------------- ERRORS */}
+            {tab === 'errors' ? (
+              <HelpErrorsTab
+                signedIn={Boolean(user)}
+                lastAction={lastAction || undefined}
+                refreshKey={errorReportsVersion}
+              />
             ) : null}
           </div>
         </div>
