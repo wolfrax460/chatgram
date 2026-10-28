@@ -512,3 +512,20 @@ Wi-Fi↔mobile-data — `iceConnectionState`, selected candidate pair local/remo
 `bytesSent/bytesReceived` per audio and video, remote track count/muted — and fix from those numbers, plus
 the in-call "No audio or video is arriving" warning with an ICE-restart retry and the content-free
 call-quality event to the admin Inbox.
+
+## NEXT SESSION STARTS HERE (2026-10-28, unshipped work in the tree)
+
+LIVE is fine and verified: web 200, landing 200, feeds android 1.1.7 / versionCode 8 and windows 1.1.4 (direct host), latest commits `ee9f8bb` (plus the landing/web batch in `d878b2c`).
+What is committed and live: honest OTP banners (CODE_EXPIRED/INVALID/MISSING), clean chat-list reply previews, WhatsApp-style reply cards, message persistence + socket re-auth, one-way call fix with "they are not sending" detector, screen-share rendering + remote-sharer-owns-stage, install-guide dialogs + 3 CTAs + web-run dialog, Windows direct-host downloads with the packaged updater.
+
+**Uncommitted, IN PROGRESS (19 dirty files, `tsc` currently clean but the features are NOT finished and NOT deployed):**
+- Remote control: `apps/web/src/lib/calls.ts` + `apps/web/src/components/CallOverlay.tsx` partially changed (data channel/consent not complete); Electron `apps/desktop/main.js`/`preload.js` injection bridge not written; `@nut-tree-fork/nut-js` not added. Needs a real implementation + `npm run dist` packaging proof + installer 1.1.5.
+- Screen-share quality: not implemented yet (needs screen-specific inbound-rtp sampling + `screen-share-quality` row).
+- Voice notes: new `VoiceNotePlayer.tsx`, `VoiceRecorderBar.tsx`, updated `useVoiceRecorder.ts`/`Composer.tsx`/`MessageMedia.tsx` — partially wired; needs a real record→send→play run and waveform/speed/seek verification.
+- Help "Errors" tab: new `HelpErrorsTab.tsx`, `lib/errorReport.ts`, `SupportWidget.tsx` edits — UI exists; depends on the server route below.
+- NVIDIA Nemotron: `server/src/ai/adapters.js` + `providers.js` partially changed; `POST /api/help/error-report` + error_report inbox rows NOT built; nothing deployed (`pm2` still at restart #128).
+Owner step: put `NVIDIA_API_KEY=…` in `/home/ubuntu/chatgram/server/.env` (never in chat).
+
+**Next session order:** 1) finish NVIDIA provider + `/api/help/error-report` with tests, deploy API; 2) finish Help Errors tab wiring against it; 3) finish voice notes and verify in a browser; 4) implement remote control properly (data channel + consent UI + Electron `webContents`/nut-js injection) and rebuild/publish the Windows installer with the native module packaged; 5) screen-share quality; 6) deploy web once `tsc` and a real smoke test pass, then commit.
+
+**Rules that still apply:** never commit `package-lock.json`, `ads/`, `vercel.json`; never print secrets; one owner per file while agents run; only deploy after `tsc` + landing build are green.
