@@ -31,11 +31,6 @@ export default {
     platformAndroid: 'Android',
     platformWindows: 'Windows',
     platformWeb: 'Wavuti — hakuna usakinishaji',
-    photo: {
-      alt: 'Marafiki watano wakicheka pamoja wakiangalia simu',
-      caption: 'Picha ya kielelezo — marafiki wakishirikiana simu. Si picha ya programu.',
-      label: 'Picha',
-    },
   },
   facts: [
     { title: 'Simu zimo', sub: 'Sauti, video na kushiriki skrini' },
@@ -147,11 +142,6 @@ export default {
       },
     ],
     note: 'Alama za kusomwa na kuwasili ni sehemu ya mazungumzo — na unaweza kuzima alama za kusomwa.',
-    photo: {
-      alt: 'Marafiki wawili wakicheka pamoja wakiangalia kitu kwenye simu',
-      caption: 'Picha ya kielelezo — marafiki wawili wakishirikiana wakati. Si picha ya programu.',
-      label: 'Picha',
-    },
   },
   preview: {
     eyebrow: 'Onyesho',

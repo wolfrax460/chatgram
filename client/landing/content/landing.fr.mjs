@@ -31,11 +31,6 @@ export default {
     platformAndroid: 'Android',
     platformWindows: 'Windows',
     platformWeb: 'Web — sans installation',
-    photo: {
-      alt: "Cinq amis qui rient ensemble en regardant un téléphone",
-      caption: 'Photo d’illustration — des amis partagent un téléphone. Pas une capture de l’application.',
-      label: 'Photo',
-    },
   },
   facts: [
     { title: 'Appels intégrés', sub: 'Audio, vidéo et partage d’écran' },
@@ -147,11 +142,6 @@ export default {
       },
     ],
     note: 'Les accusés de lecture et de réception font partie de la conversation — et vous pouvez désactiver les accusés de lecture.',
-    photo: {
-      alt: 'Deux amies assises qui rient en regardant quelque chose sur un téléphone',
-      caption: 'Photo d’illustration — deux amies partagent un moment. Pas une capture de l’application.',
-      label: 'Photo',
-    },
   },
   preview: {
     eyebrow: 'Aperçu',

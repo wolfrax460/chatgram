@@ -6,7 +6,7 @@
  * look and feel is preserved.
  */
 import { DIRECT_DOWNLOADS, INSTALL_GUIDE } from '../content/install-guide.mjs';
-import { ICON, PHOTOS } from '../content/media.mjs';
+import { ICON } from '../content/media.mjs';
 import { GUIDES, LANGUAGES, OG_IMAGE, RELEASES, SCREENSHOTS, SITE } from '../content/site.mjs';
 
 /* ------------------------------------------------------------------ helpers */
@@ -165,15 +165,15 @@ ${links}
   </header>`;
 }
 
-/* ------------------------------------------------------------------ figures */
-function photoFigure(photo, { className = '', loading = 'lazy', high = false }) {
-  const source = PHOTOS[photo.key];
-  return `      <figure class="photo ${className}">
-        <picture>
-          <source type="image/webp" srcset="${source.webp}" width="${source.width}" height="${source.height}">
-          <img src="${source.jpg}" width="${source.width}" height="${source.height}" alt="${e(photo.alt)}"${high ? ' fetchpriority="high"' : ''} loading="${loading}" decoding="async">
-        </picture>
-        <figcaption><span class="photo-label">${e(photo.label)}</span> ${e(photo.caption)}</figcaption>
+/* ---------------------------------------------- real app screenshots in frames */
+function appShot(source, { alt, className = '', loading = 'lazy', high = false, sizes = '(max-width: 900px) 92vw, 470px' }) {
+  return `      <figure class="app-shot ${className}">
+        <div class="app-shot-frame">
+          <picture>
+            <source type="image/webp" srcset="${source.webp760} 760w, ${source.webp1366} 1366w" sizes="${sizes}">
+            <img src="${source.png}" width="${source.width}" height="${source.height}" alt="${e(alt)}"${high ? ' fetchpriority="high"' : ''} loading="${loading}" decoding="async">
+          </picture>
+        </div>
       </figure>`;
 }
 
@@ -198,7 +198,7 @@ function hero(locale) {
           </div>
         </div>
         <div class="hero-art">
-${photoFigure({ ...locale.hero.photo, key: 'friends' }, { className: 'photo-hero testid-hero-photo', loading: 'eager', high: true })}
+${appShot(SCREENSHOTS.chats, { alt: locale.preview.shots[0].alt, className: 'app-shot-hero testid-hero-shot', loading: 'eager', high: true })}
         </div>
       </div>
     </section>
@@ -369,7 +369,7 @@ ${items}
           <p class="privacy-note">${e(locale.messaging.note)}</p>
         </div>
         <div class="split-media">
-${photoFigure({ ...locale.messaging.photo, key: 'duo' }, { className: 'photo-duo testid-showcase-photo' })}
+${appShot(SCREENSHOTS.conversation, { alt: locale.preview.shots[1].alt, className: 'app-shot-messaging testid-messaging-shot', sizes: '(max-width: 900px) 92vw, 430px' })}
         </div>
       </div>
     </section>`;
@@ -687,8 +687,8 @@ export function renderLocalePage({ locale, siteUrl, cssHref, jsHref }) {
     ...LANGUAGES.map((l) => ({ hreflang: l.code, path: l.path, ogLocale: l.ogLocale })),
     { hreflang: 'x-default', path: '/', ogLocale: 'en_US' },
   ];
-  const heroPhoto = PHOTOS.friends;
-  const preload = `  <link rel="preload" as="image" type="image/webp" href="${heroPhoto.webp}" imagesrcset="${heroPhoto.webp}" imagesizes="(max-width: 900px) 92vw, 470px" fetchpriority="high">`;
+  const heroShot = SCREENSHOTS.chats;
+  const preload = `  <link rel="preload" as="image" type="image/webp" href="${heroShot.webp1366}" imagesrcset="${heroShot.webp760} 760w, ${heroShot.webp1366} 1366w" imagesizes="(max-width: 900px) 92vw, 470px" fetchpriority="high">`;
   const language = LANGUAGES.find((l) => l.code === locale.code);
   const jsonLd = {
     '@context': 'https://schema.org',

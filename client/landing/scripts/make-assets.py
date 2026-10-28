@@ -8,17 +8,12 @@ Inputs (all pre-existing in the repo, nothing is invented):
   * client/web/icons/Icon-512.png          - the Chatgram app icon (512x512)
   * client/web/icons/Icon-maskable-512.png - the maskable variant of the same icon
   * apps/web/public/chatgram-icon.svg      - the vector mark the web app ships
-  * ads/ai/lifestyle-*.png                 - the project's own lifestyle photography
-                                             (optional: skipped when absent, the
-                                             processed files stay committed)
   * client/landing/public/assets/landing-chat-list.png      - real app screenshot
   * client/landing/public/assets/landing-conversation.png   - real app screenshot
   * client/landing/public/assets/landing-ai.png             - real app screenshot
 
 Outputs (written into client/landing/public/assets):
   * chatgram-icon.svg          (copy of the app's own vector mark)
-  * people-friends-phone.{jpg,webp}  - illustrative photo, 960x960, caption says so
-  * people-two-friends.{jpg,webp}    - illustrative photo, 860x860, caption says so
   * favicon-16/32/48.png, apple-touch-icon.png
   * ../favicon.ico (multi-resolution)
   * icon-192.png, icon-512.png, icon-maskable-512.png
@@ -44,13 +39,6 @@ ASSETS = LANDING / "public" / "assets"
 ICON = CLIENT / "web" / "icons" / "Icon-512.png"
 MASKABLE = CLIENT / "web" / "icons" / "Icon-maskable-512.png"
 ICON_SVG = REPO / "apps" / "web" / "public" / "chatgram-icon.svg"
-
-# Illustrative photography shipped on the page. Every figure using one of these
-# carries a caption that says it is a photo, not an app screenshot.
-PHOTOS = {
-    "people-friends-phone": (REPO / "ads" / "ai" / "lifestyle-1.png", 960),
-    "people-two-friends": (REPO / "ads" / "ai" / "lifestyle-2.png", 860),
-}
 
 SHOTS = {
     "chatgram-app-chats-dark": LANDING / "public" / "assets" / "landing-chat-list.png",
@@ -112,24 +100,6 @@ def main():
         print(f"  wrote assets/chatgram-icon.svg ({ICON_SVG.stat().st_size:,} B)")
     else:
         print(f"  skipped assets/chatgram-icon.svg ({ICON_SVG} missing)")
-
-    print("illustrative photos:")
-    for name, (src, size) in PHOTOS.items():
-        if not src.exists():
-            print(f"  skipped {name} (source {src} missing)")
-            continue
-        photo = Image.open(src).convert("RGB")
-        width, height = photo.size
-        side = min(width, height)
-        photo = photo.crop(
-            ((width - side) // 2, (height - side) // 2, (width + side) // 2, (height + side) // 2)
-        ).resize((size, size), Image.LANCZOS)
-        jpg = ASSETS / f"{name}.jpg"
-        photo.save(jpg, "JPEG", quality=82, optimize=True, progressive=True)
-        print(f"  wrote assets/{name}.jpg ({jpg.stat().st_size:,} B)")
-        webp_path = ASSETS / f"{name}.webp"
-        photo.save(webp_path, "WEBP", quality=80, method=6)
-        print(f"  wrote assets/{name}.webp ({webp_path.stat().st_size:,} B)")
 
     print("screenshots:")
     for name, src in SHOTS.items():

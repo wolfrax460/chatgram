@@ -31,11 +31,6 @@ export default {
     platformAndroid: 'Android',
     platformWindows: 'Windows',
     platformWeb: 'Urubuga — nta gushyira',
-    photo: {
-      alt: "Abangavu n'abasore batanu bahagaze hamwe, barira bagenda bareba telefoni",
-      caption: "Ifoto y'urugero — ababiri bagabana telefoni. Ntabwo ni ifoto y'iyo porogaramu.",
-      label: 'Ifoto',
-    },
   },
   facts: [
     { title: 'Guhamagara birahari', sub: 'Amajwi, amashusho no kugabana ecran' },
@@ -147,11 +142,6 @@ export default {
       },
     ],
     note: "Ibimenyetso byo gusoma n'ibyo kugeza biri mu kiganiro — kandi ushobora kuzimya ibimenyetso byo gusoma.",
-    photo: {
-      alt: "Abakobwa babiri barira baseka bareba ikintu kuri telefoni",
-      caption: "Ifoto y'urugero — abakobwa babiri bagabana igihe. Ntabwo ni ifoto y'iyo porogaramu.",
-      label: 'Ifoto',
-    },
   },
   preview: {
     eyebrow: 'Igaragaza',

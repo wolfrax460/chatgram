@@ -31,11 +31,6 @@ export default {
     platformAndroid: 'Android',
     platformWindows: 'Windows',
     platformWeb: 'Web — no install',
-    photo: {
-      alt: 'A group of five friends laughing together while looking at a phone',
-      caption: 'Illustrative photo — friends sharing a phone. Not an app screenshot.',
-      label: 'Photo',
-    },
   },
   facts: [
     { title: 'Calls built in', sub: 'Voice, video and screen share' },
@@ -147,11 +142,6 @@ export default {
       },
     ],
     note: 'Read receipts and delivery ticks are part of the conversation — and you can turn read receipts off.',
-    photo: {
-      alt: 'Two friends sitting together laughing at something on a phone',
-      caption: 'Illustrative photo — two friends sharing a moment. Not an app screenshot.',
-      label: 'Photo',
-    },
   },
   preview: {
     eyebrow: 'Preview',
