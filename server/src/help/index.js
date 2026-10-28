@@ -6,6 +6,7 @@ const User = require('../models/User');
 const { protect } = require('../middleware/auth');
 const upload = require('../utils/upload');
 const controller = require('./controller');
+const errorReport = require('./errorReport');
 
 const JWT_SECRET = () => process.env.JWT_SECRET || 'your-secret-key';
 
@@ -28,6 +29,11 @@ router.get('/collections', controller.getCollections);
 router.get('/collections/:slug', controller.getCollection);
 router.get('/articles/:slug', controller.getArticle);
 router.get('/search', controller.searchArticles);
+
+// --- Help "Errors" tab: AI-turned error/feature prompt (signed-in users) -----
+// Declared before optionalAuth so an anonymous request is rejected with 401 by
+// `protect` instead of being treated as a guest widget call.
+router.post('/error-report', protect, errorReport.createErrorReport);
 
 // --- widget conversations (user or guest) -----------------------------------
 router.use(optionalAuth);

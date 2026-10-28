@@ -11,6 +11,13 @@
  *                      Mistral, Fireworks, Ollama, LM Studio, vLLM, …
  *   none               disabled (falls back to the knowledge base)
  *
+ * NVIDIA NIM (Nemotron Super 120B) is tried FIRST for the Help/Support assistant
+ * whenever `NVIDIA_API_KEY` is set in the server env (model: `NVIDIA_MODEL`,
+ * default nvidia/nemotron-3-super-120b-a12b; endpoint override: `NVIDIA_BASE_URL`).
+ * If the key is missing, or the NVIDIA call fails (429/5xx/auth/...), the provider
+ * configured below is used as the fallback, so behaviour without the key is
+ * exactly what it was before NVIDIA support existed.
+ *
  * Env:
  *   AI_PROVIDER=openai-compatible
  *   AI_BASE_URL=https://api.groq.com/openai/v1
@@ -21,7 +28,10 @@
  * Back-compat: ANTHROPIC_API_KEY alone still selects the anthropic provider.
  */
 
-const PROVIDERS = ['anthropic', 'openai', 'gemini', 'openai-compatible', 'none'];
+const { NVIDIA_DEFAULT_MODEL, NVIDIA_BASE_URL } = require('../ai/adapters');
+const { recordProviderFailure } = require('../ai/failureInbox');
+
+const PROVIDERS = ['anthropic', 'openai', 'gemini', 'openai-compatible', 'nvidia', 'none'];
 
 /** Last provider failure, safe to show in the admin dashboard (never the key). */
 let lastError = null;
@@ -86,14 +96,20 @@ function resolveConfig() {
   if (provider === 'openai' && !baseUrl) baseUrl = 'https://api.openai.com/v1';
   if (provider === 'anthropic' && !baseUrl) baseUrl = 'https://api.anthropic.com/v1';
   if (provider === 'gemini' && !baseUrl) baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+  if (provider === 'nvidia') {
+    apiKey = apiKey || String(process.env.NVIDIA_API_KEY || '').trim();
+    if (!baseUrl) baseUrl = String(process.env.NVIDIA_BASE_URL || NVIDIA_BASE_URL).trim().replace(/\/+$/, '');
+  }
 
-  const resolver = provider === 'openai' || provider === 'openai-compatible';
+  const resolver = provider === 'openai' || provider === 'openai-compatible' || provider === 'nvidia';
   const fallbackModel =
     provider === 'anthropic'
       ? 'claude-3-5-haiku-latest'
       : provider === 'gemini'
         ? 'gemini-1.5-flash'
-        : 'gpt-4o-mini';
+        : provider === 'nvidia'
+          ? String(process.env.NVIDIA_MODEL || NVIDIA_DEFAULT_MODEL).trim()
+          : 'gpt-4o-mini';
 
   return {
     provider,
@@ -104,6 +120,27 @@ function resolveConfig() {
     timeoutMs: Number(process.env.AI_TIMEOUT_MS || 20000),
     usesOpenAiSchema: resolver,
     enabled: process.env.SUPPORT_AI_ENABLED === 'true' && provider !== 'none' && Boolean(apiKey),
+  };
+}
+
+/**
+ * Env-only NVIDIA NIM config, tried before the provider above. Returns null when
+ * NVIDIA_API_KEY is missing (or the assistant is explicitly switched off), so a
+ * deployment without the key behaves exactly as before.
+ */
+function nvidiaConfig() {
+  const apiKey = String(process.env.NVIDIA_API_KEY || '').trim();
+  if (!apiKey) return null;
+  if (String(process.env.SUPPORT_AI_ENABLED || '') === 'false') return null;
+  return {
+    provider: 'nvidia',
+    apiKey,
+    baseUrl: String(process.env.NVIDIA_BASE_URL || NVIDIA_BASE_URL).trim().replace(/\/+$/, ''),
+    model: String(process.env.NVIDIA_MODEL || NVIDIA_DEFAULT_MODEL).trim(),
+    maxTokens: Number(process.env.AI_MAX_TOKENS || 400),
+    timeoutMs: Number(process.env.AI_TIMEOUT_MS || 20000),
+    usesOpenAiSchema: true,
+    enabled: true,
   };
 }
 
@@ -126,7 +163,11 @@ async function postJson(url, headers, body, timeoutMs) {
     }
     if (!response.ok) {
       const detail = data?.error?.message || data?.error || text.slice(0, 200);
-      throw new Error(`${response.status}: ${String(detail).slice(0, 300)}`);
+      // Keep the HTTP status on the error so failure reports can show
+      // "provider + HTTP status" without echoing response bodies or headers.
+      const error = new Error(`${response.status}: ${String(detail).slice(0, 300)}`);
+      error.status = response.status;
+      throw error;
     }
     return data;
   } finally {
@@ -224,6 +265,9 @@ async function askAssistant({ system, messages, maxTokens }) {
         })),
         maxTokens: maxTokens ? Math.min(Number(maxTokens) || 400, 2000) : undefined,
         allowContact: true, // support prompts handle their own contact collection
+        // Route through the per-feature chain (admin-selectable NVIDIA NIM first
+        // via the service's env NVIDIA entry, configured providers after it).
+        feature: 'support',
       });
       const clean = String(result.text || '').trim();
       return clean || null;
@@ -234,16 +278,14 @@ async function askAssistant({ system, messages, maxTokens }) {
   }
 
   const cfg = resolveConfig();
-  if (!cfg.enabled) return null;
-  if (maxTokens) cfg.maxTokens = Math.min(Number(maxTokens) || cfg.maxTokens, 2000);
+  const nvidia = nvidiaConfig();
+  if (!nvidia && !cfg.enabled) return null;
 
   const trimmed = messages.slice(-12).map((m) => ({
     role: m.role === 'assistant' ? 'assistant' : 'user',
     text: String(m.text || '').slice(0, 1500),
   }));
-
-  const fallbackKey = process.env.AI_API_KEY_FALLBACK;
-  const canFallBack = Boolean(fallbackKey) && fallbackKey !== cfg.apiKey && looksLikeKey(fallbackKey);
+  const requestedMaxTokens = maxTokens ? Math.min(Number(maxTokens) || 400, 2000) : null;
 
   const callOnce = async (activeCfg) => {
     if (activeCfg.provider === 'anthropic') return callAnthropic(activeCfg, system, trimmed);
@@ -251,48 +293,81 @@ async function askAssistant({ system, messages, maxTokens }) {
     return callOpenAiSchema(activeCfg, system, trimmed);
   };
 
-  try {
-    let answer = await callOnce(cfg);
-    let clean = String(answer || '').trim();
-
-    // Reasoning models can spend the whole budget on hidden tokens and return
-    // an empty answer; give them one chance with a bigger cap.
-    if (!clean && cfg.maxTokens < 1600) {
-      const bigger = { ...cfg, maxTokens: Math.min(cfg.maxTokens * 2, 1600) };
-      answer = await callOnce(bigger);
-      clean = String(answer || '').trim();
-    }
-
-    if (!clean) {
-      setLastError('empty_answer', 'The provider returned an empty answer.');
-      return null;
-    }
-    clearLastError();
-    return clean.slice(0, cfg.maxTokens * 6);
-  } catch (error) {
-    let code = classifyError(error.message);
-    if (code === 'invalid_key' && canFallBack) {
-      // The stored dashboard key is dead but the server env key still works.
-      try {
-        const retryCfg = { ...cfg, apiKey: fallbackKey };
-        const answer = await callOnce(retryCfg);
-        const clean = String(answer || '').trim();
-        if (clean) {
-          setLastError('stored_key_invalid', 'The saved API key was rejected; the server environment key is being used.');
-          return clean.slice(0, cfg.maxTokens * 6);
-        }
-      } catch (retryError) {
-        code = classifyError(retryError.message);
-      }
-    }
-    setLastError(code, error.message);
-    console.warn('Support AI error:', error.message);
-    return null;
+  // NVIDIA NIM (Nemotron) first when the key exists, then the provider that was
+  // configured before this feature (today's behaviour) as the fallback.
+  const attempts = [];
+  if (nvidia) {
+    attempts.push({
+      ...nvidia,
+      label: 'nvidia',
+      maxTokens: Math.min(requestedMaxTokens || nvidia.maxTokens, 2000),
+    });
   }
+  if (cfg.enabled && (!nvidia || cfg.provider !== 'nvidia')) {
+    attempts.push({
+      ...cfg,
+      label: 'legacy',
+      maxTokens: Math.min(requestedMaxTokens || cfg.maxTokens, 2000),
+    });
+  }
+
+  const fallbackKey = process.env.AI_API_KEY_FALLBACK;
+  const canFallBack = cfg.enabled && Boolean(fallbackKey)
+    && fallbackKey !== cfg.apiKey && looksLikeKey(fallbackKey);
+
+  for (const attempt of attempts) {
+    try {
+      let answer = await callOnce(attempt);
+      let clean = String(answer || '').trim();
+
+      // Reasoning models can spend the whole budget on hidden tokens and return
+      // an empty answer; give them one chance with a bigger cap.
+      if (!clean && attempt.maxTokens < 1600) {
+        answer = await callOnce({ ...attempt, maxTokens: Math.min(attempt.maxTokens * 2, 1600) });
+        clean = String(answer || '').trim();
+      }
+
+      if (!clean) {
+        setLastError('empty_answer', 'The provider returned an empty answer.');
+        await recordProviderFailure({ provider: attempt.provider, code: 'empty_answer' });
+        continue;
+      }
+      clearLastError();
+      return clean.slice(0, attempt.maxTokens * 6);
+    } catch (error) {
+      let code = classifyError(error.message);
+      let failureStatus = error.status;
+      let failureMessage = error.message;
+
+      if (attempt.label === 'legacy' && code === 'invalid_key' && canFallBack) {
+        // The stored dashboard key is dead but the server env key still works.
+        try {
+          const retryClean = String(await callOnce({ ...attempt, apiKey: fallbackKey }) || '').trim();
+          if (retryClean) {
+            setLastError('stored_key_invalid', 'The saved API key was rejected; the server environment key is being used.');
+            return retryClean.slice(0, attempt.maxTokens * 6);
+          }
+        } catch (retryError) {
+          code = classifyError(retryError.message);
+          failureStatus = retryError.status;
+          failureMessage = retryError.message;
+        }
+      }
+
+      setLastError(code, failureMessage);
+      // Content-free: provider name + sanitized code only (never the key/prompt).
+      await recordProviderFailure({ provider: attempt.provider, status: failureStatus, code });
+      console.warn('Support AI error:', String(failureMessage || '').slice(0, 160));
+      continue; // next provider (NVIDIA failed -> existing provider)
+    }
+  }
+  return null;
 }
 
 function assistantInfo() {
   if (useNewLayer()) return layerInfo();
+  const nvidia = nvidiaConfig();
+  if (nvidia) return { enabled: true, provider: 'nvidia', model: nvidia.model };
   const cfg = resolveConfig();
   return { enabled: cfg.enabled, provider: cfg.provider, model: cfg.enabled ? cfg.model : null };
 }
@@ -301,6 +376,7 @@ module.exports = {
   askAssistant,
   assistantInfo,
   resolveConfig,
+  nvidiaConfig,
   PROVIDERS,
   useNewLayer,
   classifyError,

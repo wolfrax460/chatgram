@@ -152,7 +152,9 @@ async function getEffectiveSettings() {
   const provider = str(doc?.provider, process.env.SUPPORT_AI_PROVIDER || '');
   const model = str(doc?.model, process.env.SUPPORT_AI_MODEL || '');
   const baseUrl = str(doc?.baseUrl, process.env.SUPPORT_AI_BASE_URL || PROVIDERS[provider]?.baseUrl || '');
-  const enabled = bool(doc?.enabled, String(process.env.SUPPORT_AI_ENABLED || 'false') === 'true');
+  const envEnabled = String(process.env.SUPPORT_AI_ENABLED || 'false') === 'true';
+  const disabledByAdmin = doc?.enabled === false;
+  const enabled = bool(doc?.enabled, envEnabled);
 
   let apiKey = decrypt(doc?.apiKeyEncrypted);
   if (!apiKey) apiKey = String(process.env.SUPPORT_AI_API_KEY || '');
@@ -185,6 +187,10 @@ async function getEffectiveSettings() {
     fallbacks,
     configured: Boolean(provider) && Boolean(model) && Boolean(baseUrl),
     source: doc && doc.provider ? 'database' : 'environment',
+    // Let the service treat an env-only NVIDIA key as "assistant configured"
+    // without overriding an explicit admin disable (doc.enabled === false).
+    envEnabled,
+    disabledByAdmin,
   };
 }
 

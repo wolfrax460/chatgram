@@ -12,9 +12,16 @@
  *  - a daily token budget.
  */
 const { AiError, ERROR_CODES } = require('./errors');
-const { PROVIDERS, adapterFor, mapHttpError } = require('./adapters');
+const {
+  PROVIDERS,
+  adapterFor,
+  mapHttpError,
+  baseUrlFor,
+  NVIDIA_DEFAULT_MODEL,
+} = require('./adapters');
 const { getEffectiveSettings } = require('./settings');
 const { redactMessages, redact } = require('./redact');
+const { recordProviderFailure } = require('./failureInbox');
 
 const RETRYABLE = new Set([ERROR_CODES.UNAVAILABLE, ERROR_CODES.TIMEOUT, ERROR_CODES.RATE_LIMITED]);
 const MAX_ATTEMPTS = 2;
@@ -113,6 +120,44 @@ function providerRegistry() {
   return providersModule;
 }
 
+/** Help/Support features get NVIDIA NIM (Nemotron) first when the env key exists. */
+const NVIDIA_FEATURES = new Set(['support', 'help']);
+
+/**
+ * Env-only NVIDIA NIM entry. Returns null when NVIDIA_API_KEY is not set, which
+ * keeps the exact pre-NVIDIA behaviour (boot and assistant unchanged).
+ * NVIDIA_BASE_URL/NVIDIA_MODEL are optional overrides for a proxy or a
+ * self-hosted NIM; the hosted defaults are integrate.api.nvidia.com + Nemotron.
+ */
+function nvidiaEnvEntry() {
+  const apiKey = String(process.env.NVIDIA_API_KEY || '').trim();
+  if (!apiKey) return null;
+  return {
+    key: 'nvidia-env',
+    provider: 'nvidia',
+    model: String(process.env.NVIDIA_MODEL || NVIDIA_DEFAULT_MODEL).trim(),
+    baseUrl: baseUrlFor('nvidia'),
+    apiKey,
+  };
+}
+
+function wantsNvidia(options) {
+  return options.preferNvidia === true || NVIDIA_FEATURES.has(options.feature);
+}
+
+/** Put the env NVIDIA entry in front unless the chain already has an NVIDIA route. */
+function withNvidiaFirst(chain, options) {
+  if (!wantsNvidia(options)) return chain;
+  const nvidia = nvidiaEnvEntry();
+  if (!nvidia) return chain;
+  if (chain.some((entry) => entry.provider === 'nvidia' || entry.key === 'nvidia-env')) return chain;
+  return [nvidia, ...chain];
+}
+
+function nvidiaEnvEnabled(settings) {
+  return Boolean(nvidiaEnvEntry()) && settings.envEnabled === true && settings.disabledByAdmin !== true;
+}
+
 async function callProvider(entry, { system, messages, temperature, maxTokens, timeoutMs, signal }) {
   const adapter = adapterFor(entry.provider);
   const controller = new AbortController();
@@ -159,12 +204,18 @@ async function chat(options = {}) {
     if (featureChain && featureChain.length > 0) chain = featureChain;
   }
   if (chain.length === 0) chain = resolveChain(settings);
+  // Help/Support: NVIDIA NIM (Nemotron) first, the configured providers after it.
+  // A feature route that already names NVIDIA is left untouched (admin wins).
+  chain = withNvidiaFirst(chain, options);
   // An explicit per-feature route normally still obeys the legacy single-provider
   // toggle: a deployment with SUPPORT_AI_ENABLED=false must not silently turn an
   // assistant on just because a route exists. Internal admin-side calls (the
   // fix-prompt generator) opt out explicitly with ignoreLegacyToggle.
   const toggleBypassed = options.ignoreLegacyToggle === true;
-  if ((!settings.enabled && !toggleBypassed) || chain.length === 0) {
+  // An env-only NVIDIA key counts as configured, but an explicit admin disable
+  // (AiSettings.enabled === false) is still respected.
+  const assistantEnabled = settings.enabled || nvidiaEnvEnabled(settings);
+  if ((!assistantEnabled && !toggleBypassed) || chain.length === 0) {
     if (kbFallback) {
       return {
         text: await kbFallback(),
@@ -241,6 +292,12 @@ async function chat(options = {}) {
         await sleep(250 * attempt);
       }
     }
+    // Content-free admin Inbox record: provider name + HTTP status/code only.
+    await recordProviderFailure({
+      provider: entry.provider,
+      status: lastError?.status,
+      code: lastError?.code,
+    });
     noteFailure(entry.provider);
   }
 
@@ -345,6 +402,10 @@ async function* streamForFeature(options = {}) {
     if (featureChain && featureChain.length > 0) chain = featureChain;
   }
   if (chain.length === 0) chain = resolveChain(settings);
+  // Same NVIDIA-first rule as chat(): Help/Support features prefer Nemotron and
+  // fall through to the configured providers when the key is missing or the call
+  // fails.
+  chain = withNvidiaFirst(chain, options);
   if (chain.length === 0) throw new AiError(ERROR_CODES.NOT_CONFIGURED, 'No AI provider is configured.');
   if (tokensUsedToday() >= settings.dailyTokenBudget) {
     throw new AiError(ERROR_CODES.BUDGET_EXCEEDED, 'The daily AI token budget is used up.');
@@ -400,6 +461,11 @@ async function* streamForFeature(options = {}) {
         return;
       } catch (error) {
         lastError = error instanceof AiError ? error : new AiError(ERROR_CODES.UNAVAILABLE, error.message);
+        await recordProviderFailure({
+          provider: entry.provider,
+          status: lastError.status,
+          code: lastError.code,
+        });
         noteFailure(key);
         registry?.recordHealth?.(key, { ok: false, latencyMs: Date.now() - started, error: lastError.code });
         if (options.signal?.aborted) throw new AiError(ERROR_CODES.TIMEOUT, 'Request aborted.');
@@ -474,6 +540,11 @@ async function* streamForFeature(options = {}) {
       return;
     } catch (error) {
       lastError = error instanceof AiError ? error : new AiError(ERROR_CODES.UNAVAILABLE, error.message);
+      await recordProviderFailure({
+        provider: entry.provider,
+        status: lastError.status,
+        code: lastError.code,
+      });
       noteFailure(key);
       registry?.recordHealth?.(key, { ok: false, latencyMs: Date.now() - started, error: lastError.code });
       if (options.signal?.aborted) throw new AiError(ERROR_CODES.TIMEOUT, 'Request aborted.');

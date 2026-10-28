@@ -24,14 +24,21 @@ async function readJson(response) {
 
 function mapHttpError(status, payload) {
   const message = payload?.error?.message || payload?.message || payload?.raw || `HTTP ${status}`;
-  if (status === 401 || status === 403) return new AiError('auth_failed', `Authentication failed: ${message}`);
-  if (status === 429) return new AiError('rate_limited', `Rate limited: ${message}`);
-  if (status === 408) return new AiError('timeout', `Timed out: ${message}`);
+  const fail = (code, text) => {
+    const error = new AiError(code, text);
+    // Keep the HTTP status on the error so failure logging can report
+    // "provider + HTTP status" without parsing the message.
+    error.status = Number(status) || null;
+    return error;
+  };
+  if (status === 401 || status === 403) return fail('auth_failed', `Authentication failed: ${message}`);
+  if (status === 429) return fail('rate_limited', `Rate limited: ${message}`);
+  if (status === 408) return fail('timeout', `Timed out: ${message}`);
   if (status === 400 && /content|policy|safety|block/i.test(String(message))) {
-    return new AiError('content_blocked', `Blocked by the provider: ${message}`);
+    return fail('content_blocked', `Blocked by the provider: ${message}`);
   }
-  if (status >= 500) return new AiError('unavailable', `Provider unavailable: ${message}`);
-  return new AiError('unavailable', `Provider error (${status}): ${message}`);
+  if (status >= 500) return fail('unavailable', `Provider unavailable: ${message}`);
+  return fail('unavailable', `Provider error (${status}): ${message}`);
 }
 
 async function postJson(url, { headers, body, signal, timeoutMs }) {
@@ -175,6 +182,39 @@ async function cohere({ config, system, messages, temperature, maxTokens, signal
   };
 }
 
+/**
+ * Default NVIDIA NIM model for the Help/Support assistant.
+ *
+ * NVIDIA publishes the Nemotron "Super 120B" as `nvidia/nemotron-3-super-120b-a12b`
+ * on build.nvidia.com (OpenAI-compatible NIM endpoint, /v1/chat/completions).
+ * `NVIDIA_MODEL` overrides it (e.g. for a self-hosted NIM container).
+ */
+const NVIDIA_DEFAULT_MODEL = 'nvidia/nemotron-3-super-120b-a12b';
+const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
+
+/** Key env var for a provider (empty for local providers). Never read elsewhere. */
+function envKeyFor(provider) {
+  const entry = PROVIDERS[provider];
+  if (!entry || !entry.keyEnv) return '';
+  return String(process.env[entry.keyEnv] || '');
+}
+
+/** Default model for providers that ship one (currently only NVIDIA NIM). */
+function defaultModelFor(provider) {
+  return String(PROVIDERS[provider]?.defaultModel || '');
+}
+
+/**
+ * Effective base URL. `NVIDIA_BASE_URL` is a test/proxy override for the fixed
+ * NIM endpoint; admin-entered base URLs are validated separately (SSRF guard).
+ */
+function baseUrlFor(provider) {
+  if (provider === 'nvidia' && process.env.NVIDIA_BASE_URL) {
+    return String(process.env.NVIDIA_BASE_URL).trim().replace(/\/+$/, '');
+  }
+  return String(PROVIDERS[provider]?.baseUrl || '');
+}
+
 /* --------------------------------------------------------------- registry */
 
 const ADAPTERS = {
@@ -210,6 +250,16 @@ const PROVIDERS = {
   openrouter: { adapter: 'openai-compatible', label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', keyEnv: 'OPENROUTER_API_KEY' },
   deepseek: { adapter: 'openai-compatible', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', keyEnv: 'DEEPSEEK_API_KEY' },
   xai: { adapter: 'openai-compatible', label: 'xAI', baseUrl: 'https://api.x.ai/v1', keyEnv: 'XAI_API_KEY' },
+  // NVIDIA NIM: OpenAI-compatible, fixed hosted endpoint, key only via NVIDIA_API_KEY
+  // (or the encrypted admin key). Model defaults to Nemotron Super 120B.
+  nvidia: {
+    adapter: 'openai-compatible',
+    label: 'NVIDIA NIM (Nemotron)',
+    baseUrl: NVIDIA_BASE_URL,
+    keyEnv: 'NVIDIA_API_KEY',
+    defaultModel: NVIDIA_DEFAULT_MODEL,
+    note: 'Hosted NIM endpoint. Set NVIDIA_API_KEY (server .env); NVIDIA_MODEL overrides the model.',
+  },
   cohere: { adapter: 'cohere', label: 'Cohere', baseUrl: 'https://api.cohere.com/v2', keyEnv: 'COHERE_API_KEY' },
   ollama: { adapter: 'openai-compatible', label: 'Ollama (local)', baseUrl: 'http://127.0.0.1:11434/v1', keyEnv: '' },
   lmstudio: { adapter: 'openai-compatible', label: 'LM Studio (local)', baseUrl: 'http://127.0.0.1:1234/v1', keyEnv: '' },
@@ -224,4 +274,15 @@ function adapterFor(provider) {
   return ADAPTERS[entry.adapter];
 }
 
-module.exports = { PROVIDERS, ADAPTERS, adapterFor, mapHttpError, postJson };
+module.exports = {
+  PROVIDERS,
+  ADAPTERS,
+  adapterFor,
+  mapHttpError,
+  postJson,
+  NVIDIA_DEFAULT_MODEL,
+  NVIDIA_BASE_URL,
+  envKeyFor,
+  defaultModelFor,
+  baseUrlFor,
+};

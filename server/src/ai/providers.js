@@ -8,7 +8,11 @@
  * One undo step is kept.
  */
 const { AiSettings, encrypt, decrypt, keyLast4, invalidate } = require('./settings');
-const { PROVIDERS } = require('./adapters');
+const {
+  PROVIDERS,
+  envKeyFor,
+  defaultModelFor,
+} = require('./adapters');
 const { validateBaseUrl } = require('./ssrf');
 const { AiError } = require('./errors');
 
@@ -111,7 +115,9 @@ async function listProviders() {
 async function upsertProvider(input = {}) {
   const provider = String(input.provider || '').trim();
   if (!PROVIDERS[provider]) throw new AiError('unavailable', `Unknown provider "${provider}".`);
-  const model = String(input.model || '').trim();
+  // Providers that ship a default model (NVIDIA NIM -> Nemotron Super 120B) can
+  // be selected from the admin page without typing the model id.
+  const model = String(input.model || defaultModelFor(provider)).trim();
   if (!model) throw new AiError('unavailable', 'A model name is required.');
   const key = String(input.key || input.label || provider)
     .toLowerCase()
@@ -181,7 +187,9 @@ async function testProvider(key) {
   const doc = await rawDoc();
   const entry = (doc?.providers || []).find((candidate) => candidate.key === key);
   if (!entry) throw new AiError('unavailable', 'Provider not found.');
-  const apiKey = decrypt(entry.apiKeyEncrypted);
+  // An admin key saved in the dashboard wins; otherwise the provider's env key
+  // (e.g. NVIDIA_API_KEY) is used, exactly like a live request would.
+  const apiKey = decrypt(entry.apiKeyEncrypted) || envKeyFor(entry.provider);
   const { service } = require('./service');
   const started = Date.now();
   const result = await service.testConnection({
@@ -267,9 +275,11 @@ async function resolveFeatureChain(feature) {
     chain.push({
       key: entry.key,
       provider: entry.provider,
-      model: entry.model,
+      model: entry.model || defaultModelFor(entry.provider),
       baseUrl: entry.baseUrl || PROVIDERS[entry.provider]?.baseUrl || '',
-      apiKey: decrypt(entry.apiKeyEncrypted),
+      // Admin-saved (encrypted) key wins; NVIDIA_API_KEY etc. is the fallback so
+      // an admin can route to a provider without pasting the key into the UI.
+      apiKey: decrypt(entry.apiKeyEncrypted) || envKeyFor(entry.provider),
     });
   }
   return chain.length > 0 ? chain : null;
