@@ -91,16 +91,18 @@ async function answerQuestion(question, history = []) {
     )
     .join('\n\n');
 
-  const system = [
+  const projectContextText = await require('./projectContext').getProjectContextText();
+  const system = require('./projectContext').withProjectContext([
     'You are the Chatgram Assistant inside the help widget.',
-    'Use ONLY the knowledge base below. If it does not contain the answer, say you do not know and offer to hand the conversation to a person.',
+    'Use ONLY the knowledge base below or the PROJECT CONTEXT above. If neither contains the answer, say you do not know and offer to hand the conversation to a person.',
+    'For questions about versions, changelog, features or known requests, quote the PROJECT CONTEXT facts exactly; if a fact is missing there, say you do not have it and offer to log a report.',
     'Never ask for passwords, verification codes or card numbers. Never claim to be human.',
     'Answer in the language the user writes in. Keep answers short (max 120 words), plain text, no HTML.',
     'When you use an article, end your answer with its citation tag on its own, e.g. [article:change-password].',
     '',
     'KNOWLEDGE BASE:',
     kbBlock || '(no matching articles)',
-  ].join('\n');
+  ].join('\n'), projectContextText);
 
   if (ai.assistantInfo().enabled) {
     const messages = [

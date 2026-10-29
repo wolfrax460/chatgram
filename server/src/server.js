@@ -397,6 +397,10 @@ const deletionTimer = setInterval(async () => {
 }, 60 * 60 * 1000);
 deletionTimer.unref();
 
+// Warm the Help/AI PROJECT CONTEXT snapshot once at boot (cached ~5 min). A
+// failure is content-free and only means the assistant answers without it.
+void require('./help/projectContext').getProjectContextText().catch(() => {});
+
 server.listen(PORT, () => {
   // The verbose LAN banner is a local-development convenience; in production
   // nginx is the only public entry and the output just fills journald.

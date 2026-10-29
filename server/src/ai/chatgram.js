@@ -433,9 +433,12 @@ async function sendMessage({ userId, conversationId, text }) {
 
   let answer;
   try {
+    // Trusted current-project snapshot for version/changelog/feature questions.
+    const projectContext = await require('../help/projectContext').getProjectContextText();
+    const contextPrefix = projectContext ? `${projectContext}\n\n` : '';
     const result = await service.chat({
       feature: 'chatgramAI',
-      system: `${SYSTEM_PROMPT}${await knowledgePrompt()}\n${REPORT_INSTRUCTIONS}`,
+      system: `${contextPrefix}${SYSTEM_PROMPT}${await knowledgePrompt()}\n${REPORT_INSTRUCTIONS}`,
       messages,
       maxTokens: 700,
       allowContact: false,
@@ -550,9 +553,11 @@ async function streamMessage({ userId, conversationId, text, onDelta }) {
   let full = '';
   let providerKey = null;
   try {
+    const projectContext = await require('../help/projectContext').getProjectContextText();
+    const contextPrefix = projectContext ? `${projectContext}\n\n` : '';
     for await (const chunk of service.streamForFeature({
       feature: 'chatgramAI',
-      system: `${SYSTEM_PROMPT}${await knowledgePrompt()}\n${REPORT_INSTRUCTIONS}`,
+      system: `${contextPrefix}${SYSTEM_PROMPT}${await knowledgePrompt()}\n${REPORT_INSTRUCTIONS}`,
       messages,
       maxTokens: 700,
     })) {

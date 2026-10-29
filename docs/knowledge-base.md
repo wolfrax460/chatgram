@@ -56,14 +56,16 @@ answers in groups with an asker/Everyone setting · WhatsApp-style layout and gr
 in-app user guides (landing guides) · group call UI with call cards, Join and clear
 failed/declined/ended wording · message delivery ticks · `@chatgramai` aliases (`@chatgram ai`,
 `@chatgram`) · wallpaper, voice notes, reply cards, notification settings, remote control with
-consent, screen-share quality, protected account deletion.
+consent, screen-share quality, protected account deletion · **smart reply suggestions** (opt-in,
+`POST /api/ai/suggest-replies`) · **auto-reply / away message** with schedule and audience ·
+**global disappearing-messages default** for new direct chats (plus per-chat setting and expiry) ·
+**changelog API** (`GET /api/app/changelog`) powering the What's new page.
 
-**Partial:** disappearing messages (per-chat setting exists and is enforced server-side; **no global
-default row** in Settings) · "what's new" (links to `/docs/`, no changelog API).
+**Partial:** disappearing default is intentionally not inherited by groups; Telegram command
+round-trip is pending the owner registering the webhook.
 
-**Backlog (not built — do not claim otherwise):** smart reply suggestions (needs an opt-in provider
-call on the last 5 messages) · auto-reply / away message (needs a schedule + audience model and a
-once-per-24h-per-sender guard).
+**Backlog (not built — do not claim otherwise):** phone-number sign-up · contributor programme ·
+real Telegram command round-trip (pending `setWebhook`).
 
 ## Q&A captured from the Inbox (answers now in the product)
 
@@ -74,8 +76,9 @@ once-per-24h-per-sender guard).
   dashboard only.
 - **"When was it first published?"** See `docs/progress.md` (first public landing + 1.0.0 APK) and
   the release history in the admin dashboard.
-- **"What's new in the latest version?"** `docs/progress.md` is the running changelog; the landing
-  `/docs/` page and the release feed carry the same notes.
+- **"What's new in the latest version?"** The in-app **What's new** page reads
+  `GET /api/app/changelog` (published releases + curated web-only entries); `docs/progress.md` and
+  the landing `/docs/` page carry the running history.
 - **"How do I enable @chatgramai in all my chats?"** Add the Chatgram AI account to a group (this
   automatically enables group AI mentions); in a 1:1 the AI chat row is always available. Global
   mentions without adding the account are not supported.

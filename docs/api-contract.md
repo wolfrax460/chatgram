@@ -541,6 +541,28 @@ rows are merged with the curated web-only entries in
 `server/src/data/changelog.js`; newest first; `limit` is clamped to 1–50
 (default 20); `Cache-Control: public, max-age=300`.
 
+### Assistant project context (internal, not an endpoint)
+
+Every Help-widget and Chatgram-AI request prepends a compact **PROJECT CONTEXT**
+block to the provider system prompt (server side only; never returned verbatim
+to clients). It is assembled by `server/src/help/projectContext.js` from:
+
+- published, non-withdrawn `AppRelease` rows: platform, version, size and a
+  public download URL when safe;
+- the newest 10 changelog entries (same source as `GET /api/app/changelog`);
+- a ≤~2 KB summary of `docs/knowledge-base.md` (feature inventory + how-to Q&A);
+- the open admin Inbox **titles only** (no reporter text/transcript).
+
+Safety and budget: the rendered snapshot is capped at **4096 characters**, cached
+in memory for **5 minutes** (warm at boot; the rest of the assistant prompt is
+unaffected), and sanitised (`sanitize()`): no env values, tokens (`TELEGRAM_`,
+`GITHUB_TOKEN`, `NVIDIA_API_KEY`, `TURN_SECRET`, `mongodb+srv`), email addresses,
+phone/IPs, server paths or the server's own address (`duckdns.org`,
+`84.12.64.204`). If the DB/KB is unavailable the assistant simply answers without
+the context. The injected rules tell the model to answer version/changelog/feature
+questions **only** from the context and to say it lacks a missing fact and offer
+to log a report instead of inventing one.
+
 ### Maintenance / read-only gate
 
 While `GET /api/app/features` reports `maintenanceMode: true`, every `/api/*`
