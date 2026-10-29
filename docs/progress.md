@@ -536,3 +536,19 @@ Owner step: put `NVIDIA_API_KEY=…` in `/home/ubuntu/chatgram/server/.env` (nev
 - **Landing**: people photos removed, real app screenshots in the hero/messaging (`2de43f2`); animated phone-mockup hero is being built by the landing agent (history search first, CSS-only animation, reduced-motion fallback, ≤2 screenshots) — NOT deployed yet; deploy through a clean worktree if any agent still has dirty files.
 - **Calls WIP is still uncommitted** (`apps/web/src/lib/calls.ts`, `components/CallOverlay.tsx`): remote-control data channel/consent partially written, Electron injection bridge + `@nut-tree-fork/nut-js` NOT written, screen-share quality NOT started. If the partial code must not ship, keep stashing only these two files before a deploy (no active agent owns them now) or finish the feature.
 - Deploy note: `deploy-web.ps1`'s post-deploy verification reported 4 failed checks once while production was already 200 on `/`, `/web/`, `/web/admin`, `/docs/` (CDN lag) — re-check before concluding a deploy failed.
+### UPDATE 2026-10-29 (session end): four-feature round is partially built, NOT deployed
+
+Both agents on this round failed mid-edit. `tsc -w @chatgram/web` is clean, but the features are incomplete and **nothing was deployed** — production remains on the last verified build (API restart #134, web/landing green).
+
+Dirty tree (do not ship until finished + tested):
+- **Smart replies**: server endpoint + web composer chips partially written (pps/web/src/components/Composer.tsx, App.tsx, pages/settings/AiPage.tsx, server/src/controllers/messageController.js).
+- **Auto-reply**: pages/settings/AccountPage.tsx + settings types/routes partly wired; server side partly in userController.js / preference model.
+- **Global disappearing default**: pages/settings/PrivacyPage.tsx + settings types; server partly in chatController.js / Chat.js / User prefs.
+- **Changelog API**: pages/settings/HelpPage.tsx partially rewritten to an internal page; server route not finished.
+- Untracked new files: ads/, apps/web/src/lib/settingsPrefs.ts, apps/web/src/lib/smartReplies.ts, apps/web/src/pages/settings/AutoReplyPage.tsx, apps/web/src/pages/settings/DisappearingDefaultPage.tsx, apps/web/src/pages/settings/WhatsNewPage.tsx, server/src/ai/suggestReplies.js, server/src/controllers/changelogController.js, server/src/controllers/suggestRepliesController.js, server/src/data/, server/src/models/AutoReplyLog.js, server/src/utils/autoReply.js, server/src/utils/disappearing.js, server/test/integration/personalizationFeatures.test.js, tests/e2e/_scratch_four.js, vercel.json
+
+Also uncommitted from this round: server/src/models/Message.js (likely the `autoReply` field), package.json (test wiring).
+
+Next session order: 1) finish the server four (suggest-replies, auto-reply, disappearing-default, changelog) with their tests, deploy API; 2) finish the four Settings surfaces + composer chips against those routes, typecheck + build; 3) deploy web and commit; 4) update `docs/knowledge-base.md` marking the last two Inbox backlog items as shipped; 5) remote control still needs the owner's two-machine test; 6) GitHub token still reports classic `repo/workflow` scopes — rotation has not taken effect in the Windows credential manager.
+
+Hard rules unchanged: agents never deploy; Lead deploys only after `tsc`/build/tests; one owner per file; never commit secrets.
