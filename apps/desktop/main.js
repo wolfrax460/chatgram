@@ -610,6 +610,184 @@ ipcMain.handle('chatgram:update-open-downloads', () => {
   return true;
 });
 
+/* ------------------------------------------- remote control (screen share) */
+//
+// The web app negotiates consent over a WebRTC data channel and only forwards
+// input events while an approved session is active. This process is the last
+// line of defence: it re-validates every payload, maps normalized coordinates
+// to the primary display, rate-limits to ~120 events/s and never logs keys.
+// `@nut-tree-fork/nut-js` is loaded lazily so a missing/broken native build only
+// disables remote control ("Remote control is not available in this build")
+// instead of crashing the shell.
+let nut = null;
+try {
+  // eslint-disable-next-line global-require
+  nut = require('@nut-tree-fork/nut-js');
+} catch (error) {
+  const reason = error && error.message ? String(error.message).slice(0, 200) : 'unknown error';
+  console.warn('Remote control unavailable (nut-js failed to load):', reason);
+}
+
+const CONTROL_MAX_EVENTS_PER_SEC = 120;
+const CONTROL_KEY_NAMES = new Set([
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'Backspace', 'Enter', 'Tab', 'Escape', 'Delete',
+  'Home', 'End', 'PageUp', 'PageDown',
+  'Shift', 'Control', 'Alt', 'Meta',
+]);
+const CONTROL_SPECIAL_KEYS = {
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right',
+  Backspace: 'Backspace',
+  Enter: 'Enter',
+  Tab: 'Tab',
+  Escape: 'Escape',
+  Delete: 'Delete',
+  Home: 'Home',
+  End: 'End',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
+  Shift: 'LeftShift',
+  Control: 'LeftControl',
+  Alt: 'LeftAlt',
+  Meta: 'LeftSuper',
+};
+
+let controlSessionActive = false;
+let controlRate = { at: 0, count: 0 };
+
+function isTrustedControlSender(event) {
+  return Boolean(mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents);
+}
+
+function controlRateAllowed() {
+  const now = Date.now();
+  if (now - controlRate.at > 1_000) controlRate = { at: now, count: 0 };
+  controlRate.count += 1;
+  return controlRate.count <= CONTROL_MAX_EVENTS_PER_SEC;
+}
+
+function controlKeyAllowed(key) {
+  if (typeof key !== 'string' || !key) return false;
+  if (key.length === 1) {
+    const code = key.charCodeAt(0);
+    return code >= 32 && code <= 126;
+  }
+  return CONTROL_KEY_NAMES.has(key);
+}
+
+/** Validate the renderer payload again (never trust the page). */
+function validControlEvent(event) {
+  if (!event || typeof event !== 'object') return null;
+  const unit = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+  if (event.t === 'm') return unit(event.x) && unit(event.y) ? { t: 'm', x: event.x, y: event.y } : null;
+  if (event.t === 'w') {
+    return unit(event.x) && unit(event.y) && typeof event.dy === 'number' && Number.isFinite(event.dy)
+      ? { t: 'w', x: event.x, y: event.y, dy: Math.max(-10, Math.min(10, event.dy)) }
+      : null;
+  }
+  if (event.t === 'c') {
+    const button = event.button === 0 || event.button === 1 || event.button === 2 ? event.button : null;
+    return button !== null && unit(event.x) && unit(event.y) && typeof event.down === 'boolean'
+      ? { t: 'c', x: event.x, y: event.y, button, down: event.down }
+      : null;
+  }
+  if (event.t === 'k') {
+    return controlKeyAllowed(event.key) && typeof event.down === 'boolean'
+      ? { t: 'k', key: event.key, down: event.down }
+      : null;
+  }
+  return null;
+}
+
+/** Map 0..1 coordinates to the primary display and inject with nut-js. */
+async function injectControlEvent(event) {
+  if (!nut) return false;
+  let width = 1;
+  let height = 1;
+  try {
+    const { screen } = require('electron');
+    const display = screen.getPrimaryDisplay();
+    width = Math.max(1, display.size.width);
+    height = Math.max(1, display.size.height);
+  } catch {
+    return false;
+  }
+  const x = Math.round(event.x * (width - 1));
+  const y = Math.round(event.y * (height - 1));
+  try {
+    if (event.t === 'm') {
+      await nut.mouse.setPosition({ x, y });
+      return true;
+    }
+    if (event.t === 'w') {
+      await nut.mouse.setPosition({ x, y });
+      const steps = Math.max(1, Math.round(Math.abs(event.dy) / 2));
+      if (event.dy < 0) await nut.mouse.scrollUp(steps);
+      else await nut.mouse.scrollDown(steps);
+      return true;
+    }
+    if (event.t === 'c') {
+      await nut.mouse.setPosition({ x, y });
+      const button = event.button === 2 ? nut.Button.RIGHT : event.button === 1 ? nut.Button.MIDDLE : nut.Button.LEFT;
+      if (event.down) await nut.mouse.pressButton(button);
+      else await nut.mouse.releaseButton(button);
+      return true;
+    }
+    if (event.t === 'k') {
+      if (event.key.length === 1) {
+        if (event.down) await nut.keyboard.type(event.key);
+        return true;
+      }
+      const name = CONTROL_SPECIAL_KEYS[event.key];
+      const code = name ? nut.Key[name] : undefined;
+      if (code === undefined) return false;
+      if (event.down) await nut.keyboard.pressKey(code);
+      else await nut.keyboard.releaseKey(code);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    // Never log the key itself: only the failure kind.
+    const reason = error && error.message ? String(error.message).slice(0, 160) : 'injection failed';
+    console.warn('Remote control injection failed:', reason);
+    return false;
+  }
+}
+
+ipcMain.handle('chatgram:control-available', () => Boolean(nut));
+
+ipcMain.on('chatgram:control-session', (event, active) => {
+  if (!isTrustedControlSender(event)) return;
+  controlSessionActive = active === true && Boolean(nut);
+  if (!controlSessionActive && nut) {
+    // Release anything the viewer may have left pressed so their session cannot
+    // leave a stuck mouse button or modifier behind.
+    try {
+      void nut.mouse.releaseButton(nut.Button.LEFT);
+      void nut.mouse.releaseButton(nut.Button.RIGHT);
+      void nut.mouse.releaseButton(nut.Button.MIDDLE);
+      for (const name of ['LeftShift', 'LeftControl', 'LeftAlt', 'LeftSuper']) {
+        const code = nut.Key[name];
+        if (code !== undefined) void nut.keyboard.releaseKey(code).catch(() => undefined);
+      }
+    } catch {
+      /* best effort */
+    }
+  }
+});
+
+ipcMain.handle('chatgram:control-event', async (event, payload) => {
+  // Only a consented, active session in the trusted renderer may inject input.
+  if (!isTrustedControlSender(event) || !controlSessionActive || !nut) return false;
+  const input = validControlEvent(payload);
+  if (!input) return false;
+  if (!controlRateAllowed()) return false;
+  return injectControlEvent(input);
+});
+
 /* ---------------------------------------------------------------- boot */
 
 // Only one instance may run; a second launch focuses the first.

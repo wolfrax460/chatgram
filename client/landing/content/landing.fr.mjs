@@ -14,6 +14,8 @@ export default {
     skipToContent: 'Aller au contenu',
     mainNavigation: 'Navigation principale',
     downloadLabel: 'Téléchargements Chatgram',
+    showScreen: 'Afficher l’écran {n}',
+    screensLabel: 'Écrans de l’application',
     toggleMenu: 'Ouvrir le menu',
     themeGroup: 'Thème de couleur',
     themeLight: 'Thème clair',

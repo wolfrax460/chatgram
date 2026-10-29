@@ -14,6 +14,8 @@ export default {
     skipToContent: 'Simbuka ujye ku birimo',
     mainNavigation: "Urutonde rw'ibanze",
     downloadLabel: 'Gukurura Chatgram',
+    showScreen: 'Erekana ecran {n}',
+    screensLabel: 'Ecrans za porogaramu',
     toggleMenu: 'Fungura urutonde',
     themeGroup: "Ibara ry'urubuga",
     themeLight: 'Ibara ryera',

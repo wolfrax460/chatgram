@@ -46,6 +46,13 @@ SHOTS = {
     "chatgram-ai-chat-dark": LANDING / "public" / "assets" / "landing-ai.png",
 }
 
+# Real phone-portrait captures of the app. The hero phone mockup uses phone-sized
+# WebP derivatives of these; the PNG originals stay as the <picture> fallback.
+PHONE_SHOTS = {
+    "chatgram-phone-chats": LANDING / "public" / "assets" / "web-chat-list.png",
+    "chatgram-phone-conversation": LANDING / "public" / "assets" / "web-conversation.png",
+}
+
 FONT_BOLD = "C:/Windows/Fonts/segoeuib.ttf"
 FONT_REGULAR = "C:/Windows/Fonts/segoeui.ttf"
 FONT_SEMI = "C:/Windows/Fonts/segoeui.ttf"
@@ -107,6 +114,13 @@ def main():
         png(shot, ASSETS / f"{name}.png")
         webp(shot.resize((1366, 860), Image.LANCZOS), ASSETS / f"{name}-1366.webp")
         webp(shot.resize((760, 478), Image.LANCZOS), ASSETS / f"{name}-760.webp")
+
+    print("phone screens (hero mockup):")
+    for name, src in PHONE_SHOTS.items():
+        shot = Image.open(src).convert("RGB")
+        for width in (430, 860):
+            height = round(shot.height * width / shot.width)
+            webp(shot.resize((width, height), Image.LANCZOS), ASSETS / f"{name}-{width}.webp")
 
     print("social card:")
     make_og_image(icon)

@@ -14,6 +14,8 @@ export default {
     skipToContent: 'Ruka hadi maudhui',
     mainNavigation: 'Urambazaji mkuu',
     downloadLabel: 'Vipakuliwa vya Chatgram',
+    showScreen: 'Onyesha skrini {n}',
+    screensLabel: 'Skrini za programu',
     toggleMenu: 'Fungua menyu',
     themeGroup: 'Rangi ya mandhari',
     themeLight: 'Mandhari nyepesi',

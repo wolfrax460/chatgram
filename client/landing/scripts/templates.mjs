@@ -6,7 +6,7 @@
  * look and feel is preserved.
  */
 import { DIRECT_DOWNLOADS, INSTALL_GUIDE } from '../content/install-guide.mjs';
-import { ICON } from '../content/media.mjs';
+import { ICON, PHONE_SCREENS } from '../content/media.mjs';
 import { GUIDES, LANGUAGES, OG_IMAGE, RELEASES, SCREENSHOTS, SITE } from '../content/site.mjs';
 
 /* ------------------------------------------------------------------ helpers */
@@ -177,6 +177,44 @@ function appShot(source, { alt, className = '', loading = 'lazy', high = false, 
       </figure>`;
 }
 
+/* ---------------------------------------------------- hero phone mockup */
+function phoneDemo(locale) {
+  const screens = [
+    { key: 'chats', alt: locale.preview.shots[0].alt, eager: true },
+    { key: 'conversation', alt: locale.preview.shots[1].alt, eager: false },
+  ];
+  const slides = screens
+    .map((screen, index) => {
+      const shot = PHONE_SCREENS[screen.key];
+      return `          <figure class="hero-screen${index === 0 ? ' is-active' : ''}" data-phone-screen="${index}" aria-hidden="${index === 0 ? 'false' : 'true'}">
+            <picture>
+              <source type="image/webp" srcset="${shot.webp430} 430w, ${shot.webp860} 860w" sizes="(max-width: 900px) 78vw, 292px">
+              <img src="${shot.png}" width="${shot.width}" height="${shot.height}" alt="${e(screen.alt)}" loading="${screen.eager ? 'eager' : 'lazy'}"${screen.eager ? ' fetchpriority="high"' : ''} decoding="async">
+            </picture>
+          </figure>`;
+    })
+    .join('\n');
+  const dots = screens
+    .map(
+      (_, index) =>
+        `        <button type="button" class="hero-dot${index === 0 ? ' is-active' : ''}" data-phone-dot="${index}" aria-label="${e(
+          locale.ui.showScreen.replace('{n}', String(index + 1)),
+        )}"${index === 0 ? ' aria-current="true"' : ''}></button>`,
+    )
+    .join('\n');
+  return `      <div class="hero-phone" data-phone-demo>
+        <div class="hero-phone-frame">
+          <span class="hero-phone-speaker" aria-hidden="true"></span>
+          <div class="hero-phone-screen">
+${slides}
+          </div>
+        </div>
+        <div class="hero-dots" role="group" aria-label="${e(locale.ui.screensLabel)}">
+${dots}
+        </div>
+      </div>`;
+}
+
 /* ---------------------------------------------------------------- sections */
 function hero(locale) {
   const dl = locale.downloads;
@@ -198,7 +236,7 @@ function hero(locale) {
           </div>
         </div>
         <div class="hero-art">
-${appShot(SCREENSHOTS.chats, { alt: locale.preview.shots[0].alt, className: 'app-shot-hero testid-hero-shot', loading: 'eager', high: true })}
+${phoneDemo(locale)}
         </div>
       </div>
     </section>
@@ -687,8 +725,8 @@ export function renderLocalePage({ locale, siteUrl, cssHref, jsHref }) {
     ...LANGUAGES.map((l) => ({ hreflang: l.code, path: l.path, ogLocale: l.ogLocale })),
     { hreflang: 'x-default', path: '/', ogLocale: 'en_US' },
   ];
-  const heroShot = SCREENSHOTS.chats;
-  const preload = `  <link rel="preload" as="image" type="image/webp" href="${heroShot.webp1366}" imagesrcset="${heroShot.webp760} 760w, ${heroShot.webp1366} 1366w" imagesizes="(max-width: 900px) 92vw, 470px" fetchpriority="high">`;
+  const heroShot = PHONE_SCREENS.chats;
+  const preload = `  <link rel="preload" as="image" type="image/webp" href="${heroShot.webp860}" imagesrcset="${heroShot.webp430} 430w, ${heroShot.webp860} 860w" imagesizes="(max-width: 900px) 78vw, 292px" fetchpriority="high">`;
   const language = LANGUAGES.find((l) => l.code === locale.code);
   const jsonLd = {
     '@context': 'https://schema.org',

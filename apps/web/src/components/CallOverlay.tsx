@@ -7,6 +7,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type WheelEvent as ReactWheelEvent,
 } from 'react';
 import {
   Camera, CameraOff, ChevronDown, Grid2x2, Maximize2, MessageSquare, Mic, MicOff, Minimize2,
@@ -27,12 +28,18 @@ import {
   isScreenSharingSupported,
   outcomeLabel,
   outcomeText,
+  releaseRemoteControl,
+  requestRemoteControl,
   retryCall,
   retryCallMedia,
   rejectCall,
   requestVideoUpgrade,
+  respondRemoteControlRequest,
   respondVideoUpgrade,
+  revokeRemoteControl,
+  sendRemoteControlInput,
   setMinimised,
+  setRemoteControlAllowed,
   setSpeaker,
   supportsSpeakerSelection,
   switchDevice,
@@ -44,7 +51,9 @@ import {
   type CallDiagnostics,
   type CallParticipant,
   type CallState,
+  type ControlInputMessage,
 } from '../lib/calls';
+import { isDesktopShell } from '../lib/nativeNotifications';
 import { api } from '../lib/api';
 
 /** Compact byte count for the in-call diagnostics line. */
@@ -52,6 +61,13 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} kB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Compact bitrate for the screen-share quality row. */
+function formatKbps(kbps: number | null): string {
+  if (kbps === null) return 'measuring…';
+  if (kbps >= 1000) return `${(kbps / 1000).toFixed(1)} Mbps`;
+  return `${Math.round(kbps)} kbps`;
 }
 
 /**
@@ -72,6 +88,10 @@ function diagnosticsLine(diagnostics: CallDiagnostics | null): string {
     `${diagnostics.receiverCount} receivers`,
     `remote ${diagnostics.remoteDirections ?? 'unknown'}`,
     diagnostics.missingMediaPeers > 0 ? `${diagnostics.missingMediaPeers} peer(s) not sending` : null,
+    // The screen share has its own numbers: never mix them with the camera path.
+    diagnostics.screenActive
+      ? `screen: ${diagnostics.screenBitrateKbps ?? '?'} kbps · ${diagnostics.screenRttMs ?? '?'} ms · ${diagnostics.screenLossPct ?? '?'}%`
+      : null,
   ]
     .filter((part): part is string => Boolean(part))
     .join(' · ');
@@ -814,6 +834,9 @@ export function CallOverlay({ call }: { call: CallState }) {
       if (key === 'v' && call.video) { event.preventDefault(); void toggleCamera(); }
       if (key === 's' && isScreenSharingSupported()) { event.preventDefault(); void toggleScreenShare(); }
       if (key === 'escape') {
+        // While controlling a remote screen, Escape releases control (handled by
+        // the control key listener) instead of minimising the call.
+        if (call.controlStatus === 'active') return;
         event.preventDefault();
         if (addParticipantOpen) { setAddParticipantOpen(false); return; }
         if (moreOpen) { setMoreOpen(false); return; }
@@ -825,7 +848,7 @@ export function CallOverlay({ call }: { call: CallState }) {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [call.status, call.video, moreOpen, messagesOpen, participantsOpen, addParticipantOpen, menu]);
+  }, [call.status, call.video, moreOpen, messagesOpen, participantsOpen, addParticipantOpen, menu, call.controlStatus]);
 
   // Message side panel: load the chat's recent messages when opened.
   useEffect(() => {
@@ -1028,6 +1051,94 @@ export function CallOverlay({ call }: { call: CallState }) {
     else if (speakerTarget) void setSpeaker(speakerTarget.deviceId);
   }, [browserSpeaker, call.video, nativeRoute, speakerActive, speakerTarget]);
 
+  /* ------------------------------------------------ remote-control input */
+  const lastControlMoveAt = useRef(0);
+  const controlPoint = useCallback((element: HTMLElement, clientX: number, clientY: number): { x: number; y: number } => {
+    const rect = element.getBoundingClientRect();
+    const video = remoteVideoRef.current;
+    // The shared video is rendered with object-cover, so map the pointer to the
+    // actual video FRAME (0..1) rather than the letterboxed/cropped tile.
+    if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+      const scale = Math.max(rect.width / video.videoWidth, rect.height / video.videoHeight);
+      const shownWidth = video.videoWidth * scale;
+      const shownHeight = video.videoHeight * scale;
+      const offsetX = (rect.width - shownWidth) / 2;
+      const offsetY = (rect.height - shownHeight) / 2;
+      return {
+        x: clampNumber((clientX - rect.left - offsetX) / Math.max(1, shownWidth), 0, 1),
+        y: clampNumber((clientY - rect.top - offsetY) / Math.max(1, shownHeight), 0, 1),
+      };
+    }
+    return {
+      x: clampNumber((clientX - rect.left) / Math.max(1, rect.width), 0, 1),
+      y: clampNumber((clientY - rect.top) / Math.max(1, rect.height), 0, 1),
+    };
+  }, []);
+  const onControlPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const now = window.performance.now();
+    if (now - lastControlMoveAt.current < 16) return; // throttled to ~60 events/s
+    lastControlMoveAt.current = now;
+    const point = controlPoint(event.currentTarget, event.clientX, event.clientY);
+    const input: ControlInputMessage = { t: 'm', x: point.x, y: point.y };
+    sendRemoteControlInput(input);
+  }, [controlPoint]);
+  const onControlPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* synthetic pointer */
+    }
+    const point = controlPoint(event.currentTarget, event.clientX, event.clientY);
+    const button = event.button === 2 ? 2 : event.button === 1 ? 1 : 0;
+    const input: ControlInputMessage = { t: 'c', x: point.x, y: point.y, button, down: true };
+    sendRemoteControlInput(input);
+  }, [controlPoint]);
+  const onControlPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const point = controlPoint(event.currentTarget, event.clientX, event.clientY);
+    const button = event.button === 2 ? 2 : event.button === 1 ? 1 : 0;
+    const input: ControlInputMessage = { t: 'c', x: point.x, y: point.y, button, down: false };
+    sendRemoteControlInput(input);
+  }, [controlPoint]);
+  const onControlWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const point = controlPoint(event.currentTarget, event.clientX, event.clientY);
+    const input: ControlInputMessage = { t: 'w', x: point.x, y: point.y, dy: clampNumber(event.deltaY, -10, 10) };
+    sendRemoteControlInput(input);
+  }, [controlPoint]);
+  // Keyboard control: strict allowlist, Escape always releases control.
+  useEffect(() => {
+    if (call.controlStatus !== 'active') return undefined;
+    const special = new Set([
+      'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Enter', 'Tab', 'Escape',
+      'Delete', 'Home', 'End', 'PageUp', 'PageDown', 'Shift', 'Control', 'Alt', 'Meta',
+    ]);
+    const sendKey = (event: KeyboardEvent, down: boolean) => {
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (event.key === 'Escape') {
+        if (down) {
+          event.preventDefault();
+          releaseRemoteControl();
+        }
+        return;
+      }
+      const printable = event.key.length === 1;
+      if (!printable && !special.has(event.key)) return;
+      if (printable && (event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      const input: ControlInputMessage = { t: 'k', key: event.key, down };
+      sendRemoteControlInput(input);
+    };
+    const onDown = (event: KeyboardEvent) => sendKey(event, true);
+    const onUp = (event: KeyboardEvent) => sendKey(event, false);
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+    };
+  }, [call.controlStatus]);
+
   if (call.status === 'idle') return null;
 
   if (call.status === 'incoming') {
@@ -1224,6 +1335,129 @@ export function CallOverlay({ call }: { call: CallState }) {
       {!showVideo ? call.participants.map((participant) => (
         <RemoteAudioSink key={participant.id} participantId={participant.id} />
       )) : null}
+
+      {/* Screen-share quality: its own numbers, shown only while sharing. */}
+      {call.screenSharing || sharers.length > 0 ? (
+        <div
+          className={`mx-3 mb-1 flex flex-wrap items-center gap-2 rounded-xl px-3 py-1.5 text-[11.5px] ${
+            call.screenStats.low ? 'border border-amber-400/40 bg-amber-500/15 text-amber-100' : 'bg-black/30 text-white/85'
+          }`}
+          data-testid="screen-share-quality"
+        >
+          <ScreenShare className="h-3.5 w-3.5 text-emerald-300" aria-hidden="true" />
+          <span className="font-semibold">Screen</span>
+          <span>
+            · {formatKbps(call.screenStats.bitrateKbps)} · {call.screenStats.rttMs !== null ? `${call.screenStats.rttMs} ms` : 'measuring…'} ·{' '}
+            {call.screenStats.lossPct !== null ? `${call.screenStats.lossPct}%` : 'measuring…'}
+          </span>
+          {call.screenStats.low ? (
+            <>
+              <span className="text-amber-200">Low — text may look blurry</span>
+              <button
+                type="button"
+                onClick={() => retryCallMedia()}
+                data-testid="screen-share-quality-retry"
+                className="ml-auto rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] font-semibold hover:bg-white/25"
+              >
+                Retry
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Remote control: host sees consent + approval, viewer sees the request. */}
+      {call.screenSharing ? (
+        <div className="mx-3 mb-1 flex flex-wrap items-center gap-2 rounded-xl bg-white/5 px-3 py-1.5 text-[11.5px] text-white/85" data-testid="remote-control-host">
+          {call.controlSupported ? (
+            <button
+              type="button"
+              data-testid="allow-remote-control"
+              aria-pressed={call.controlAllowed}
+              onClick={() => setRemoteControlAllowed(!call.controlAllowed)}
+              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                call.controlAllowed ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-white/15 hover:bg-white/25'
+              }`}
+            >
+              {call.controlAllowed ? 'Remote control allowed' : 'Allow remote control'}
+            </button>
+          ) : (
+            <span className="text-white/60" data-testid="remote-control-unsupported">
+              {isDesktopShell() ? 'Remote control is not available in this build' : 'Remote control needs the Windows app'}
+            </span>
+          )}
+          {call.controlPendingId ? (
+            <>
+              <span>
+                {call.participants.find((participant) => participant.id === call.controlPendingId)?.displayName ?? 'The other person'} wants to
+                control your screen
+              </span>
+              <button
+                type="button"
+                data-testid="accept-control"
+                onClick={() => respondRemoteControlRequest(true)}
+                className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700"
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                onClick={() => respondRemoteControlRequest(false)}
+                className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold hover:bg-white/25"
+              >
+                Deny
+              </button>
+            </>
+          ) : null}
+          {call.controlViewerId ? (
+            <>
+              <span>
+                {call.participants.find((participant) => participant.id === call.controlViewerId)?.displayName ?? 'The other person'} is
+                controlling your screen
+              </span>
+              <button
+                type="button"
+                data-testid="stop-remote-control"
+                onClick={() => revokeRemoteControl()}
+                className="ml-auto rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-rose-700"
+              >
+                Stop control
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!call.screenSharing && remoteSharer && (call.controlAvailable || call.controlStatus !== 'idle' || call.controlMessage) ? (
+        <div className="mx-3 mb-1 flex flex-wrap items-center gap-2 rounded-xl bg-white/5 px-3 py-1.5 text-[11.5px] text-white/85" data-testid="remote-control-viewer">
+          {call.controlStatus === 'active' ? (
+            <>
+              <span className="font-semibold text-emerald-200">You are controlling {remoteSharer.displayName ?? 'their'} screen</span>
+              <button
+                type="button"
+                data-testid="release-control"
+                onClick={() => releaseRemoteControl()}
+                className="ml-auto rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold hover:bg-white/25"
+              >
+                Release control
+              </button>
+            </>
+          ) : call.controlStatus === 'requested' ? (
+            <span>Waiting for approval to control {remoteSharer.displayName ?? 'their'} screen…</span>
+          ) : call.controlAvailable ? (
+            <button
+              type="button"
+              data-testid="request-control"
+              onClick={() => requestRemoteControl()}
+              className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700"
+            >
+              Control
+            </button>
+          ) : null}
+          {call.controlMessage ? <span className="text-white/55">{call.controlMessage}</span> : null}
+        </div>
+      ) : null}
+
       <div className="relative min-h-0 flex-1 px-3 pb-2">
         {call.videoRequest ? (
           <div className="absolute inset-x-4 top-4 z-30 rounded-2xl border border-brand-400/50 bg-ink-800/95 p-3 shadow-2xl" data-testid="video-request">
@@ -1235,22 +1469,25 @@ export function CallOverlay({ call }: { call: CallState }) {
           </div>
         ) : null}
 
-        {call.screenSharing ? (
-          <div className="absolute inset-x-4 top-4 z-20 flex flex-wrap items-center gap-2 rounded-xl bg-emerald-600/90 px-3 py-2 text-[12.5px] font-semibold" data-testid="sharing-bar">
-            <ScreenShare className="h-4 w-4" />
-            <span>You are sharing your screen{call.screenAudio ? ' · with system audio' : ''}</span>
-            <span className="flex-1" />
-            <button type="button" className="rounded-full bg-black/20 px-3 py-1 text-[11.5px] hover:bg-black/30" onClick={() => void toggleScreenShare()}>Stop sharing</button>
-          </div>
-        ) : null}
-
-        {sharers.length > 0 && !call.screenSharing ? (
-          <div className="absolute inset-x-4 top-4 z-20 flex items-center gap-2 rounded-xl bg-emerald-600/85 px-3 py-2 text-[12.5px] font-semibold" data-testid="remote-sharing-bar">
-            <ScreenShare className="h-4 w-4" />
-            <span>
-              {sharers.map((participant) => participant.displayName || 'Someone').join(', ')} is sharing their screen
-              {sharers.some((participant) => participant.hasSystemAudio) ? ' with audio' : ''}
-            </span>
+        {call.screenSharing || sharers.length > 0 ? (
+          <div className="absolute inset-x-4 top-4 z-20 flex flex-col gap-1">
+            {sharers.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl bg-emerald-600/85 px-3 py-2 text-[12.5px] font-semibold" data-testid="remote-sharing-bar">
+                <ScreenShare className="h-4 w-4" />
+                <span>
+                  {sharers.map((participant) => participant.displayName || 'Someone').join(', ')} is sharing their screen
+                  {sharers.some((participant) => participant.hasSystemAudio) ? ' with audio' : ''}
+                </span>
+              </div>
+            ) : null}
+            {call.screenSharing ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl bg-emerald-600/90 px-3 py-2 text-[12.5px] font-semibold" data-testid="sharing-bar">
+                <ScreenShare className="h-4 w-4" />
+                <span>You are sharing your screen{call.screenAudio ? ' · with system audio' : ''}</span>
+                <span className="flex-1" />
+                <button type="button" className="rounded-full bg-black/20 px-3 py-1 text-[11.5px] hover:bg-black/30" onClick={() => void toggleScreenShare()}>Stop sharing</button>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -1262,7 +1499,7 @@ export function CallOverlay({ call }: { call: CallState }) {
 
         {showVideo ? (
           <div className="flex h-full min-h-0 flex-col gap-2">
-            {(layout === 'speaker' && remoteCount > 0) || call.screenSharing ? (
+            {(layout === 'speaker' && remoteCount > 0) || remoteSharer !== null || call.screenSharing ? (
               <div className="relative h-full min-h-0 flex-1">
                 {mainShowsLocal ? (
                   <div className="relative flex h-full items-center justify-center overflow-hidden rounded-2xl bg-ink-800">
@@ -1292,6 +1529,19 @@ export function CallOverlay({ call }: { call: CallState }) {
                     screenSharing={Boolean(mainParticipant.screenSharing)}
                     onPin={() => setPinnedId(pinnedId === mainParticipant.id ? null : mainParticipant.id)}
                     onRegisterVideo={(element) => { remoteVideoRef.current = element; }}
+                  />
+                ) : null}
+                {/* Viewer input surface: only while we actually control THIS share. */}
+                {mainParticipant && call.controlStatus === 'active' && call.controlPeerId === mainParticipant.id ? (
+                  <div
+                    data-testid="screen-control-surface"
+                    className="absolute inset-0 z-20 cursor-crosshair touch-none"
+                    onPointerMove={onControlPointerMove}
+                    onPointerDown={onControlPointerDown}
+                    onPointerUp={onControlPointerUp}
+                    onPointerCancel={onControlPointerUp}
+                    onWheel={onControlWheel}
+                    onContextMenu={(event) => event.preventDefault()}
                   />
                 ) : null}
               </div>
@@ -1385,6 +1635,11 @@ export function CallOverlay({ call }: { call: CallState }) {
               </div>
             )}
             {!counterpart && call.muted ? <MicOff className="absolute right-1 top-1 h-3.5 w-3.5 text-rose-300" aria-label="You are muted" /> : null}
+            {!counterpart ? (
+              <span className="pointer-events-none absolute bottom-1 left-1 max-w-[calc(100%-0.5rem)] truncate rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-medium" data-testid="self-view-label">
+                {call.screenSharing ? 'Your screen' : 'You'}
+              </span>
+            ) : null}
           </div>
         </div>
       ) : null}

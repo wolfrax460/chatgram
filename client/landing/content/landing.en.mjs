@@ -14,6 +14,8 @@ export default {
     skipToContent: 'Skip to content',
     mainNavigation: 'Main navigation',
     downloadLabel: 'Chatgram downloads',
+    showScreen: 'Show screen {n}',
+    screensLabel: 'App screens',
     toggleMenu: 'Toggle menu',
     themeGroup: 'Colour theme',
     themeLight: 'Light theme',

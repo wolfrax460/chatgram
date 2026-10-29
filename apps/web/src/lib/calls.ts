@@ -107,6 +107,23 @@ export interface CallRoom {
 export type CallQuality = 'unknown' | 'good' | 'fair' | 'poor';
 
 /**
+ * Quality of the SCREEN-SHARE media path while a share is active.
+ * Sampled from the screen's own RTP stream so the camera's numbers can never
+ * mask (or fake) the share's quality.
+ */
+export interface ScreenShareStats {
+  active: boolean;
+  bitrateKbps: number | null;
+  rttMs: number | null;
+  lossPct: number | null;
+  /** True while the bitrate has stayed below SCREEN_LOW_KBPS for SCREEN_LOW_MS. */
+  low: boolean;
+}
+
+/** Remote-control state from the viewer's point of view. */
+export type RemoteControlStatus = 'idle' | 'requested' | 'active' | 'denied';
+
+/**
  * Live WebRTC numbers from `getStats()`, shown in the call UI when media stops.
  *
  * They exist because "no audio and no video" is undiagnosable from a screenshot:
@@ -138,6 +155,16 @@ export interface CallDiagnostics {
   relayConfigured: boolean;
   /** Seconds since media was expected with zero bytes received. */
   stalledSeconds: number;
+  /** True while a screen share (local or remote) is active. */
+  screenActive: boolean;
+  /** Screen-path bitrate (kbps) sampled from the share's own video stream. */
+  screenBitrateKbps: number | null;
+  /** Screen-path RTT (ms) from the candidate pair carrying the share. */
+  screenRttMs: number | null;
+  /** Screen-path video packet loss (%). */
+  screenLossPct: number | null;
+  /** True when the share bitrate has been under SCREEN_LOW_KBPS for SCREEN_LOW_MS. */
+  screenLow: boolean;
 }
 
 
@@ -195,6 +222,25 @@ export interface CallState {
   diagnostics: CallDiagnostics | null;
   /** True when nothing has arrived for the stall window while the call is up. */
   mediaStalled: boolean;
+  /** Quality of the screen-share path while a share is active. */
+  screenQuality: CallQuality;
+  screenStats: ScreenShareStats;
+  /** True when this shell can inject remote-control input (Windows desktop app). */
+  controlSupported: boolean;
+  /** Sharer: I explicitly allow remote control of my shared screen (default off). */
+  controlAllowed: boolean;
+  /** Sharer: the viewer whose control request waits for approval. */
+  controlPendingId: string | null;
+  /** Sharer: the single viewer currently controlling my screen. */
+  controlViewerId: string | null;
+  /** Viewer: the remote sharer's consent signal is on. */
+  controlAvailable: boolean;
+  /** Viewer: my request state with that sharer. */
+  controlStatus: RemoteControlStatus;
+  /** Viewer: the peer whose shared screen I am controlling. */
+  controlPeerId: string | null;
+  /** Honest reason when control is unavailable/refused (never keystrokes). */
+  controlMessage: string | null;
 }
 
 /** Honest mesh caps, mirrored from the server. */
@@ -222,6 +268,16 @@ const IDLE: CallState = {
   quality: 'unknown',
   diagnostics: null,
   mediaStalled: false,
+  screenQuality: 'unknown',
+  screenStats: { active: false, bitrateKbps: null, rttMs: null, lossPct: null, low: false },
+  controlSupported: false,
+  controlAllowed: false,
+  controlPendingId: null,
+  controlViewerId: null,
+  controlAvailable: false,
+  controlStatus: 'idle',
+  controlPeerId: null,
+  controlMessage: null,
   minimised: false,
   videoRequest: null,
   videoUpgradePending: false,
@@ -283,6 +339,10 @@ interface PeerHandle {
   noInboundSince: number | null;
   /** True once the "we receive 0 B" warning was logged for this peer. */
   missingMediaLogged: boolean;
+  /** Remote-control data channel (label `control`, ordered+reliable). */
+  controlChannel: RTCDataChannel | null;
+  /** True when the remote side opened the control channel (we did not create it). */
+  controlRemoteSeen: boolean;
 }
 
 let current: ActiveCall | null = null;
@@ -299,6 +359,53 @@ const MEDIA_STALL_MS = 8_000;
  * detect it sooner than the generic stall so the UI can say who is not sending.
  */
 const MISSING_MEDIA_MS = 5_000;
+
+/** Screen-share quality thresholds (the share is judged on its own stream). */
+const SCREEN_GOOD_KBPS = 800;
+const SCREEN_LOW_KBPS = 250;
+const SCREEN_LOW_MS = 5_000;
+
+/** Remote-control data channel + protocol limits. */
+const CONTROL_CHANNEL_LABEL = 'control';
+/** Host-side hard cap, also enforced again in the Electron main process. */
+const CONTROL_MAX_EVENTS_PER_SEC = 120;
+/** Keys a viewer may send. Printable ASCII plus navigation/modifier keys. */
+const CONTROL_KEY_NAMES = new Set([
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'Backspace', 'Enter', 'Tab', 'Escape', 'Delete',
+  'Home', 'End', 'PageUp', 'PageDown',
+  'Shift', 'Control', 'Alt', 'Meta',
+]);
+
+/** Compact control payloads sent over the data channel (never logged). */
+export type ControlInputMessage =
+  | { t: 'm'; x: number; y: number }
+  | { t: 'w'; x: number; y: number; dy: number }
+  | { t: 'c'; x: number; y: number; button: 0 | 1 | 2; down: boolean }
+  | { t: 'k'; key: string; down: boolean };
+
+type ControlMessage =
+  | ControlInputMessage
+  | { t: 'request' }
+  | { t: 'release' }
+  | { t: 'accept' }
+  | { t: 'deny' }
+  | { t: 'revoke' }
+  | { t: 'allow'; on: boolean };
+
+/** Sampler state for the screen-share path (separate from the camera stats). */
+let screenSample: { at: number; bytes: number } | null = null;
+let screenLowSince: number | null = null;
+let screenLowNotified = false;
+/** Host-side input rate limit (the Electron main process enforces the same cap). */
+let controlRateWindow = { at: 0, count: 0 };
+
+function allowHostControlEvent(): boolean {
+  const now = Date.now();
+  if (now - controlRateWindow.at > 1_000) controlRateWindow = { at: now, count: 0 };
+  controlRateWindow.count += 1;
+  return controlRateWindow.count <= CONTROL_MAX_EVENTS_PER_SEC;
+}
 let localStream: MediaStream | null = null;
 /** The display-capture stream while screen sharing (separate from the camera). */
 let screenStream: MediaStream | null = null;
@@ -806,6 +913,99 @@ async function measureQuality(): Promise<void> {
     }
   }
 
+  let screenBitrateKbps: number | null = null;
+  let screenRttMs: number | null = null;
+  let screenLossPct: number | null = null;
+  let screenLow = false;
+  let screenQuality: CallQuality = 'unknown';
+  const remoteSharers = state.participants.filter((participant) => participant.screenSharing);
+  const localSharing = state.screenSharing && Boolean(screenStream);
+  const screenActive = localSharing || remoteSharers.length > 0;
+  if (screenActive) {
+    let bytes = 0;
+    let packets = 0;
+    let lost = 0;
+    let rtt: number | null = null;
+    const collect = async (pc: RTCPeerConnection): Promise<void> => {
+      try {
+        const stats = await pc.getStats();
+        stats.forEach((report) => {
+          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+            rtt = Math.max(rtt ?? 0, Math.round((report.currentRoundTripTime || 0) * 1000));
+          }
+          if (localSharing) {
+            // Sharer: what our screen encoder actually puts on the wire.
+            if (report.type === 'outbound-rtp' && report.kind === 'video') bytes += Number(report.bytesSent || 0);
+          } else if (report.type === 'inbound-rtp' && report.kind === 'video') {
+            // Viewer: the inbound video stream IS the shared screen while sharing.
+            bytes += Number(report.bytesReceived || 0);
+            packets += Number(report.packetsReceived || 0);
+            lost += Number(report.packetsLost || 0);
+          }
+        });
+      } catch {
+        /* peer closing */
+      }
+    };
+    if (localSharing) {
+      for (const handle of handles) await collect(handle.pc);
+    } else {
+      for (const sharer of remoteSharers) {
+        const handle = peers.get(sharer.id);
+        if (handle) await collect(handle.pc);
+      }
+    }
+    const now = Date.now();
+    const previous = screenSample;
+    if (previous && now - previous.at >= 500) {
+      const elapsedSeconds = (now - previous.at) / 1000;
+      screenBitrateKbps = Math.max(0, Math.round(((bytes - previous.bytes) * 8) / 1000 / elapsedSeconds));
+    }
+    screenSample = { at: now, bytes };
+    screenRttMs = rtt;
+    if (packets + lost > 0) screenLossPct = Math.round((lost / (packets + lost)) * 1000) / 10;
+    screenQuality = 'good';
+    if (screenBitrateKbps !== null) {
+      if (screenBitrateKbps < SCREEN_LOW_KBPS) screenQuality = 'poor';
+      else if (screenBitrateKbps < SCREEN_GOOD_KBPS) screenQuality = 'fair';
+    }
+    if (screenLossPct !== null) {
+      if (screenLossPct > 12) screenQuality = 'poor';
+      else if (screenQuality !== 'poor' && screenLossPct > 4) screenQuality = 'fair';
+    }
+    if (screenRttMs !== null) {
+      if (screenRttMs > 400) screenQuality = 'poor';
+      else if (screenQuality !== 'poor' && screenRttMs > 220) screenQuality = 'fair';
+    }
+    const lowNow = screenBitrateKbps !== null && screenBitrateKbps < SCREEN_LOW_KBPS;
+    if (lowNow) screenLowSince ??= now;
+    else {
+      screenLowSince = null;
+      screenLowNotified = false;
+    }
+    screenLow = screenLowSince !== null && now - screenLowSince >= SCREEN_LOW_MS;
+    if (screenLow && !screenLowNotified) {
+      screenLowNotified = true;
+      setState({ notice: 'Screen share quality is low — text may look blurry. Retry if it stays blurry.' });
+    }
+  } else {
+    screenSample = null;
+    screenLowSince = null;
+    screenLowNotified = false;
+  }
+  // While sharing, the pill and the detail popover follow the SCREEN path only.
+  const effectiveQuality: CallQuality = screenActive ? screenQuality : worst;
+  const effectiveStats = screenActive
+    ? { latencyMs: screenRttMs, packetLoss: screenLossPct }
+    : { latencyMs, packetLoss };
+  const screenStats: ScreenShareStats = {
+    active: screenActive,
+    bitrateKbps: screenActive ? screenBitrateKbps : null,
+    rttMs: screenActive ? screenRttMs : null,
+    lossPct: screenActive ? screenLossPct : null,
+    low: screenActive && screenLow,
+  };
+
   const relayConfigured = (iceServersCache?.servers ?? []).some((server) =>
     (Array.isArray(server.urls) ? server.urls : [server.urls]).some((url) => String(url).startsWith('turn')),
   );
@@ -836,13 +1036,25 @@ async function measureQuality(): Promise<void> {
     missingMediaPeers,
     relayConfigured,
     stalledSeconds,
+    screenActive,
+    screenBitrateKbps: screenActive ? screenBitrateKbps : null,
+    screenRttMs: screenActive ? screenRttMs : null,
+    screenLossPct: screenActive ? screenLossPct : null,
+    screenLow: screenActive && screenLow,
   };
-  setState({ quality: worst, stats: { latencyMs, packetLoss }, diagnostics, mediaStalled });
+  setState({
+    quality: effectiveQuality,
+    stats: effectiveStats,
+    diagnostics,
+    mediaStalled,
+    screenQuality: screenActive ? screenQuality : 'unknown',
+    screenStats,
+  });
   if (mediaStalled && !stallReported) {
     stallReported = true;
     reportStalledCall(diagnostics, stalledSeconds);
   }
-  if (worst === 'poor' && state.video && !state.lowBandwidth) {
+  if (effectiveQuality === 'poor' && state.video && !state.lowBandwidth) {
     setState({
       lowBandwidth: true,
       notice: 'Low bandwidth: incoming video was turned off automatically. You can turn it back on from the connection menu.',
@@ -946,6 +1158,12 @@ function cleanup(): void {
   streamTick = 0;
   mediaWatchStartedAt = 0;
   stallReported = false;
+  // Remote control never survives a call teardown.
+  setInjectionActive(false);
+  screenSample = null;
+  screenLowSince = null;
+  screenLowNotified = false;
+  controlRateWindow = { at: 0, count: 0 };
 }
 
 /**
@@ -1039,8 +1257,19 @@ async function createPeer(info: CallParticipant): Promise<PeerHandle | null> {
     audioSender: null,
     noInboundSince: null,
     missingMediaLogged: false,
+    controlChannel: null,
+    controlRemoteSeen: false,
   };
   peers.set(info.id, handle);
+
+  // The offerer opens ONE ordered+reliable control channel alongside the media
+  // m-lines; the answerer receives it here. Consent is a separate, in-band
+  // handshake on that channel (see the control helpers below).
+  pc.ondatachannel = (event) => {
+    if (event.channel.label !== CONTROL_CHANNEL_LABEL) return;
+    handle.controlRemoteSeen = true;
+    attachControlChannel(handle, event.channel);
+  };
 
   // Negotiation is ROLE-specific and the ordering is critical:
   //  - the OFFERER creates the explicit audio+video transceivers itself, right
@@ -1247,6 +1476,15 @@ async function sendOffer(handle: PeerHandle): Promise<void> {
     // attach local tracks BEFORE the offer so the answer cannot be audio-only
     // and cannot reject our video section.
     await ensureOfferSenders(handle);
+    // One ordered+reliable control channel per peer, created together with the
+    // media m-lines (the answerer gets it through pc.ondatachannel).
+    if (!handle.controlChannel && !handle.controlRemoteSeen) {
+      try {
+        attachControlChannel(handle, handle.pc.createDataChannel(CONTROL_CHANNEL_LABEL, { ordered: true }));
+      } catch {
+        /* data channels unavailable: remote control simply stays off */
+      }
+    }
     const offer = await handle.pc.createOffer();
     if (handle.pc.signalingState !== 'stable') return;
     await handle.pc.setLocalDescription(offer);
@@ -1260,6 +1498,319 @@ async function sendOffer(handle: PeerHandle): Promise<void> {
   } finally {
     handle.makingOffer = false;
   }
+}
+
+/* ------------------------------------------------------- remote control */
+
+interface DesktopControlBridge {
+  control?: {
+    send?: (event: ControlInputMessage) => void | Promise<unknown>;
+    setActive?: (active: boolean) => void | Promise<unknown>;
+    available?: () => Promise<boolean>;
+  };
+}
+
+function desktopControlBridge(): NonNullable<DesktopControlBridge['control']> | null {
+  if (typeof window === 'undefined') return null;
+  const bridge = (window as unknown as { chatgramDesktop?: DesktopControlBridge }).chatgramDesktop;
+  return bridge?.control && typeof bridge.control === 'object' ? bridge.control : null;
+}
+
+/** Detect whether this shell can inject input (Windows desktop app only). */
+export async function syncControlSupport(): Promise<boolean> {
+  const bridge = desktopControlBridge();
+  if (!bridge?.available) {
+    if (state.controlSupported) setState({ controlSupported: false });
+    return false;
+  }
+  let supported = false;
+  try {
+    supported = (await bridge.available()) === true;
+  } catch {
+    supported = false;
+  }
+  setState({ controlSupported: supported });
+  return supported;
+}
+
+function nameOfPeer(handle: PeerHandle): string {
+  return handle.info.displayName || 'Someone';
+}
+
+function setInjectionActive(active: boolean): void {
+  const bridge = desktopControlBridge();
+  try {
+    void bridge?.setActive?.(active);
+  } catch {
+    /* the bridge is best effort */
+  }
+}
+
+function sendControlMessage(handle: PeerHandle, message: ControlMessage): boolean {
+  const channel = handle.controlChannel;
+  if (!channel || channel.readyState !== 'open') return false;
+  try {
+    channel.send(JSON.stringify(message));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function broadcastControlMessage(message: ControlMessage): void {
+  for (const handle of peers.values()) sendControlMessage(handle, message);
+}
+
+function controlKeyAllowed(key: string): boolean {
+  if (key.length === 1) {
+    const code = key.charCodeAt(0);
+    return code >= 32 && code <= 126;
+  }
+  return CONTROL_KEY_NAMES.has(key);
+}
+
+const unitRange = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+
+/** Validate an untrusted data-channel payload into a typed control event. */
+function parseControlInput(raw: unknown): ControlInputMessage | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Record<string, unknown>;
+  if (value.t === 'm') {
+    return unitRange(value.x) && unitRange(value.y) ? { t: 'm', x: value.x, y: value.y } : null;
+  }
+  if (value.t === 'w') {
+    if (!unitRange(value.x) || !unitRange(value.y) || typeof value.dy !== 'number' || !Number.isFinite(value.dy)) return null;
+    return { t: 'w', x: value.x, y: value.y, dy: Math.max(-10, Math.min(10, value.dy)) };
+  }
+  if (value.t === 'c') {
+    const button = value.button === 0 || value.button === 1 || value.button === 2 ? value.button : null;
+    if (button === null || !unitRange(value.x) || !unitRange(value.y) || typeof value.down !== 'boolean') return null;
+    return { t: 'c', x: value.x, y: value.y, button, down: value.down };
+  }
+  if (value.t === 'k') {
+    if (typeof value.key !== 'string' || typeof value.down !== 'boolean') return null;
+    if (!controlKeyAllowed(value.key)) return null;
+    return { t: 'k', key: value.key, down: value.down };
+  }
+  return null;
+}
+
+/** Sharer: hand one validated input event to the Electron injection bridge. */
+function injectControlInput(input: ControlInputMessage): void {
+  const bridge = desktopControlBridge();
+  if (!bridge?.send) return;
+  try {
+    void bridge.send(input);
+  } catch {
+    /* injection must never break the call */
+  }
+}
+
+function dropControlViewer(notice?: string): void {
+  const viewerId = state.controlViewerId;
+  if (viewerId) {
+    const viewer = peers.get(viewerId);
+    if (viewer) sendControlMessage(viewer, { t: 'revoke' });
+  }
+  setInjectionActive(false);
+  setState({
+    controlViewerId: null,
+    controlPendingId: null,
+    ...(notice ? { notice } : {}),
+  });
+}
+
+/** Clear every control role; used by stop-share, disconnect and call end. */
+export function resetRemoteControl(notice?: string): void {
+  if (state.controlViewerId || state.controlAllowed || state.controlPendingId) {
+    dropControlViewer();
+    setState({ controlAllowed: false });
+    broadcastControlMessage({ t: 'allow', on: false });
+  }
+  if (state.controlStatus !== 'idle' || state.controlPeerId || state.controlAvailable) {
+    setState({ controlStatus: 'idle', controlPeerId: null, controlAvailable: false, controlMessage: notice ?? null });
+  }
+}
+
+function announceControlConsent(): void {
+  broadcastControlMessage({ t: 'allow', on: state.controlAllowed && state.controlSupported && state.screenSharing });
+}
+
+function handleControlRequest(handle: PeerHandle): void {
+  if (!state.screenSharing || !state.controlAllowed || !state.controlSupported) return;
+  if (state.controlViewerId || state.controlPendingId) {
+    sendControlMessage(handle, { t: 'deny' });
+    return;
+  }
+  setState({
+    controlPendingId: handle.info.id,
+    notice: `${nameOfPeer(handle)} wants to control your screen.`,
+  });
+}
+
+function handleControlRelease(handle: PeerHandle): void {
+  if (state.controlViewerId !== handle.info.id) return;
+  setInjectionActive(false);
+  setState({ controlViewerId: null, controlPendingId: null, notice: `${nameOfPeer(handle)} released control.` });
+}
+
+function handleViewerControlMessage(handle: PeerHandle, message: Record<string, unknown>): void {
+  const sharer = state.participants.find((participant) => participant.id === handle.info.id);
+  if (message.t === 'allow') {
+    const allowed = message.on === true && sharer?.screenSharing === true && !state.screenSharing;
+    setState({ controlAvailable: allowed });
+    if (!allowed && state.controlStatus !== 'idle') {
+      setState({ controlStatus: 'idle', controlPeerId: null, controlMessage: 'The other person stopped allowing remote control.' });
+    }
+    return;
+  }
+  if (message.t === 'accept') {
+    if (state.controlStatus === 'requested' && state.controlPeerId === handle.info.id) {
+      setState({
+        controlStatus: 'active',
+        notice: `You are controlling ${nameOfPeer(handle)}'s screen. Press Escape to release.`,
+      });
+    }
+    return;
+  }
+  if (message.t === 'deny' || message.t === 'revoke') {
+    if (state.controlPeerId !== null && state.controlPeerId !== handle.info.id) return;
+    setState({
+      controlStatus: 'idle',
+      controlPeerId: null,
+      controlMessage: message.t === 'deny' ? 'The other person declined remote control.' : 'Remote control ended.',
+    });
+  }
+}
+
+function handleControlMessage(handle: PeerHandle, raw: unknown): void {
+  if (typeof raw !== 'string' || raw.length > 2048) return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!parsed || typeof parsed !== 'object') return;
+  const message = parsed as Record<string, unknown>;
+  // Host (sharer) side: requests and input from the approved viewer.
+  if (state.screenSharing) {
+    if (message.t === 'request') {
+      handleControlRequest(handle);
+      return;
+    }
+    if (message.t === 'release') {
+      handleControlRelease(handle);
+      return;
+    }
+    const input = parseControlInput(message);
+    if (input) {
+      // Defence in depth: the channel, the consent flag and the single approved
+      // viewer must all agree, and the host rate limit must not be exceeded.
+      if (state.controlAllowed && state.controlSupported && state.controlViewerId === handle.info.id && allowHostControlEvent()) {
+        injectControlInput(input);
+      }
+      return;
+    }
+  }
+  handleViewerControlMessage(handle, message);
+}
+
+function attachControlChannel(handle: PeerHandle, channel: RTCDataChannel): void {
+  handle.controlChannel = channel;
+  channel.onopen = () => {
+    // Only the sharer announces consent; the viewer has nothing to allow.
+    if (state.screenSharing) announceControlConsent();
+  };
+  channel.onclose = () => {
+    if (handle.controlChannel === channel) handle.controlChannel = null;
+    if (state.controlViewerId === handle.info.id) dropControlViewer('The viewer disconnected.');
+    if (state.controlPeerId === handle.info.id) {
+      setState({ controlStatus: 'idle', controlPeerId: null, controlAvailable: false, controlMessage: 'The connection closed.' });
+    }
+  };
+  channel.onmessage = (event) => handleControlMessage(handle, event.data);
+}
+
+/** Sharer: explicit per-session consent for remote control of my share. */
+export function setRemoteControlAllowed(allowed: boolean): void {
+  if (!state.screenSharing) return;
+  const next = allowed === true && state.controlSupported;
+  if (next === state.controlAllowed) return;
+  if (!next) {
+    dropControlViewer();
+    setState({ controlAllowed: false, controlMessage: null });
+    announceControlConsent();
+    setState({ notice: 'Remote control is off.' });
+    return;
+  }
+  setState({ controlAllowed: true, controlMessage: null });
+  announceControlConsent();
+  setState({ notice: 'Remote control is on. The other person can ask to control this screen.' });
+}
+
+/** Sharer: accept or deny the pending viewer request (one viewer at a time). */
+export function respondRemoteControlRequest(accept: boolean): void {
+  const viewerId = state.controlPendingId;
+  if (!viewerId) return;
+  const viewer = peers.get(viewerId);
+  setState({ controlPendingId: null });
+  if (!viewer) return;
+  if (!accept || !state.screenSharing || !state.controlAllowed || !state.controlSupported) {
+    sendControlMessage(viewer, { t: 'deny' });
+    return;
+  }
+  setState({ controlViewerId: viewerId, notice: `${nameOfPeer(viewer)} is controlling your screen.` });
+  sendControlMessage(viewer, { t: 'accept' });
+  setInjectionActive(true);
+}
+
+/** Sharer: stop the active controller right now (also used by Stop sharing). */
+export function revokeRemoteControl(): void {
+  dropControlViewer('Remote control stopped.');
+}
+
+/** Viewer: ask the remote sharer for control (only when their consent is on). */
+export function requestRemoteControl(): void {
+  if (state.screenSharing || state.controlStatus === 'requested' || state.controlStatus === 'active') return;
+  const sharer = state.participants.find((participant) => participant.screenSharing);
+  if (!sharer) return;
+  const handle = peers.get(sharer.id);
+  if (!handle) return;
+  if (!state.controlAvailable) {
+    setState({ controlMessage: 'The sharer has not allowed remote control.' });
+    return;
+  }
+  if (!sendControlMessage(handle, { t: 'request' })) {
+    setState({ controlMessage: 'Remote control is not available (no control channel).' });
+    return;
+  }
+  setState({
+    controlStatus: 'requested',
+    controlPeerId: sharer.id,
+    controlMessage: null,
+    notice: 'Control request sent. Waiting for approval…',
+  });
+}
+
+/** Viewer: release control (Escape or the Release control button). */
+export function releaseRemoteControl(): void {
+  const peerId = state.controlPeerId;
+  if (peerId) {
+    const handle = peers.get(peerId);
+    if (handle) sendControlMessage(handle, { t: 'release' });
+  }
+  setInjectionActive(false);
+  setState({ controlStatus: 'idle', controlPeerId: null, controlMessage: null });
+}
+
+/** Viewer: send one validated input event to the sharer's control channel. */
+export function sendRemoteControlInput(input: ControlInputMessage): void {
+  if (state.controlStatus !== 'active' || !state.controlPeerId) return;
+  const handle = peers.get(state.controlPeerId);
+  if (!handle) return;
+  sendControlMessage(handle, input);
 }
 
 function armRingTimeout(): void {
@@ -1346,6 +1897,8 @@ function enterSession(session: ActiveCall, extra: Partial<CallState> = {}): void
     ...extra,
   });
   startStatsLoop();
+  // Remote-control injection is only available inside the Windows desktop shell.
+  void syncControlSupport();
 }
 
 /* ---------------------------------------------------------------- lifecycle */
@@ -1643,6 +2196,10 @@ export function handleParticipantLeft(payload: {
   if (!current || current.callId !== payload.callId) return;
   const who = state.participants.find((p) => p.id === payload.userId);
   removePeer(payload.userId);
+  if (state.controlViewerId === payload.userId) dropControlViewer('The viewer left the call.');
+  if (state.controlPeerId === payload.userId) {
+    setState({ controlStatus: 'idle', controlPeerId: null, controlAvailable: false, controlMessage: 'The other person left the call.' });
+  }
   const participants = Array.isArray(payload.participants)
     ? payload.participants.map(normalizeParticipant).filter((p) => p.id !== myUserId)
     : state.participants.filter((p) => p.id !== payload.userId);
@@ -1790,6 +2347,12 @@ function applySignal(signal: CallSignal, from: CallParticipant): void {
       hasSystemAudio: signal.hasSystemAudio === true,
     });
     if (screenSharing) {
+      // Defensive: a local share flag with no screen stream behind it is stale
+      // (a stop that never completed). Clear it so the UI cannot show "You are
+      // sharing" and stale local screen frames while a REMOTE share is running.
+      if (state.screenSharing && !screenStream) {
+        setState({ screenSharing: false, screenAudio: false });
+      }
       // A share is video content and must be visible even in a call this device
       // joined audio-only: the video m-line is always negotiated, so switch the
       // stage to video mode instead of silently showing nothing.
@@ -1806,6 +2369,16 @@ function applySignal(signal: CallSignal, from: CallParticipant): void {
         notice: `${name} is sharing their screen${signal.hasSystemAudio ? ' with system audio' : ''}.${
           wasSuppressed ? ' Incoming video was turned back on to show it.' : ''
         }`,
+      });
+    } else {
+      // The remote share stopped: any control role towards it ends immediately.
+      if (state.controlPeerId === source.id) {
+        setState({ controlStatus: 'idle', controlPeerId: null, controlMessage: 'The other person stopped sharing.' });
+      }
+      setState({
+        controlAvailable: false,
+        screenQuality: 'unknown',
+        screenStats: { active: false, bitrateKbps: null, rttMs: null, lossPct: null, low: false },
       });
     }
   } else if (signal.kind === 'incoming-video-off') {
@@ -2195,10 +2768,25 @@ export async function toggleScreenShare(): Promise<void> {
     video: true,
     cameraOn: false,
     audioOnly: false,
+    // Consent is per share session and starts OFF.
+    controlAllowed: false,
+    controlPendingId: null,
+    controlViewerId: null,
+    controlMessage: null,
+    screenQuality: 'unknown',
+    screenStats: { active: true, bitrateKbps: null, rttMs: null, lossPct: null, low: false },
     notice: systemAudio
       ? 'You are sharing your screen with system audio.'
       : 'You are sharing your screen.',
   });
+  // A new share starts its own quality sampler (never reuse the camera sample).
+  screenSample = null;
+  screenLowSince = null;
+  screenLowNotified = false;
+  // Tell the peers control is available-but-not-yet-consented, and refresh
+  // whether this shell can inject input at all (Windows desktop only).
+  announceControlConsent();
+  void syncControlSupport();
   emitSignal({
     kind: 'screen',
     screenSharing: true,
@@ -2208,10 +2796,22 @@ export async function toggleScreenShare(): Promise<void> {
 }
 
 async function stopScreenShareInternal(): Promise<void> {
-  if (!state.screenSharing) return;
+  // Also recover a stale partial share (flag false but the screen track/stream
+  // still attached): stopping must always restore the camera and clear the flag.
+  if (!state.screenSharing && !screenStream && !screenAudioTrack) return;
   const hadSystemAudio = Boolean(screenAudioTrack);
-  setState({ screenSharing: false, screenAudio: false });
+  setState({
+    screenSharing: false,
+    screenAudio: false,
+    screenQuality: 'unknown',
+    screenStats: { active: false, bitrateKbps: null, rttMs: null, lossPct: null, low: false },
+  });
+  screenSample = null;
+  screenLowSince = null;
+  screenLowNotified = false;
   emitSignal({ kind: 'screen', screenSharing: false });
+  // Stopping the share revokes remote control instantly (consent + channel).
+  resetRemoteControl();
   stopTracks(screenStream);
   screenStream = null;
   if (screenAudioTrack && localStream) {

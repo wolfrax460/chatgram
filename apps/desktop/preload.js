@@ -81,5 +81,20 @@ contextBridge.exposeInMainWorld('chatgramDesktop', {
     },
   },
 
+  /**
+   * Remote control of a shared screen (Windows host only).
+   *
+   * The page only sends validated, normalized control events for an approved
+   * session; main.js re-validates them, maps them to the primary display and
+   * injects them with nut-js. available() reports whether the native module
+   * loaded in this build, so the UI can say "Remote control is not available in
+   * this build" instead of showing a dead toggle.
+   */
+  control: {
+    available: () => ipcRenderer.invoke('chatgram:control-available'),
+    send: (event) => ipcRenderer.invoke('chatgram:control-event', event),
+    setActive: (active) => ipcRenderer.send('chatgram:control-session', Boolean(active)),
+  },
+
   isDesktop: true,
 });

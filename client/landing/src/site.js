@@ -138,6 +138,88 @@
 
   for (var gd = 0; gd < guideDialogs.length; gd += 1) wireGuideDialog(guideDialogs[gd]);
 
+  /* ------------------------------------------------------ hero phone demo */
+  /* The screens are real screenshots. This only swaps the active class and
+     aria-hidden every 3.5 s (CSS does the fading/sliding), pauses on hover,
+     pointer-down and keyboard focus, and respects prefers-reduced-motion. */
+  var phoneDemo = document.querySelector('[data-phone-demo]');
+  if (phoneDemo) {
+    var phoneScreens = phoneDemo.querySelectorAll('[data-phone-screen]');
+    var phoneDots = phoneDemo.querySelectorAll('[data-phone-dot]');
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    var phoneIndex = 0;
+    var phoneTimer = null;
+    var phonePaused = false;
+
+    function showPhoneScreen(index) {
+      if (!phoneScreens.length) return;
+      phoneIndex = ((index % phoneScreens.length) + phoneScreens.length) % phoneScreens.length;
+      for (var s = 0; s < phoneScreens.length; s += 1) {
+        var active = s === phoneIndex;
+        phoneScreens[s].classList.toggle('is-active', active);
+        phoneScreens[s].setAttribute('aria-hidden', active ? 'false' : 'true');
+      }
+      for (var d = 0; d < phoneDots.length; d += 1) {
+        var dotActive = d === phoneIndex;
+        phoneDots[d].classList.toggle('is-active', dotActive);
+        if (dotActive) phoneDots[d].setAttribute('aria-current', 'true');
+        else phoneDots[d].removeAttribute('aria-current');
+      }
+    }
+
+    function stopPhoneTimer() {
+      if (phoneTimer !== null) {
+        window.clearInterval(phoneTimer);
+        phoneTimer = null;
+      }
+    }
+
+    function startPhoneTimer() {
+      stopPhoneTimer();
+      if (reduceMotion.matches || phoneScreens.length < 2) return;
+      phoneTimer = window.setInterval(function () {
+        if (!phonePaused) showPhoneScreen(phoneIndex + 1);
+      }, 3500);
+    }
+
+    function pausePhone() {
+      phonePaused = true;
+    }
+
+    function resumePhone() {
+      phonePaused = false;
+    }
+
+    phoneDemo.addEventListener('mouseenter', pausePhone);
+    phoneDemo.addEventListener('mouseleave', resumePhone);
+    phoneDemo.addEventListener('pointerdown', pausePhone);
+    phoneDemo.addEventListener('pointerup', resumePhone);
+    phoneDemo.addEventListener('pointercancel', resumePhone);
+    phoneDemo.addEventListener('focusin', pausePhone);
+    phoneDemo.addEventListener('focusout', resumePhone);
+
+    for (var pd = 0; pd < phoneDots.length; pd += 1) {
+      phoneDots[pd].addEventListener('click', function (event) {
+        var target = event.currentTarget.getAttribute('data-phone-dot');
+        showPhoneScreen(Number(target));
+      });
+    }
+
+    if (reduceMotion.addEventListener) {
+      reduceMotion.addEventListener('change', function () {
+        if (reduceMotion.matches) {
+          stopPhoneTimer();
+          showPhoneScreen(0);
+        } else {
+          startPhoneTimer();
+        }
+      });
+    }
+
+    showPhoneScreen(0);
+    startPhoneTimer();
+  }
+
   /* ---------------------------------------------------- sticky download bar */
   var quickBar = document.querySelector('[data-quick-bar]');
   if (quickBar) {
