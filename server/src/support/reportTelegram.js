@@ -29,6 +29,7 @@
  * reports <-> chatgram cycle.
  */
 const platformSettings = require('../utils/platformSettings');
+const { redactPII } = require('../utils/githubIssues');
 
 const TELEGRAM_API = 'https://api.telegram.org';
 const TIMEOUT_MS = 12000;
@@ -36,7 +37,13 @@ const POLL_TIMEOUT_SECONDS = 15;
 const POLL_ERROR_WAIT_MS = 15000;
 const POLL_DISABLED_WAIT_MS = 60000;
 const REPLY_MAX_LENGTH = 4000;
+const PROMPT_MAX_LENGTH = 3500;
 const DEFAULT_CLIENT_URL = 'https://chatgram-xi.vercel.app';
+
+/** Testable endpoint override (the real bot API by default). */
+function telegramApiBase() {
+  return (String(process.env.TELEGRAM_API_BASE || '').trim() || TELEGRAM_API).replace(/\/+$/, '');
+}
 
 const TYPE_META = {
   bug_report: { emoji: '🐞', label: 'Bug report' },
@@ -45,6 +52,7 @@ const TYPE_META = {
   complaint: { emoji: '😠', label: 'Complaint' },
   abuse_report: { emoji: '🚨', label: 'Abuse report' },
   unknown_question: { emoji: '❓', label: 'Unknown question' },
+  error_report: { emoji: '🧰', label: 'Error report' },
 };
 
 function botToken() {
@@ -142,8 +150,8 @@ function formatReportMessage(record = {}) {
   const type = String(record.type || 'support_request');
   const meta = TYPE_META[type] || TYPE_META.support_request;
   const reference = shorten(record.ref || '', 24) || 'no reference';
-  const title = shorten(record.title || record.question || 'Chatgram report', 120) || 'Chatgram report';
-  const summary = shortenSummary(record.summary || '');
+  const title = redactPII(shorten(record.title || record.question || 'Chatgram report', 120) || 'Chatgram report');
+  const summary = redactPII(shortenSummary(record.summary || ''));
   const lines = [
     `${meta.emoji} ${meta.label} · ${reference}`,
     `Title: ${title}`,
@@ -153,6 +161,13 @@ function formatReportMessage(record = {}) {
   lines.push(`Asked by: ${shorten(record.askerName || 'Chatgram user', 80)}`);
   const count = Number(record.count);
   if (Number.isFinite(count) && count > 1) lines.push(`Reported ${Math.round(count)} times`);
+  // Option C: the linked GitHub issue (number + url), when one was created.
+  if (record.githubIssueUrl) {
+    lines.push(`GitHub: ${record.githubIssueNumber ? `#${record.githubIssueNumber} ` : ''}${record.githubIssueUrl}`);
+  }
+  // The full prompt is fetched on demand from Telegram (/prompt <id>), and the
+  // separate follow-up message below carries it for error reports.
+  if (record.fixPrompt) lines.push(`Prompt: /prompt ${record._id}`);
   lines.push(`Inbox: ${inboxUrl()}`);
   return lines.join('\n');
 }
@@ -162,7 +177,7 @@ async function telegramCall(method, payload, { timeoutMs = TIMEOUT_MS } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${TELEGRAM_API}/bot${token}/${method}`, {
+    const response = await fetch(`${telegramApiBase()}/bot${token}/${method}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -229,7 +244,7 @@ async function storeMessageId(record, messageId) {
  * never throws. On success the Telegram message id is stored on the AdminInbox
  * record so a reply in Telegram can find the report again.
  */
-async function sendReport(record) {
+async function sendReport(record, { prompt = '' } = {}) {
   try {
     if (!record) return { ok: false, skipped: true, error: 'No report record was provided.' };
     if (!telegramConfigured()) return { ok: false, skipped: true };
@@ -243,7 +258,31 @@ async function sendReport(record) {
     const messageId = Number(body?.result?.message_id);
     if (!Number.isFinite(messageId)) return { ok: false, error: 'Telegram did not return a message id.' };
     await storeMessageId(record, messageId);
-    return { ok: true, messageId };
+
+    // Option B/C: for error reports deliver the ready-to-use prompt in a second
+    // message (redacted, fenced, safely truncated). Never let this turn a
+    // successful alert into a failure.
+    let promptMessageId = null;
+    if (prompt) {
+      try {
+        const { redactPII } = require('../utils/githubIssues');
+        let safePrompt = redactPII(prompt);
+        if (safePrompt.length > PROMPT_MAX_LENGTH) {
+          safePrompt = `${safePrompt.slice(0, PROMPT_MAX_LENGTH)}\n…truncated — fetch the full prompt from the admin Inbox.`;
+        }
+        const fence = safePrompt.includes('```') ? '~~~~' : '```';
+        const promptBody = await telegramCall('sendMessage', {
+          chat_id: chatId(),
+          text: `${fence}text\n${safePrompt}\n${fence}`,
+          disable_web_page_preview: true,
+        });
+        const promptId = Number(promptBody?.result?.message_id);
+        promptMessageId = Number.isFinite(promptId) ? promptId : null;
+      } catch (promptError) {
+        logSafe(`prompt message skipped: ${promptError?.message || promptError}`);
+      }
+    }
+    return { ok: true, messageId, promptMessageId };
   } catch (error) {
     logSafe(`sendReport failed: ${error?.message || error}`);
     return { ok: false, error: scrub(error?.message || error).slice(0, 200) };

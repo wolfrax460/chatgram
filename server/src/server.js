@@ -332,6 +332,8 @@ app.use('/api/app', appRoutes);
 app.use('/api/app/recommendations', require('./routes/recommendationRoutes'));
 app.use('/api/help', require('./help'));
 app.use('/api/support', supportRoutes);
+// Owner Telegram commands for report automation (secret-header webhook).
+app.use('/api/telegram', require('./routes/telegramRoutes'));
 app.use('/api/ai', require('./routes/aiRoutes'));
 app.use('/api/admin/providers', require('./routes/adminProviderRoutes'));
 app.use('/api/admin/ai', require('./routes/adminAiRoutes'));

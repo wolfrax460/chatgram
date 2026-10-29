@@ -178,6 +178,13 @@ const adminInboxSchema = new mongoose.Schema(
       at: { type: Date, default: null },
       sentToUser: { type: Boolean, default: false },
     },
+    // Option C: GitHub issue automation for the Help "Errors" report. The
+    // failure string is an HTTP status ('401', '422', …) or 'network'/'timeout'
+    // — content-free so the owner can retry from the admin API/Telegram.
+    githubIssueNumber: { type: Number, default: null },
+    githubIssueUrl: { type: String, default: '' },
+    githubError: { type: String, default: '' },
+    githubIssueAt: { type: Date, default: null },
   },
   { timestamps: false },
 );
@@ -697,6 +704,11 @@ async function listInbox({ status = 'new', page = 1, limit = 25 } = {}) {
             sentToUser: Boolean(item.telegramReply.sentToUser),
           }
         : null,
+      // Option C: linked GitHub issue (number/url) and the last failure status.
+      githubIssueNumber: typeof item.githubIssueNumber === 'number' ? item.githubIssueNumber : null,
+      githubIssueUrl: item.githubIssueUrl || '',
+      githubError: item.githubError || '',
+      githubIssueAt: item.githubIssueAt || null,
     })),
     total,
     page: Number(page) || 1,

@@ -1,0 +1,192 @@
+name: Report intake
+
+# Triage for the automated error-report issues produced by the Help "Errors" tab.
+#
+# Safe by design:
+#   - the only token permission is `issues: write` (no code, no contents);
+#   - bots and pull requests are ignored;
+#   - the workflow is idempotent: the marker comment below means an issue is
+#     triaged exactly once, even though `labeled` fires again for our own labels;
+#   - it never writes to main, never pushes, never opens PRs.
+#
+# Routing:
+#   - complete prompt + low-risk area  -> label `autofix-candidate`
+#   - missing sections, or the report touches auth / billing / calls / a
+#     product-design-legal decision     -> label `needs-human`
+#
+# See docs/automation.md for the full flow.
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: report-intake-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    name: Validate and route the report
+    if: >-
+      github.event.issue &&
+      !github.event.issue.pull_request &&
+      (github.event.action == 'opened' || github.event.label.name == 'chatgram-report') &&
+      contains(github.event.issue.labels.*.name, 'chatgram-report') &&
+      github.event.issue.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Validate sections and route the issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const MARKER = '<!-- chatgram-report-triage -->';
+            const { owner, repo } = context.repo;
+            const issue = context.payload.issue;
+            const number = issue.number;
+
+            // ---- idempotency: never comment twice on the same issue -----------
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: number,
+              per_page: 100,
+            });
+            if (comments.some((comment) => (comment.body || '').includes(MARKER))) {
+              core.info(`Issue #${number} is already triaged; nothing to do.`);
+              return;
+            }
+
+            // ---- validate the prompt sections -------------------------------------------------
+            const body = String(issue.body || '');
+            const ALIASES = new Map([
+              ['title', 'title'],
+              ['what happened', 'whatHappened'],
+              ['what-happened', 'whatHappened'],
+              ['steps', 'steps'],
+              ['steps to reproduce', 'steps'],
+              ['expected', 'expected'],
+              ['actual', 'actual'],
+              ['expected vs actual', 'expectedVsActual'],
+              ['observed vs expected', 'expectedVsActual'],
+              ['acceptance criteria', 'acceptance'],
+            ]);
+            const normalise = (value) =>
+              String(value)
+                .replace(/^#{1,6}\s*/, '')
+                .replace(/\*{1,2}/g, '')
+                .replace(/\s+/g, ' ')
+                .replace(/\s*:\s*$/, '')
+                .trim()
+                .toLowerCase();
+            const found = new Set();
+            for (const line of body.split(/\r?\n/)) {
+              const trimmed = line.trim();
+              const colon = /^(?:#{1,6}\s+)?\*{0,2}([A-Za-z][A-Za-z0-9 /_-]{1,40})\*{0,2}\s*:\s*(.*)$/.exec(trimmed);
+              const hash = /^#{1,6}\s+(.+)$/.exec(trimmed);
+              const label = colon ? colon[1] : hash ? hash[1] : '';
+              const key = ALIASES.get(normalise(label));
+              if (key) found.add(key);
+            }
+            const rows = [
+              { label: 'Title', present: found.has('title') },
+              { label: 'What happened', present: found.has('whatHappened') },
+              { label: 'Steps to reproduce', present: found.has('steps') },
+              {
+                label: 'Expected vs actual',
+                present: (found.has('expected') && found.has('actual')) || found.has('expectedVsActual'),
+              },
+              { label: 'Acceptance criteria', present: found.has('acceptance') },
+            ];
+            const missing = rows.filter((row) => !row.present).map((row) => row.label);
+
+            // ---- risk classification: what must never be auto-fixed ---------------------------
+            const RISK_GROUPS = [
+              {
+                label: 'authentication or access control',
+                re: /\b(auth|authentication|login|log in|sign in|sign-in|logout|password|session|token|2fa|two-factor|otp|permission|permissions|role|roles|rbac)\b/i,
+              },
+              {
+                label: 'billing or pricing',
+                re: /\b(billing|payment|payments|invoice|subscription|price|pricing|refund|paid plan|premium)\b/i,
+              },
+              {
+                label: 'calls, media or screen sharing',
+                re: /\b(webrtc|video call|voice call|calls?|call overlay|screen[ -]?share|screen[ -]?sharing|remote control|microphone|sdp|ice candidate)\b/i,
+              },
+              {
+                label: 'a product, design, legal or policy decision',
+                re: /\b(product decision|design decision|should we|do we want|spec|roadmap|policy|legal|terms|privacy|renam(e|ing)|brand)\b/i,
+              },
+            ];
+            const risk = RISK_GROUPS.find((group) => group.re.test(body)) || null;
+
+            // ---- route ------------------------------------------------------------------------
+            const route = missing.length || risk ? 'needs-human' : 'autofix-candidate';
+            const reason = missing.length
+              ? `the prompt is missing: ${missing.join(', ')}`
+              : risk
+                ? `the report touches ${risk.label}`
+                : 'the prompt is complete and the area is low risk';
+
+            // ---- make sure the routing labels exist (idempotent) --------------------------------
+            const LABEL_COLORS = { 'needs-human': 'd73a4a', 'autofix-candidate': '0e8a16' };
+            for (const name of Object.keys(LABEL_COLORS)) {
+              try {
+                await github.rest.issues.createLabel({ owner, repo, name, color: LABEL_COLORS[name] });
+              } catch (error) {
+                if (error.status !== 422) core.warning(`could not create label ${name}: ${error.status}`);
+              }
+            }
+
+            // ---- triage comment ---------------------------------------------------------------
+            const table = rows
+              .map((row) => `| ${row.label} | ${row.present ? '✅ present' : '❌ missing'} |`)
+              .join('\n');
+            const comment = [
+              MARKER,
+              '## 🤖 Report triage',
+              '',
+              '| Prompt section | Status |',
+              '| --- | --- |',
+              table,
+              '',
+              `**Routing:** \`${route}\` — ${reason}.`,
+              '',
+              route === 'autofix-candidate'
+                ? [
+                    'This report has the sections an unattended agent needs. Adding `autofix-candidate` starts',
+                    'a **plan-first, human-reviewed** run: the bot writes `docs/autofix/issue-' + number + '.md`',
+                    'and opens a **draft** pull request. It never merges, never pushes to `main`, and never',
+                    'touches workflows, lockfiles, secrets or migrations.',
+                  ].join(' ')
+                : [
+                    'A human should handle this one: incomplete reports cannot be safely automated, and',
+                    'auth / billing / calls / product decisions are explicitly outside the unattended scope.',
+                    'Remove `needs-human` and add `autofix-candidate` only after the report is complete and',
+                    'you have decided the area is safe to automate.',
+                  ].join(' '),
+              '',
+              '<sub>Automated triage by `.github/workflows/report-intake.yml`. See `docs/automation.md`.</sub>',
+            ].join('\n');
+
+            await github.rest.issues.createComment({ owner, repo, issue_number: number, body: comment });
+
+            // ---- label ------------------------------------------------------------------------
+            const labels = ['chatgram-report', route];
+            try {
+              await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels });
+            } catch (error) {
+              core.warning(`could not add labels ${labels.join(', ')}: ${error.status}`);
+            }
+
+            await core.summary
+              .addHeading(`Triage: issue #${number}`)
+              .addRaw(`Routing: \`${route}\` — ${reason}`, true)
+              .write();
+            core.info(`Triaged issue #${number}: ${route} (${reason}).`);

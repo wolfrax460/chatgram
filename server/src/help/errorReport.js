@@ -450,6 +450,22 @@ async function createErrorReport(req, res) {
       lastSeenAt: new Date(),
     });
 
+    // Report automation (Options B+C): GitHub issue with the ready-to-use prompt
+    // and the Telegram notification (with issue link + prompt). Both are
+    // optional; failures are logged content-free, stored on the row (githubError)
+    // and never fail the user request. Only NEW rows reach this point (duplicates
+    // returned above), so a duplicate never creates a second issue.
+    try {
+      await require('../ai/reportAutomation').automateErrorReport(row, {
+        prompt,
+        kind,
+        context,
+        summary,
+      });
+    } catch (automationError) {
+      console.warn('Error report automation skipped:', String(automationError?.message || automationError).slice(0, 140));
+    }
+
     return res.json({ id: String(row._id), kind, prompt, summary });
   } catch (error) {
     console.error('Error report failed:', String(error?.message || error).slice(0, 200));

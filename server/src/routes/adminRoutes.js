@@ -30,6 +30,7 @@ const {
 } = require('../controllers/adminOverviewController');
 const { systemHealth, auditList } = require('../controllers/adminHealthController');
 const accountDeletions = require('../controllers/adminAccountDeletionController');
+const githubIssue = require('../controllers/adminGithubIssueController');
 const systemAdmin = require('../controllers/adminSystemController');
 const moderation = require('../controllers/adminModerationController');
 const adminSecurity = require('../controllers/adminSecurityController');
@@ -117,6 +118,8 @@ router.post('/system/diagnostics/run', requireAdminSession, requireAdminCsrf, di
 router.get('/users', requireAdminSession, listUsers);
 // Protected account deletion lifecycle (14-day grace): no content, ids and dates.
 router.get('/account-deletions', requireAdminSession, accountDeletions.listAccountDeletions);
+// Option C: create/return the GitHub issue for one Inbox report (idempotent).
+router.post('/inbox/:id/github-issue', requireAdminSession, requireAdminCsrf, githubIssue.retry);
 router.get('/users/:id', requireAdminSession, userDetail);
 router.post('/users/bulk', requireAdminSession, requireAdminCsrf, bulkUsers);
 router.post('/users/:id/force-logout', requireAdminSession, requireAdminCsrf, forceLogout);

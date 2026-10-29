@@ -419,6 +419,70 @@ There is no environment flag: the feature is always available to authenticated u
   participant's messages; queues media URLs in `PendingMediaDeletion` instead of
   calling an external provider.
 
+### Report automation (GitHub issue + Telegram commands)
+
+A new Help → Errors report is always stored in the admin Inbox. Two optional
+automations follow it; both are disabled when their configuration is absent and
+neither can fail the user request.
+
+**Environment (server `.env` only, never returned by an API):**
+
+| Key | Meaning |
+|---|---|
+| `GITHUB_TOKEN` | fine-grained/classic token with `issues:write` |
+| `GITHUB_REPO` | `owner/repo` |
+| `GITHUB_LABEL` | optional, default `chatgram-report` |
+| `GITHUB_ISSUES_ENABLED` | optional; default ON only when token+repo exist |
+| `GITHUB_API_BASE` / `TELEGRAM_API_BASE` | test/enterprise endpoint overrides (never needed in production) |
+
+**GitHub issue (new `error_report` rows only).** Immediately after the prompt is
+generated: `POST https://api.github.com/repos/<repo>/issues` with title
+`[report] <short summary>` (≤90 chars), labels `chatgram-report` + `bug`
+(a bug) or `enhancement` (a feature), and this body:
+
+```text
+Automated report from the Chatgram Help "Errors" tab.
+
+```text
+<ready-to-use AI prompt>
+```
+
+---
+Inbox: <inbox id>
+Kind: bug|feature
+Source: error-report
+App: <appVersion> · Platform: <platform> · Screen: <screen>
+Created: <ISO timestamp>
+```
+
+The issue number/url are stored on the Inbox row (`githubIssueNumber`,
+`githubIssueUrl`). Duplicates (`count++`) never create a second issue. A failure
+is stored content-free as `githubError` (`401`/`403`/`422`/`network`/`timeout`)
+and logged with the status only. The API boots and behaves exactly as before
+without the token/repo.
+
+**Admin retry (idempotent):** `POST /api/admin/inbox/:id/github-issue`
+(admin session + CSRF) → `200 { ok, created, issueNumber, url }`; returns the
+existing issue when one is already linked. Errors: `404 NOT_FOUND`,
+`409 GITHUB_NOT_CONFIGURED`, `409 NO_PROMPT`, `502 GITHUB_ISSUE_FAILED`.
+
+**Telegram webhook (owner commands):** `POST /api/telegram/webhook`. Telegram's
+header `X-Telegram-Bot-Api-Secret-Token` must equal `TELEGRAM_WEBHOOK_SECRET`
+(otherwise **401**); updates from any chat other than `TELEGRAM_CHAT_ID` are
+ignored (**200**, no reply). Replies are plain text, with emails/phones/tokens
+redacted, at most 10 commands per chat per minute.
+
+| Command | Reply |
+|---|---|
+| `/inbox` | newest 5 open `error_report`/`call_quality`/`push_failure` rows: id suffix, type, kind, age, short summary, GitHub issue state |
+| `/prompt <inboxId>` | the stored AI debugging prompt in one fenced message (~3500-char safe truncation with a note) |
+| `/issue <inboxId>` | creates (or returns) the GitHub issue; "GitHub is not configured." when unset |
+| `/help` | command list; unknown commands answer a one-line help |
+
+**Outgoing notification:** the existing report Telegram alert now includes the
+GitHub issue line when one exists, followed by a second message carrying the
+ready-to-use prompt (redacted); the alert keeps working unchanged without GitHub.
+
 ### Maintenance / read-only gate
 
 While `GET /api/app/features` reports `maintenanceMode: true`, every `/api/*`

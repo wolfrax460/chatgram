@@ -1,0 +1,416 @@
+name: Autofix
+
+# Unattended report -> plan -> DRAFT pull request automation.
+#
+# Hard rules (see docs/automation.md):
+#   - never merges, never enables auto-merge, never pushes to `main`;
+#   - always a draft PR for human review;
+#   - a broken baseline on `main` stops the run before any AI work;
+#   - the AI diff is optional, must stay inside the planned files, must pass
+#     `git apply --check`, and must keep typecheck + build green or it is thrown
+#     away and the plan-only branch is kept;
+#   - the workflow refuses to run for bot authors, for a default branch that is
+#     not `main`, or when a PR already references the issue.
+#
+# Trigger: the `autofix-candidate` label (added by report-intake.yml) or a manual
+# workflow_dispatch with an issue number.
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to run the autofix plan for
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: autofix-issue-${{ github.event.issue.number || github.event.inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  autofix:
+    name: Plan and open a draft PR
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'issues' && github.event.label.name == 'autofix-candidate')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Preflight guards
+        id: preflight
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const rawNumber = context.eventName === 'workflow_dispatch'
+              ? context.payload.inputs && context.payload.inputs.issue_number
+              : context.payload.issue && context.payload.issue.number;
+            const number = Number(rawNumber);
+            if (!Number.isInteger(number) || number <= 0) {
+              core.setFailed('Refusing to run: no valid issue number was supplied.');
+              return;
+            }
+            const issue = await github.rest.issues.get({ owner, repo, issue_number: number });
+            const title = String(issue.data.title || '');
+            core.setOutput('number', String(number));
+            core.setOutput('title', title);
+
+            if (issue.data.pull_request) {
+              core.notice(`Refusing: #${number} is a pull request, not an issue.`);
+              core.setOutput('skip', 'true');
+              return;
+            }
+
+            // Guard: never work on a bot-authored issue.
+            if (issue.data.user && issue.data.user.type === 'Bot') {
+              core.warning(`Refusing: the author of #${number} is a bot.`);
+              core.setOutput('skip', 'true');
+              return;
+            }
+
+            // Guard: only ever branch from `main`.
+            const repoInfo = await github.rest.repos.get({ owner, repo });
+            if (repoInfo.data.default_branch !== 'main') {
+              core.setFailed(`Refusing to run: the repository default branch is "${repoInfo.data.default_branch}", not "main".`);
+              return;
+            }
+
+            // Guard: never duplicate work for an issue that already has a PR.
+            const pulls = await github.paginate(github.rest.pulls.list, { owner, repo, state: 'open', per_page: 100 });
+            const refPrefix = `autofix/issue-${number}-`;
+            const mention = new RegExp(`(?:^|[^0-9])#${number}(?:[^0-9]|$)`);
+            const existing = pulls.find((pull) =>
+              (pull.head && typeof pull.head.ref === 'string' && pull.head.ref.startsWith(refPrefix)) ||
+              mention.test(pull.body || '') ||
+              mention.test(pull.title || ''),
+            );
+            if (existing) {
+              core.notice(`Refusing: PR #${existing.number} already references issue #${number}.`);
+              core.setOutput('skip', 'true');
+              return;
+            }
+
+            // Guard: the prompt must be complete (intake normally routes incomplete ones to needs-human).
+            const body = String(issue.data.body || '');
+            const aliases = new Map([
+              ['title', 'title'], ['what happened', 'whatHappened'],
+              ['steps', 'steps'], ['steps to reproduce', 'steps'],
+              ['expected', 'expected'], ['actual', 'actual'],
+              ['expected vs actual', 'expectedVsActual'],
+              ['acceptance criteria', 'acceptance'],
+            ]);
+            const normalise = (value) => String(value)
+              .replace(/^#{1,6}\s*/, '').replace(/\*{1,2}/g, '')
+              .replace(/\s+/g, ' ').replace(/\s*:\s*$/, '').trim().toLowerCase();
+            const found = new Set();
+            for (const line of body.split(/\r?\n/)) {
+              const trimmed = line.trim();
+              const colon = /^(?:#{1,6}\s+)?\*{0,2}([A-Za-z][A-Za-z0-9 /_-]{1,40})\*{0,2}\s*:\s*(.*)$/.exec(trimmed);
+              const hash = /^#{1,6}\s+(.+)$/.exec(trimmed);
+              const key = aliases.get(normalise(colon ? colon[1] : hash ? hash[1] : ''));
+              if (key) found.add(key);
+            }
+            const missing = [];
+            if (!found.has('title')) missing.push('Title');
+            if (!found.has('whatHappened')) missing.push('What happened');
+            if (!found.has('steps')) missing.push('Steps to reproduce');
+            if (!((found.has('expected') && found.has('actual')) || found.has('expectedVsActual'))) missing.push('Expected vs actual');
+            if (!found.has('acceptance')) missing.push('Acceptance criteria');
+            if (missing.length) {
+              core.warning(`Refusing: #${number} is missing prompt sections: ${missing.join(', ')}.`);
+              core.setOutput('skip', 'true');
+              return;
+            }
+
+            // Hand the untrusted body to the workflow through a file, never a shell string.
+            const bodyPath = `${process.env.RUNNER_TEMP}/autofix-issue-body.md`;
+            fs.writeFileSync(bodyPath, body, 'utf8');
+            core.setOutput('body_path', bodyPath);
+            core.setOutput('skip', 'false');
+            core.info(`Preflight passed for issue #${number}.`);
+
+      - name: Checkout main
+        if: steps.preflight.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node
+        if: steps.preflight.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # The repo's real gates, on a clean `main`, BEFORE any AI work: a broken
+      # baseline must never produce a PR.
+      - name: Baseline gates on a clean checkout
+        if: steps.preflight.outputs.skip != 'true'
+        env:
+          CI: '1'
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run typecheck
+          npm run build
+
+      - name: Create the autofix branch from main
+        if: steps.preflight.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+          BRANCH="autofix/issue-${{ steps.preflight.outputs.number }}-${SHORT_SHA}"
+          git switch --create "$BRANCH"
+          echo "AUTOFIX_BRANCH=$BRANCH" >> "$GITHUB_ENV"
+
+      - name: Generate the plan (and optional AI diff)
+        id: plan
+        if: steps.preflight.outputs.skip != 'true'
+        env:
+          ISSUE_NUMBER: ${{ steps.preflight.outputs.number }}
+          ISSUE_TITLE: ${{ steps.preflight.outputs.title }}
+          AUTOFIX_API_KEY: ${{ secrets.AUTOFIX_API_KEY }}
+          AUTOFIX_API_BASE: ${{ secrets.AUTOFIX_API_BASE || vars.AUTOFIX_API_BASE }}
+          AUTOFIX_MODEL: ${{ secrets.AUTOFIX_MODEL || vars.AUTOFIX_MODEL }}
+          AUTOFIX_SELECTOR: 'label:autofix-candidate'
+        run: |
+          set -uo pipefail
+          mkdir -p docs/autofix
+          node scripts/autofix-plan.mjs \
+            --issue-number "$ISSUE_NUMBER" \
+            --title "$ISSUE_TITLE" \
+            --body-file "$RUNNER_TEMP/autofix-issue-body.md" \
+            --out "docs/autofix/issue-${ISSUE_NUMBER}.md" \
+            --diff-out "$RUNNER_TEMP/autofix.patch" 2>&1 | tee "$RUNNER_TEMP/autofix-plan.log"
+          MODE="$(grep -m1 '^mode=' "$RUNNER_TEMP/autofix-plan.log" | cut -d= -f2 || true)"
+          echo "mode=${MODE:-plan-only}" >> "$GITHUB_OUTPUT"
+          if [ -s "$RUNNER_TEMP/autofix.patch" ]; then
+            echo "has_diff=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_diff=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit the plan
+        if: steps.preflight.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "chatgram-autofix[bot]"
+          git config user.email "chatgram-autofix[bot]@users.noreply.github.com"
+          git add "docs/autofix/issue-${{ steps.preflight.outputs.number }}.md"
+          git commit -m "docs(autofix): plan for #${{ steps.preflight.outputs.number }}"
+
+      - name: Apply the proposed diff behind gates
+        id: apply
+        if: steps.plan.outputs.has_diff == 'true'
+        env:
+          ISSUE_NUMBER: ${{ steps.preflight.outputs.number }}
+        run: |
+          set -uo pipefail
+          PATCH="$RUNNER_TEMP/autofix.patch"
+          PLAN="docs/autofix/issue-${ISSUE_NUMBER}.md"
+          RESULT="plan-only"
+          if node scripts/autofix-plan.mjs --verify-diff "$PATCH" --plan "$PLAN"; then
+            if git apply --check "$PATCH" 2>/dev/null; then
+              if git apply "$PATCH" 2>/dev/null; then
+                if npm run typecheck && npm run build; then
+                  git add -A >/dev/null 2>&1 || true
+                  if git diff --cached --quiet; then
+                    RESULT="no-change"
+                  elif git commit -m "fix(autofix): address #${ISSUE_NUMBER}" >/dev/null 2>&1; then
+                    RESULT="applied"
+                  else
+                    RESULT="commit-failed"
+                  fi
+                else
+                  git reset --hard HEAD >/dev/null 2>&1 || true
+                  git clean -fd >/dev/null 2>&1 || true
+                  RESULT="gate-failed"
+                fi
+              else
+                RESULT="apply-failed"
+              fi
+            else
+              RESULT="does-not-apply"
+            fi
+          else
+            RESULT="rejected-out-of-scope"
+          fi
+          echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+          echo "Autofix diff result: $RESULT"
+
+      - name: Record gate results in the plan
+        if: always() && steps.plan.outcome == 'success' && steps.preflight.outputs.skip != 'true'
+        env:
+          ISSUE_NUMBER: ${{ steps.preflight.outputs.number }}
+          DIFF_RESULT: ${{ steps.apply.outputs.result }}
+        run: |
+          set -uo pipefail
+          PLAN="docs/autofix/issue-${ISSUE_NUMBER}.md"
+          RESULT="${DIFF_RESULT:-plan-only}"
+          {
+            echo ''
+            echo '## Gate results (CI)'
+            echo ''
+            echo '- Baseline on a clean `main` checkout: **pass**'
+            echo "- Proposed diff: **${RESULT}** (baseline gates re-run after applying it)"
+            echo "- Recorded: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$PLAN"
+          git add "$PLAN"
+          git commit -m "docs(autofix): record gate results for #${ISSUE_NUMBER}" >/dev/null 2>&1 || true
+
+      - name: Push the autofix branch
+        if: steps.preflight.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          git push --set-upstream origin "$AUTOFIX_BRANCH"
+
+      - name: Open a draft pull request
+        id: create_pr
+        if: steps.preflight.outputs.skip != 'true'
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.preflight.outputs.number }}
+          ISSUE_TITLE: ${{ steps.preflight.outputs.title }}
+          BRANCH: ${{ env.AUTOFIX_BRANCH }}
+          PLAN_MODE: ${{ steps.plan.outputs.mode }}
+          DIFF_RESULT: ${{ steps.apply.outputs.result }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const number = Number(process.env.ISSUE_NUMBER);
+            const title = String(process.env.ISSUE_TITLE || `Issue ${number}`);
+            const branch = String(process.env.BRANCH || '');
+            const mode = String(process.env.PLAN_MODE || 'plan-only');
+            const diffResult = String(process.env.DIFF_RESULT || 'plan-only');
+            const base = `https://github.com/${owner}/${repo}`;
+            const issueUrl = `${base}/issues/${number}`;
+            const planPath = `docs/autofix/issue-${number}.md`;
+            const planUrl = `${base}/blob/${branch}/${planPath}`;
+
+            const body = [
+              '> **Generated by an unattended agent — review every line before merging.**',
+              '',
+              `This draft PR was created by \`.github/workflows/autofix.yml\` for ${issueUrl}.`,
+              'It is **draft on purpose**: a human must review it, run the tests and merge it.',
+              'The agent never merges, never enables auto-merge and never pushes to `main`.',
+              '',
+              `- **Issue:** ${issueUrl}`,
+              `- **Plan:** [\`${planPath}\`](${planUrl})`,
+              `- **Plan mode:** ${mode}`,
+              `- **Baseline gates on \`main\`:** pass (\`npm ci\`, \`npm run typecheck\`, \`npm run build\`)`,
+              `- **Proposed diff:** ${diffResult}`,
+              diffResult === 'applied'
+                ? '- **Post-diff gates:** pass (`npm run typecheck`, `npm run build`)'
+                : '- **Post-diff gates:** not applicable — the branch is plan-only',
+              '',
+              '### Review checklist',
+              '',
+              '- [ ] Reproduce the report and confirm the change fixes it.',
+              '- [ ] Confirm the diff is limited to the files listed in the plan.',
+              '- [ ] Confirm no workflow, lockfile, secret, migration or certificate file changed.',
+              '- [ ] Run the full gates locally.',
+              '- [ ] Merge only when you have reviewed every line.',
+              '',
+              `Refs #${number}`,
+            ].join('\n');
+
+            const pr = await github.rest.pulls.create({
+              owner,
+              repo,
+              head: branch,
+              base: 'main',
+              draft: true,
+              title: `[autofix] ${title}`,
+              body,
+            });
+
+            try {
+              await github.rest.issues.createLabel({ owner, repo, name: 'autofix', color: '1d76db' });
+            } catch (error) {
+              if (error.status !== 422) core.warning(`could not create the autofix label: ${error.status}`);
+            }
+            try {
+              await github.rest.issues.addLabels({ owner, repo, issue_number: pr.data.number, labels: ['autofix'] });
+            } catch (error) {
+              core.warning(`could not label PR #${pr.data.number}: ${error.status}`);
+            }
+
+            core.setOutput('pr_url', pr.data.html_url);
+            core.setOutput('pr_number', String(pr.data.number));
+            await core.summary
+              .addHeading(`Autofix draft PR for #${number}`)
+              .addRaw(`[${pr.data.html_url}](${pr.data.html_url}) — mode: ${mode}, diff: ${diffResult}`, true)
+              .write();
+
+      - name: Comment the PR link on the issue
+        if: steps.create_pr.outputs.pr_url != ''
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.preflight.outputs.number }}
+          PR_URL: ${{ steps.create_pr.outputs.pr_url }}
+          PLAN_MODE: ${{ steps.plan.outputs.mode }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const number = Number(process.env.ISSUE_NUMBER);
+            const body = [
+              '## 🛠️ Autofix draft PR opened',
+              '',
+              `${process.env.PR_URL}`,
+              '',
+              `Mode: \`${process.env.PLAN_MODE || 'plan-only'}\`. The PR is a **draft**; a human must review`,
+              'every line before merging. The agent does not merge, does not enable auto-merge and does',
+              'not push to `main`.',
+            ].join('\n');
+            await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+
+      - name: Delete the branch if the PR could not be opened
+        if: failure() && steps.create_pr.outcome == 'failure'
+        run: |
+          if [ -n "${AUTOFIX_BRANCH:-}" ]; then
+            git push origin --delete "$AUTOFIX_BRANCH" || true
+          fi
+
+      - name: Explain the failure on the issue
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.preflight.outputs.number }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const number = Number(process.env.ISSUE_NUMBER);
+            if (!Number.isInteger(number) || number <= 0) return;
+            const { owner, repo } = context.repo;
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            try {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: number,
+                body: [
+                  '## ⚠️ Autofix run stopped',
+                  '',
+                  `Run log: ${runUrl}`,
+                  '',
+                  'No PR was opened. The usual causes are a red baseline on `main` (the gates run before any',
+                  'AI work), a network or API failure, or a branch push problem. Fix the cause, then re-run',
+                  '`Autofix` from the Actions tab with this issue number.',
+                ].join('\n'),
+              });
+            } catch (error) {
+              core.warning(`could not comment on the issue: ${error.status}`);
+            }
