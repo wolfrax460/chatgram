@@ -51,6 +51,8 @@ import { initNativeNotifications, unregisterPushToken } from './lib/nativeNotifi
 import { takeRefreshDraft } from './lib/appUpdate';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, findQuotedMessage, quoteSnippetOf, sameDay, statusOf, type ReplyQuote } from './lib/ui';
+import { useChatWallpaper } from './lib/wallpaper';
+import { WallpaperEditor } from './pages/settings/WallpaperPage';
 
 type Tab = 'chats' | 'calls' | 'status' | 'groups' | 'settings' | 'ai';
 
@@ -139,6 +141,19 @@ function ChatWindow({
   const [showJump, setShowJump] = useState(false);
   /** Message briefly ringed after "jump to replied message". */
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  /** Per-chat wallpaper picker (header → More → Wallpaper). */
+  const [wallpaperOpen, setWallpaperOpen] = useState(false);
+  const wallpaper = useChatWallpaper(chat.id);
+
+  // Escape closes the wallpaper sheet (keyboard parity with every dialog).
+  useEffect(() => {
+    if (!wallpaperOpen) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setWallpaperOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [wallpaperOpen]);
 
   // Live group-call room for this chat (banner + call card "Join").
   const callState = useSyncExternalStore(subscribeCalls, getCallState);
@@ -185,6 +200,7 @@ function ChatWindow({
     draftChatRef.current = chat.id;
     setDraft(takeRefreshDraft(chat.id) ?? '');
     setReplyTo(null);
+    setWallpaperOpen(false);
     setInChatSearch('');
     setSearchOpen(false);
   }, [chat.id]);
@@ -625,6 +641,7 @@ function ChatWindow({
                 }
               },
           onForward: () => setNotice('Forwarding is still being deployed — coming soon.'),
+          onWallpaper: readOnly ? undefined : () => setWallpaperOpen(true),
           onClearChat: readOnly
             ? undefined
             : async () => {
@@ -760,8 +777,24 @@ function ChatWindow({
         </div>
       ) : null}
 
-      <div ref={scrollRef} onScroll={onScroll} className="no-scrollbar relative min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-[1400px] flex-col px-4 py-4">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        style={wallpaper.style ?? undefined}
+        data-testid={wallpaper.style ? 'chat-wallpaper' : undefined}
+        className="no-scrollbar relative min-h-0 flex-1 overflow-y-auto"
+      >
+        {/* Uniform contrast layer so bubbles/text stay readable over any image
+            or pattern (WCAG AA), without changing layout or scroll behaviour. */}
+        {wallpaper.style ? (
+          <div
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-0 ${
+              wallpaper.overlay === 'strong' ? 'bg-white/60 dark:bg-ink-900/65' : 'bg-white/35 dark:bg-ink-900/40'
+            }`}
+          />
+        ) : null}
+        <div className="relative mx-auto flex w-full max-w-[1400px] flex-col px-4 py-4">
           {messages.isLoading ? <p className="text-sm text-ink-600 dark:text-ink-300">Loading messages…</p> : null}
           {filtered.length === 0 && !messages.isLoading ? (
             <p className="text-sm text-ink-600 dark:text-ink-300">
@@ -986,6 +1019,38 @@ function ChatWindow({
               <button type="button" className="btn-primary" onClick={() => void reportMessage()}>
                 Send report
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Per-chat wallpaper: header → More → Wallpaper (same editor as Settings,
+          scoped to this chat so it can differ from the default). */}
+      {wallpaperOpen ? (
+        <div
+          className="fixed inset-0 z-[60] grid place-items-center bg-black/60 p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setWallpaperOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Chat wallpaper"
+            data-testid="chat-wallpaper-sheet"
+            className="flex max-h-[86vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-ink-800"
+          >
+            <div className="flex items-center justify-between border-b border-ink-200 px-4 py-3 dark:border-white/10">
+              <div className="min-w-0">
+                <h3 className="font-bold">Wallpaper</h3>
+                <p className="truncate text-[11.5px] text-ink-500 dark:text-ink-400">For “{chatTitle(chat, meId)}”</p>
+              </div>
+              <button type="button" className="btn-ghost !px-2" onClick={() => setWallpaperOpen(false)} aria-label="Close wallpaper picker">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
+              <WallpaperEditor chatId={chat.id} chatName={chatTitle(chat, meId)} initialScope="chat" />
             </div>
           </div>
         </div>
@@ -1663,3 +1728,4 @@ export default function App() {
     </>
   );
 }
+

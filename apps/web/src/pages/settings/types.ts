@@ -6,6 +6,7 @@ export type SettingsRoute =
   | 'delete-account'
   | 'privacy'
   | 'chats'
+  | 'wallpaper'
   | 'notifications'
   | 'storage'
   | 'ai'
@@ -20,3 +21,4 @@ export interface SettingsPageProps {
 }
 
 export type SettingsNoticeTone = 'info' | 'success' | 'error' | 'warning';
+

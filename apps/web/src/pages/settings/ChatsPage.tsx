@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun, Type } from 'lucide-react';
+import { Image as ImageIcon, Monitor, Moon, Sun, Type } from 'lucide-react';
 import { usePrefs, useTheme, type TextSize } from '@chatgram/core';
 import { LOCALES, LOCALE_LABELS, useI18n } from '../../lib/i18n';
 import type { SettingsPageProps } from './types';
@@ -11,7 +11,7 @@ import { SettingsChoice, SettingsGroup, SettingsPage, SettingsRow, SettingsCross
  * in the composer) are shown disabled with an explanation instead of pretend
  * switches.
  */
-export default function ChatsPage({ onBack }: SettingsPageProps) {
+export default function ChatsPage({ onBack, navigate }: SettingsPageProps) {
   const { mode, setMode } = useTheme();
   const prefs = usePrefs();
   const { locale, setLocale } = useI18n();
@@ -84,12 +84,11 @@ export default function ChatsPage({ onBack }: SettingsPageProps) {
 
       <SettingsGroup title="Chat behaviour">
         <SettingsRow
-          icon={Type}
+          icon={ImageIcon}
           title="Wallpaper"
-          subtitle="Choose a background for conversations"
-          badge="Coming soon"
-          disabled
-          testId="settings-wallpaper"
+          subtitle="Choose a background for conversations (or this chat from its menu)"
+          testId="settings-row-wallpaper"
+          onClick={() => navigate('wallpaper')}
         />
         <SettingsRow
           icon={Type}
@@ -99,13 +98,9 @@ export default function ChatsPage({ onBack }: SettingsPageProps) {
           disabled
           testId="settings-enter-key"
         />
-        <div className="px-4 pb-3">
-          <SettingsCross>
-            Both need changes in the chat view and composer, which are owned by another part of the app; the switches
-            will appear here once that wiring lands.
-          </SettingsCross>
-        </div>
       </SettingsGroup>
     </SettingsPage>
   );
 }
+
+

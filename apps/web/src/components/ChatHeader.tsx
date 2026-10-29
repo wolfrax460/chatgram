@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Search, Phone, Video, MoreVertical, User, BellOff, Trash2, Ban, ChevronLeft, X, History, Plus, Pin,
+  Search, Phone, Video, MoreVertical, User, BellOff, Trash2, Ban, ChevronLeft, X, History, Plus, Pin, Image as ImageIcon,
 } from 'lucide-react';
 import type { Chat, User as ChatUser } from '@chatgram/core';
 import { chatTitle } from '@chatgram/core';
@@ -12,6 +12,8 @@ export interface HeaderMenuActions {
   onMute?: () => void;
   onForward?: () => void;
   onClearChat?: () => void;
+  /** Chat wallpaper picker (default + this-chat override). */
+  onWallpaper?: () => void;
   onBlock?: () => void;
   /** Chatgram AI conversation menu (Change 1). */
   onNewConversation?: () => void;
@@ -109,6 +111,7 @@ export function ChatHeader({
     : ([
         menu.onContactInfo ? { label: chat?.type === 'group' ? 'Group info' : 'Contact info', Icon: User, run: menu.onContactInfo } : null,
         menu.onMute ? { label: 'Mute notifications', Icon: BellOff, run: menu.onMute } : null,
+        menu.onWallpaper ? { label: 'Wallpaper', Icon: ImageIcon, run: menu.onWallpaper } : null,
         menu.onClearChat ? { label: 'Clear chat', Icon: Trash2, run: menu.onClearChat } : null,
         menu.onBlock ? { label: 'Block contact', Icon: Ban, run: menu.onBlock, danger: true } : null,
       ] as (MenuItem | null)[]).filter((item): item is MenuItem => Boolean(item));
@@ -243,3 +246,4 @@ export function ChatHeader({
     </header>
   );
 }
+

@@ -14,6 +14,7 @@ import NotificationsPage from './settings/NotificationsPage';
 import PrivacyPage from './settings/PrivacyPage';
 import ProfilePage from './settings/ProfilePage';
 import StoragePage from './settings/StoragePage';
+import WallpaperPage from './settings/WallpaperPage';
 import type { SettingsRoute } from './settings/types';
 import { SettingsRow, focusRing, useCopyToClipboard } from './settings/ui';
 
@@ -157,6 +158,8 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
         return <PrivacyPage onBack={onBack} navigate={setRoute} />;
       case 'chats':
         return <ChatsPage onBack={onBack} navigate={setRoute} />;
+      case 'wallpaper':
+        return <WallpaperPage onBack={onBack} navigate={setRoute} />;
       case 'notifications':
         return <NotificationsPage onBack={onBack} navigate={setRoute} />;
       case 'storage':
@@ -290,3 +293,4 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
     </div>
   );
 }
+
