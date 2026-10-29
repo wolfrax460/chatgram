@@ -1065,6 +1065,9 @@ async function measureQuality(): Promise<void> {
     screenRttMs: screenActive ? screenRttMs : null,
     screenLossPct: screenActive ? screenLossPct : null,
     screenLow: screenActive && screenLow,
+    controlLocal: state.controlSupported,
+    controlRemote: state.controlHostCapable,
+    controlChannel: state.controlChannelReady,
   };
   setState({
     quality: effectiveQuality,
@@ -2436,12 +2439,18 @@ function applySignal(signal: CallSignal, from: CallParticipant): void {
     if (!cameraOn) setState({ notice: `${name} turned their camera off.` });
   } else if (signal.kind === 'screen') {
     const screenSharing = signal.screenSharing === true;
+    const controlCapable = typeof signal.controlCapable === 'boolean' ? signal.controlCapable : null;
     patchParticipant({
       screenSharing,
       sharingKind: signal.sharingKind ?? 'screen',
       hasSystemAudio: signal.hasSystemAudio === true,
+      ...(controlCapable === null ? {} : { controlCapable }),
     });
     if (screenSharing) {
+      // The sharer advertises whether their client can host control; the viewer
+      // UI needs this to tell "cannot host" apart from "has not allowed yet".
+      setState({ controlHostCapable: controlCapable });
+      noteRemoteControlCapability(source.id, name, controlCapable);
       // Defensive: a local share flag with no screen stream behind it is stale
       // (a stop that never completed). Clear it so the UI cannot show "You are
       // sharing" and stale local screen frames while a REMOTE share is running.
@@ -2505,6 +2514,7 @@ export function handleParticipantState(payload: { callId?: string; participant: 
     sharingKind: incoming.sharingKind,
     hasSystemAudio: incoming.hasSystemAudio === true,
     incomingVideoOff: incoming.incomingVideoOff === true,
+    ...(typeof incoming.controlCapable === 'boolean' ? { controlCapable: incoming.controlCapable } : {}),
   };
   const existing = state.participants.find((p) => p.id === incoming.id);
   if (!existing) {
@@ -2516,6 +2526,10 @@ export function handleParticipantState(payload: { callId?: string; participant: 
     participants: state.participants.map((p) => (p.id === incoming.id ? { ...p, ...patch } : p)),
   });
   if (patch.incomingVideoOff) setPeerVideoDelivery(incoming.id, false);
+  if (patch.screenSharing && typeof incoming.controlCapable === 'boolean') {
+    setState({ controlHostCapable: incoming.controlCapable });
+    noteRemoteControlCapability(incoming.id, incoming.displayName ?? '', incoming.controlCapable);
+  }
 }
 
 export async function handleAnswer(payload: {
@@ -2678,6 +2692,7 @@ function emitMySignalsTo(peerId: string): void {
       screenSharing: true,
       sharingKind: 'screen',
       hasSystemAudio: state.screenAudio,
+      controlCapable: state.controlSupported,
     });
   }
   emitSignalTo(peerId, { kind: 'incoming-video-off', off: state.incomingVideoOff });
@@ -2881,13 +2896,10 @@ export async function toggleScreenShare(): Promise<void> {
   // Tell the peers control is available-but-not-yet-consented, and refresh
   // whether this shell can inject input at all (Windows desktop only).
   announceControlConsent();
-  void syncControlSupport();
-  emitSignal({
-    kind: 'screen',
-    screenSharing: true,
-    sharingKind: 'screen',
-    hasSystemAudio: Boolean(systemAudio),
+  void syncControlSupport().then(() => {
+    if (state.screenSharing) emitScreenSignal();
   });
+  emitScreenSignal();
 }
 
 async function stopScreenShareInternal(): Promise<void> {
@@ -2904,7 +2916,8 @@ async function stopScreenShareInternal(): Promise<void> {
   screenSample = null;
   screenLowSince = null;
   screenLowNotified = false;
-  emitSignal({ kind: 'screen', screenSharing: false });
+  // Keep advertising capability after the stop (screenSharing false now).
+  emitScreenSignal();
   // Stopping the share revokes remote control instantly (consent + channel).
   resetRemoteControl();
   stopTracks(screenStream);

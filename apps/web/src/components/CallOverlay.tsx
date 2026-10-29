@@ -92,6 +92,10 @@ function diagnosticsLine(diagnostics: CallDiagnostics | null): string {
     diagnostics.screenActive
       ? `screen: ${diagnostics.screenBitrateKbps ?? '?'} kbps · ${diagnostics.screenRttMs ?? '?'} ms · ${diagnostics.screenLossPct ?? '?'}%`
       : null,
+    // Remote-control capability, per side: a two-machine test must be unambiguous.
+    `control: local ${diagnostics.controlLocal ? 'capable' : 'incapable'} · remote ${
+      diagnostics.controlRemote === null ? 'unknown' : diagnostics.controlRemote ? 'capable' : 'incapable'
+    } · channel ${diagnostics.controlChannel ? 'open' : 'closed'}`,
   ]
     .filter((part): part is string => Boolean(part))
     .join(' · ');
@@ -1255,6 +1259,13 @@ export function CallOverlay({ call }: { call: CallState }) {
   const mainParticipant = mainShowsLocal ? null : prominent;
   // The floating tile always shows the side that is NOT on the main stage.
   const counterpart = mainShowsLocal ? prominent : null;
+  // Remote-control copy: the capability differs from "has not allowed yet".
+  const controlUnavailableReason = isDesktopShell()
+    ? 'Remote control is not available in this build'
+    : 'Remote control needs the Windows app';
+  const controlBrowserReason = 'The other person is sharing from a browser — control needs the Windows app';
+  const controlUnknownReason = "The other person's app cannot be controlled (control needs the Windows app)";
+  const controlConnectingReason = 'Connecting the control channel…';
   const gridClass = galleryGridClass(remoteCount);
 
   return (
@@ -1372,19 +1383,37 @@ export function CallOverlay({ call }: { call: CallState }) {
           {call.controlSupported ? (
             <button
               type="button"
+              role="switch"
+              aria-checked={call.controlAllowed}
+              aria-label="Allow remote control"
               data-testid="allow-remote-control"
-              aria-pressed={call.controlAllowed}
               onClick={() => setRemoteControlAllowed(!call.controlAllowed)}
-              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
-                call.controlAllowed ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-white/15 hover:bg-white/25'
-              }`}
+              className="flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 text-left text-[11px] font-semibold transition hover:bg-white/20"
             >
-              {call.controlAllowed ? 'Remote control allowed' : 'Allow remote control'}
+              <span className={`relative h-4 w-7 shrink-0 rounded-full transition ${call.controlAllowed ? 'bg-emerald-500' : 'bg-white/25'}`} aria-hidden="true">
+                <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${call.controlAllowed ? 'left-3.5' : 'left-0.5'}`} />
+              </span>
+              <span>{call.controlAllowed ? 'Remote control allowed' : 'Allow remote control'}</span>
             </button>
           ) : (
-            <span className="text-white/60" data-testid="remote-control-unsupported">
-              {isDesktopShell() ? 'Remote control is not available in this build' : 'Remote control needs the Windows app'}
-            </span>
+            // A real (disabled) switch, not a bare text line: the capability gate
+            // is honest AND the affordance is visible.
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              title={controlUnavailableReason}
+              data-testid="allow-remote-control-disabled"
+              className="flex max-w-full items-center gap-2 rounded-full bg-white/5 px-2.5 py-1 text-left text-[11px] font-semibold text-white/45"
+            >
+              <span className="relative h-4 w-7 shrink-0 rounded-full bg-white/15" aria-hidden="true">
+                <span className="absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white/45" />
+              </span>
+              <span className="flex min-w-0 flex-col text-left">
+                <span>Allow remote control</span>
+                <span className="truncate text-[10px] font-normal text-white/40">{controlUnavailableReason}</span>
+              </span>
+            </button>
           )}
           {call.controlPendingId ? (
             <>
@@ -1428,7 +1457,7 @@ export function CallOverlay({ call }: { call: CallState }) {
         </div>
       ) : null}
 
-      {!call.screenSharing && remoteSharer && (call.controlAvailable || call.controlStatus !== 'idle' || call.controlMessage) ? (
+      {!call.screenSharing && remoteSharer ? (
         <div className="mx-3 mb-1 flex flex-wrap items-center gap-2 rounded-xl bg-white/5 px-3 py-1.5 text-[11.5px] text-white/85" data-testid="remote-control-viewer">
           {call.controlStatus === 'active' ? (
             <>
@@ -1443,8 +1472,8 @@ export function CallOverlay({ call }: { call: CallState }) {
               </button>
             </>
           ) : call.controlStatus === 'requested' ? (
-            <span>Waiting for approval to control {remoteSharer.displayName ?? 'their'} screen…</span>
-          ) : call.controlAvailable ? (
+            <span>{call.controlMessage ?? 'Waiting for the share owner to allow control…'}</span>
+          ) : call.controlHostCapable === true && call.controlChannelReady ? (
             <button
               type="button"
               data-testid="request-control"
@@ -1453,8 +1482,33 @@ export function CallOverlay({ call }: { call: CallState }) {
             >
               Control
             </button>
-          ) : null}
-          {call.controlMessage ? <span className="text-white/55">{call.controlMessage}</span> : null}
+          ) : (
+            // Can't host vs not connected: explain instead of rendering nothing.
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              data-testid="request-control-unavailable"
+              title={
+                call.controlHostCapable === false
+                  ? controlBrowserReason
+                  : call.controlHostCapable === true
+                    ? controlConnectingReason
+                    : controlUnknownReason
+              }
+              className="flex max-w-full items-center gap-2 rounded-full bg-white/5 px-2.5 py-1 text-left text-[11px] font-semibold text-white/45"
+            >
+              <span>Control</span>
+              <span className="truncate text-[10px] font-normal text-white/40">
+                {call.controlHostCapable === false
+                  ? controlBrowserReason
+                  : call.controlHostCapable === true
+                    ? controlConnectingReason
+                    : controlUnknownReason}
+              </span>
+            </button>
+          )}
+          {call.controlMessage && call.controlStatus !== 'requested' ? <span className="text-white/55">{call.controlMessage}</span> : null}
         </div>
       ) : null}
 
