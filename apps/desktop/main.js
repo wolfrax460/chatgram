@@ -620,13 +620,62 @@ ipcMain.handle('chatgram:update-open-downloads', () => {
 // disables remote control ("Remote control is not available in this build")
 // instead of crashing the shell.
 let nut = null;
-try {
-  // eslint-disable-next-line global-require
-  nut = require('@nut-tree-fork/nut-js');
-} catch (error) {
-  const reason = error && error.message ? String(error.message).slice(0, 200) : 'unknown error';
-  console.warn('Remote control unavailable (nut-js failed to load):', reason);
+let nutError = null;
+let nutLoadAttempts = 0;
+
+function describeModuleError(error) {
+  if (!error) return 'unknown error';
+  const code = error.code ? ` (${error.code})` : '';
+  const message = error.message ? String(error.message).split('\n')[0] : String(error);
+  return `${message}${code}`.slice(0, 300);
 }
+
+/**
+ * Load the native input module. It must be required from the main process after
+ * packaging; the native `.node` lives in `app.asar.unpacked`, so when the normal
+ * resolution fails we try that copy explicitly. A second attempt runs once the
+ * app is ready (DLL search paths are final by then). The exact failure is kept
+ * in `nutError` and surfaced to the renderer instead of a generic message.
+ */
+function loadNutModule() {
+  nutLoadAttempts += 1;
+  const candidates = [];
+  try {
+    candidates.push(require.resolve('@nut-tree-fork/nut-js'));
+  } catch {
+    /* normal resolution failed; try the unpacked path below */
+  }
+  try {
+    if (process.resourcesPath) {
+      candidates.push(
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@nut-tree-fork', 'nut-js'),
+      );
+    }
+  } catch {
+    /* resourcesPath unavailable (dev) */
+  }
+  const errors = [];
+  for (const candidate of candidates) {
+    try {
+      const loaded = require(candidate);
+      if (loaded && loaded.mouse && loaded.keyboard) {
+        nut = loaded;
+        nutError = null;
+        console.log('Remote control ready (nut-js loaded from', candidate, ')');
+        return true;
+      }
+      errors.push('module loaded without mouse/keyboard exports');
+    } catch (error) {
+      errors.push(describeModuleError(error));
+    }
+  }
+  nut = null;
+  nutError = errors.length ? errors.join(' | ') : 'module not found';
+  console.warn('Remote control unavailable (nut-js failed to load):', nutError);
+  return false;
+}
+
+loadNutModule();
 
 const CONTROL_MAX_EVENTS_PER_SEC = 120;
 const CONTROL_KEY_NAMES = new Set([
@@ -757,7 +806,7 @@ async function injectControlEvent(event) {
   }
 }
 
-ipcMain.handle('chatgram:control-available', () => Boolean(nut));
+ipcMain.handle('chatgram:control-available', () => ({ available: Boolean(nut), reason: nut ? null : nutError }));
 
 ipcMain.on('chatgram:control-session', (event, active) => {
   if (!isTrustedControlSender(event)) return;
@@ -895,6 +944,9 @@ if (!gotLock) {
     setupDisplayMedia();
     createWindow();
     createTray();
+    // Retry the native input module once the app/DLL search paths are final
+    // (a packaged build may fail the first, pre-ready require).
+    if (!nut) loadNutModule();
 
     // Start-on-login: persisted opt-in (tray menu).
     const settings = loadSettings();

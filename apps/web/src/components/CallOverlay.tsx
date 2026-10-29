@@ -10,8 +10,8 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from 'react';
 import {
-  Camera, CameraOff, ChevronDown, Grid2x2, Maximize2, MessageSquare, Mic, MicOff, Minimize2,
-  MoreHorizontal, PhoneOff, PictureInPicture2, Pin, PinOff, ScreenShare, Settings2, Signal, SignalLow,
+  Camera, CameraOff, ChevronDown, Grid2x2, Maximize2, MessageCircle, MessageSquare, Mic, MicOff, Minimize2,
+  MoreHorizontal, Pause, Phone, PhoneOff, PictureInPicture2, Pin, PinOff, ScreenShare, Settings2, Signal, SignalLow,
   SignalMedium, SwitchCamera, UserPlus, Users, Video, VideoOff, Volume2, VolumeX, X,
 } from 'lucide-react';
 import {
@@ -25,6 +25,7 @@ import {
   hangUp,
   inviteParticipant,
   isAndroidNative,
+  isMobileCallDevice,
   isScreenSharingSupported,
   outcomeLabel,
   outcomeText,
@@ -45,8 +46,10 @@ import {
   switchDevice,
   switchToAudioOnly,
   toggleCamera,
+  canFlipCamera,
   toggleIncomingVideo,
   toggleMute,
+  toggleNoiseSuppression,
   toggleScreenShare,
   type CallDiagnostics,
   type CallParticipant,
@@ -191,7 +194,7 @@ function statusLine(call: CallState): string {
     case 'calling': return 'Calling…';
     case 'incoming': return 'Incoming call';
     case 'connecting': return 'Connecting…';
-    case 'active': return clockFor(call.startedAt);
+    case 'active': return `Connected · ${clockFor(call.startedAt)}`;
     case 'reconnecting': return 'Reconnecting…';
     case 'ended':
     case 'error': return outcomeText(call);
@@ -613,6 +616,14 @@ function RemoteTile({
           {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
         </button>
       </div>
+      {participant.muted ? (
+        <span
+          className="absolute right-2 top-2 z-[2] max-w-[70%] truncate rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-rose-200"
+          data-testid="remote-muted-label"
+        >
+          {participant.displayName ?? 'They'} is muted
+        </span>
+      ) : null}
       {sharing ? (
         <span className="absolute left-2 top-2 rounded-md bg-emerald-600/90 px-2 py-0.5 text-[10px] font-semibold">
           {participant.displayName ?? 'They'} is sharing their screen
@@ -632,7 +643,6 @@ function CallControl({
   active = false,
   disabled = false,
   danger = false,
-  ghost = false,
   title,
 }: {
   children: ReactNode;
@@ -642,16 +652,13 @@ function CallControl({
   active?: boolean;
   disabled?: boolean;
   danger?: boolean;
-  ghost?: boolean;
   title?: string;
 }) {
   const circle = danger
-    ? 'h-12 w-12 bg-rose-600 text-white group-hover:bg-rose-700'
-    : ghost
-      ? 'h-11 w-11 bg-transparent text-white group-hover:bg-white/10'
-      : active
-        ? 'h-11 w-11 bg-brand-600 text-white group-hover:bg-brand-700'
-        : 'h-11 w-11 bg-white/10 text-white group-hover:bg-white/20';
+    ? 'h-[72px] w-[72px] bg-rose-600 text-white group-hover:bg-rose-700 [&_svg]:fill-current'
+    : active
+      ? 'h-16 w-16 bg-white text-ink-900 group-hover:bg-white [&_svg]:fill-current'
+      : 'h-16 w-16 border border-white/10 bg-white/10 text-white backdrop-blur group-hover:bg-white/15';
   return (
     <button
       type="button"
@@ -661,10 +668,10 @@ function CallControl({
       aria-pressed={active}
       title={title ?? label}
       data-testid={testId}
-      className="group flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-[10.5px] font-medium leading-tight text-white/90 transition disabled:cursor-not-allowed disabled:opacity-40"
+      className="group flex min-h-[64px] min-w-[64px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-1 text-[12px] font-medium leading-tight text-white/90 transition disabled:cursor-not-allowed disabled:opacity-40"
     >
-      <span className={`grid shrink-0 place-items-center rounded-full transition ${circle}`}>{children}</span>
-      <span className="max-w-[64px] truncate">{label}</span>
+      <span className={`grid shrink-0 place-items-center rounded-full shadow-lg shadow-black/20 transition ${circle}`}>{children}</span>
+      <span className="max-w-[72px] truncate">{label}</span>
     </button>
   );
 }
@@ -733,8 +740,24 @@ export function CallOverlay({ call }: { call: CallState }) {
   const [contacts, setContacts] = useState<{ id: string; displayName: string; avatarUrl: string | null }[]>([]);
   const [nativeRoute, setNativeRoute] = useState<AudioRouteName | null>(null);
   const [routeNotice, setRouteNotice] = useState<string | null>(null);
+  const [onHold, setOnHold] = useState(false);
   const routeAppliedRef = useRef(false);
   const routeTouchedRef = useRef(false);
+
+  // Local "hold": the server has no hold concept, so this is an honest local
+  // microphone mute with an "On hold" state, never a fake server-side hold.
+  const toggleHold = useCallback(() => {
+    const next = !onHold;
+    setOnHold(next);
+    if (next && !call.muted) void toggleMute();
+    if (!next && call.muted) void toggleMute();
+    setRouteNotice(
+      next
+        ? 'On hold — your microphone is muted (local hold; calls have no server-side hold).'
+        : 'Back on the call.',
+    );
+    window.setTimeout(() => setRouteNotice(null), 4000);
+  }, [call.muted, onHold, toggleMute]);
 
   const inCall = call.status === 'calling' || call.status === 'connecting' || call.status === 'reconnecting' || call.status === 'active';
   const showVideo = call.video && !call.audioOnly;
@@ -836,6 +859,10 @@ export function CallOverlay({ call }: { call: CallState }) {
       const key = event.key.toLowerCase();
       if (key === 'm') { event.preventDefault(); void toggleMute(); }
       if (key === 'v' && call.video) { event.preventDefault(); void toggleCamera(); }
+      if (key === 's' && screenShareSupported && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        void toggleScreenShare();
+      }
       if (key === 's' && isScreenSharingSupported()) { event.preventDefault(); void toggleScreenShare(); }
       if (key === 'escape') {
         // While controlling a remote screen, Escape releases control (handled by
@@ -852,7 +879,48 @@ export function CallOverlay({ call }: { call: CallState }) {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [call.status, call.video, moreOpen, messagesOpen, participantsOpen, addParticipantOpen, menu, call.controlStatus]);
+  }, [call.status, call.video, moreOpen, messagesOpen, participantsOpen, addParticipantOpen, menu, call.controlStatus, screenShareSupported]);
+
+  // Keep the screen awake for the whole call; re-acquire after tab switches.
+  useEffect(() => {
+    if (call.status !== 'active' && call.status !== 'connecting' && call.status !== 'reconnecting') return undefined;
+    type WakeLock = { release?: () => Promise<void> };
+    const wakeLock = (navigator as Navigator & { wakeLock?: { request?: (type: 'screen') => Promise<WakeLock> } }).wakeLock;
+    if (!wakeLock?.request) return undefined;
+    let sentinel: WakeLock | null = null;
+    let cancelled = false;
+    const acquire = async (): Promise<void> => {
+      try {
+        const lock = await wakeLock.request?.('screen');
+        if (!lock) return;
+        if (cancelled) void lock.release?.();
+        else sentinel = lock;
+      } catch {
+        /* wake lock is best effort (unsupported/permission) */
+      }
+    };
+    void acquire();
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible' && !sentinel) void acquire();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      void sentinel?.release?.();
+    };
+  }, [call.status]);
+
+  // Proximity screen-off for audio calls, where the native shell exposes it.
+  useEffect(() => {
+    type ProximityPlugin = { setEnabled?: (options: { enabled: boolean }) => Promise<unknown> };
+    const proximity = (window as unknown as { Capacitor?: { Plugins?: { Proximity?: ProximityPlugin } } }).Capacitor?.Plugins?.Proximity;
+    if (!proximity?.setEnabled) return undefined;
+    void proximity.setEnabled({ enabled: call.status === 'active' && !call.video }).catch(() => undefined);
+    return () => {
+      void proximity.setEnabled?.({ enabled: false }).catch(() => undefined);
+    };
+  }, [call.status, call.video]);
 
   // Message side panel: load the chat's recent messages when opened.
   useEffect(() => {
@@ -1146,50 +1214,68 @@ export function CallOverlay({ call }: { call: CallState }) {
   if (call.status === 'idle') return null;
 
   if (call.status === 'incoming') {
-    // participants[0] is the caller (calls.ts keeps `from` first). Both the name
-    // and the avatar come straight from the call:incoming payload.
+    // Original Chatgram incoming screen: big avatar with a soft ringing pulse,
+    // one subtitle, two large round actions. No duplicated "Incoming call".
     const caller = call.participants[0];
     const others = call.participants.filter((participant) => participant.id !== caller?.id);
     const callerName = caller?.displayName?.trim() || call.title?.trim() || 'Chatgram user';
     const groupTitle = call.title?.trim() || 'Group call';
+    const subtitle = call.isGroup
+      ? `${callerName} is calling the group${call.participants.length > 1 ? ` · ${call.participants.length} already in` : ''}`
+      : call.video
+        ? 'Chatgram video call'
+        : 'Chatgram audio call';
     return (
-      <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center gap-6 overflow-y-auto bg-gradient-to-b from-ink-900 to-black p-6 text-white" role="dialog" aria-label="Incoming call" data-testid="call-incoming">
-        <div className="relative">
-          <div className="absolute inset-0 scale-150 rounded-full bg-brand-500/20 blur-2xl" aria-hidden="true" />
-          <Avatar name={callerName} url={caller?.avatarUrl ?? null} className="relative h-32 w-32 text-4xl shadow-2xl" />
-        </div>
-        <div className="text-center">
-          <h2 className="text-2xl font-bold" data-testid="call-status">{statusLine(call)}</h2>
-          <p className="mt-1 text-sm text-white/70" data-testid="incoming-call-kind">
-            {call.isGroup
-              ? `Incoming group ${call.video ? 'video' : 'voice'} call`
-              : call.video
-                ? 'Incoming video call'
-                : 'Incoming audio call'}
-          </p>
-          <p className="mx-auto mt-2 max-w-[85vw] truncate text-2xl font-bold" data-testid="incoming-caller-name">{callerName}</p>
-          {call.isGroup ? (
-            <p className="mt-1 text-[13px] text-white/70">
-              {groupTitle} · {call.participants.length} {call.participants.length === 1 ? 'person' : 'people'} on the call
-              {call.ringCount > 1 ? ` · ${call.ringCount} invited` : ''}
+      <div
+        className="fixed inset-0 z-[70] flex flex-col items-center justify-between gap-4 overflow-y-auto bg-gradient-to-b from-ink-900 via-ink-900 to-black px-6 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(2.5rem,env(safe-area-inset-top))] text-white"
+        role="dialog"
+        aria-label="Incoming call"
+        data-testid="call-incoming"
+      >
+        <div className="flex w-full max-w-md flex-1 flex-col items-center justify-center gap-5 text-center">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/55" data-testid="call-status">Incoming Call</p>
+          <div className="relative grid place-items-center">
+            <span className="absolute h-40 w-40 rounded-full bg-brand-500/25 motion-safe:animate-ping sm:h-48 sm:w-48" aria-hidden="true" />
+            <span className="absolute h-40 w-40 rounded-full bg-brand-500/15 motion-safe:animate-pulse sm:h-48 sm:w-48" aria-hidden="true" />
+            <Avatar name={callerName} url={caller?.avatarUrl ?? null} className="relative h-40 w-40 text-5xl shadow-2xl sm:h-44 sm:w-44" />
+          </div>
+          <div className="min-w-0">
+            <p className="mx-auto max-w-[85vw] truncate text-3xl font-bold sm:text-4xl" data-testid="incoming-caller-name">
+              {call.isGroup ? groupTitle : callerName}
             </p>
-          ) : null}
+            <p className="mt-2 text-base text-white/70" data-testid="incoming-call-kind">{subtitle}</p>
+            {call.isGroup ? (
+              <p className="mt-1 text-[13px] text-white/55" data-testid="incoming-group-info">
+                {call.ringCount > 1 ? `${call.ringCount} people invited` : 'Group call'}
+              </p>
+            ) : null}
+          </div>
           {others.length > 0 ? (
-            <div className="mt-3 flex items-center justify-center gap-1.5" aria-hidden="true">
+            <div className="flex items-center justify-center gap-1.5" aria-hidden="true">
               {others.slice(0, 4).map((participant) => (
                 <Avatar key={participant.id} name={participant.displayName} url={participant.avatarUrl} className="h-9 w-9 text-[11px] ring-1 ring-white/20" />
               ))}
             </div>
           ) : null}
         </div>
-        <div className="mt-4 flex items-center gap-10">
+        <div className="flex w-full max-w-md items-start justify-center gap-12 sm:gap-16">
           <button type="button" className="flex flex-col items-center gap-2" aria-label="Decline call" onClick={rejectCall}>
-            <span className="grid h-16 w-16 place-items-center rounded-full bg-rose-600 hover:bg-rose-700"><PhoneOff className="h-7 w-7" /></span>
-            <span className="text-xs">Decline</span>
+            <span className="grid h-[72px] w-[72px] place-items-center rounded-full bg-rose-600 shadow-lg shadow-rose-950/40 transition hover:bg-rose-700 active:scale-95">
+              <PhoneOff className="h-8 w-8" fill="currentColor" aria-hidden="true" />
+            </span>
+            <span className="text-sm font-semibold">Decline</span>
           </button>
-          <button type="button" className="flex flex-col items-center gap-2" aria-label={call.isGroup ? 'Join call' : 'Accept call'} onClick={() => void acceptCall()}>
-            <span className="grid h-16 w-16 place-items-center rounded-full bg-emerald-600 hover:bg-emerald-700"><Video className="h-7 w-7" /></span>
-            <span className="text-xs">{call.isGroup ? 'Join' : 'Accept'}</span>
+          <button
+            type="button"
+            className="flex flex-col items-center gap-2"
+            aria-label={call.isGroup ? 'Join call' : call.video ? 'Accept video call' : 'Accept call'}
+            onClick={() => void acceptCall()}
+          >
+            <span className="grid h-[72px] w-[72px] place-items-center rounded-full bg-emerald-600 shadow-lg shadow-emerald-950/40 transition hover:bg-emerald-700 active:scale-95">
+              {/* Audio calls accept with a phone, video calls with a video icon. */}
+              {call.video ? <Video className="h-8 w-8" fill="currentColor" aria-hidden="true" /> : <Phone className="h-8 w-8" fill="currentColor" aria-hidden="true" />}
+            </span>
+            <span className="text-sm font-semibold">{call.isGroup ? 'Join' : 'Accept'}</span>
           </button>
         </div>
       </div>
@@ -1261,7 +1347,9 @@ export function CallOverlay({ call }: { call: CallState }) {
   const counterpart = mainShowsLocal ? prominent : null;
   // Remote-control copy: the capability differs from "has not allowed yet".
   const controlUnavailableReason = isDesktopShell()
-    ? 'Remote control is not available in this build'
+    ? call.controlUnavailableReason
+      ? `Remote control is not available: ${call.controlUnavailableReason}`
+      : 'Remote control is not available in this build'
     : 'Remote control needs the Windows app';
   const controlBrowserReason = 'The other person is sharing from a browser — control needs the Windows app';
   const controlUnknownReason = "The other person's app cannot be controlled (control needs the Windows app)";
@@ -1276,22 +1364,24 @@ export function CallOverlay({ call }: { call: CallState }) {
       aria-label={call.isGroup ? 'Group call' : 'Call'}
       data-testid="call-overlay"
     >
-      {/* header: ONE status line + ONE quality indicator (only when truly active) */}
-      <div ref={headerRef} className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-bold tabular-nums" data-testid="call-status">
-            {call.status === 'active' ? <span data-testid="call-timer">{statusLine(call)}</span> : statusLine(call)}
-          </h2>
-          <p className="truncate text-[12px] text-white/70" data-testid="call-title">
+      {/* header: centred name + ONE status line; quality pill floats right */}
+      <div ref={headerRef} className="relative flex shrink-0 flex-col items-center gap-0.5 px-12 pb-1 pt-[max(0.75rem,env(safe-area-inset-top))] text-center">
+        <div className="min-w-0 max-w-full">
+          <h2 className="max-w-full truncate text-lg font-bold" data-testid="call-title">
             {call.title}
-            {call.isGroup ? ` · ${remoteCount + 1} / ${cap}` : ''}
+          </h2>
+          <p className="text-[12.5px] text-white/70" data-testid="call-status">
+            {call.status === 'active' ? <span data-testid="call-timer">{statusLine(call)}</span> : statusLine(call)}
           </p>
+          {call.isGroup ? (
+            <p className="text-[11px] text-white/50" data-testid="call-group-count">{remoteCount + 1} / {cap}</p>
+          ) : null}
         </div>
         {qualityVisible ? (
-          <div className="relative">
+          <div className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))]">
             <button
               type="button"
-              className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1.5 text-[11.5px] font-semibold hover:bg-white/20"
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/10 px-2.5 py-1.5 text-[11.5px] font-semibold backdrop-blur hover:bg-white/20"
               aria-label="Connection details"
               data-testid="connection-indicator"
               onClick={() => setMenu(menu === 'connection' ? null : 'connection')}
@@ -1301,16 +1391,43 @@ export function CallOverlay({ call }: { call: CallState }) {
               <ChevronDown className="h-3 w-3" />
             </button>
             {menu === 'connection' ? (
-              <div className="absolute right-0 top-full z-20 mt-2 w-60 rounded-xl border border-white/15 bg-ink-800 p-3 text-[12px] shadow-2xl">
+              <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-xl border border-white/15 bg-ink-800 p-3 text-left text-[12px] shadow-2xl" data-testid="connection-panel">
                 <p className="font-semibold">Connection</p>
                 <p className="mt-1 text-white/70">Status: {qualityLabel(call.quality)}</p>
-                <p className="text-white/70">Latency: {call.stats.latencyMs !== null ? `${call.stats.latencyMs} ms` : 'measuring…'}</p>
+                <p className="text-white/70">Latency (RTT): {call.stats.latencyMs !== null ? `${call.stats.latencyMs} ms` : 'measuring…'}</p>
                 <p className="text-white/70">Packet loss: {call.stats.packetLoss !== null ? `${call.stats.packetLoss}%` : 'measuring…'}</p>
+                <p className="text-white/70">
+                  Path: {call.diagnostics?.connectionKind === 'relay' ? 'relayed (TURN)' : call.diagnostics?.connectionKind === 'direct' ? 'direct' : 'unknown'}
+                  {call.diagnostics?.candidatePair ? ` · ${call.diagnostics.candidatePair}` : ''}
+                </p>
+                <p className="text-white/70">Microphone: {call.diagnostics?.audioInputLabel ?? 'default'}</p>
+                {call.screenStats.active ? (
+                  <p className="text-white/70">
+                    Screen: {call.screenStats.bitrateKbps ?? '?'} kbps · {call.screenStats.rttMs ?? '?'} ms · {call.screenStats.lossPct ?? '?'}%
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </div>
         ) : null}
       </div>
+
+      {/* local hold pill (top-left, glass) */}
+      {inCall ? (
+        <div className="absolute left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20">
+          <button
+            type="button"
+            data-testid="call-hold"
+            aria-pressed={onHold}
+            onClick={toggleHold}
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-[11.5px] font-semibold backdrop-blur hover:bg-black/55"
+            title="Local hold: mutes your microphone (calls have no server-side hold)"
+          >
+            <Pause className="h-3.5 w-3.5" aria-hidden="true" />
+            {onHold ? 'Resume call' : 'Hold this call'}
+          </button>
+        </div>
+      ) : null}
 
       {/* stage */}
       {call.mediaStalled ? (
@@ -1340,6 +1457,27 @@ export function CallOverlay({ call }: { call: CallState }) {
             className="mt-1.5 rounded-lg bg-white/15 px-2.5 py-1 text-[11.5px] font-semibold hover:bg-white/25"
           >
             Retry connection
+          </button>
+        </div>
+      ) : null}
+      {/* Audio-only stall: a connected call with no inbound audio after 8 s. */}
+      {!call.mediaStalled && call.status === 'active' && call.diagnostics?.audioStalled ? (
+        <div
+          className="mx-3 mb-1 rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-[12.5px] text-amber-50"
+          data-testid="call-audio-warning"
+          role="alert"
+        >
+          <p className="font-semibold">No audio is arriving</p>
+          <p className="mt-0.5 text-[11px] leading-snug text-amber-100/85">
+            The connection is up but no audio has reached you for 8 seconds. Retry re-negotiates the media path.
+          </p>
+          <button
+            type="button"
+            onClick={() => retryCallMedia()}
+            data-testid="call-audio-retry"
+            className="mt-1.5 rounded-lg bg-white/15 px-2.5 py-1 text-[11.5px] font-semibold hover:bg-white/25"
+          >
+            Retry audio
           </button>
         </div>
       ) : null}
@@ -1518,7 +1656,7 @@ export function CallOverlay({ call }: { call: CallState }) {
             <p className="text-sm font-semibold">{call.videoRequest.displayName || 'The other person'} wants to switch this call to video.</p>
             <div className="mt-2 flex gap-2">
               <button type="button" className="btn-primary !py-1.5 text-[12px]" onClick={() => void respondVideoUpgrade(true)}>Accept video</button>
-              <button type="button" className="btn-ghost !py-1.5 text-[12px]" onClick={() => void respondVideoUpgrade(false)}>Keep audio</button>
+              <button type="button" className="btn-ghost !py-1.5 text-[12px]" onClick={() => void respondVideoUpgrade(false)}>Decline</button>
             </div>
           </div>
         ) : null}
@@ -1757,12 +1895,12 @@ export function CallOverlay({ call }: { call: CallState }) {
         </div>
       ) : null}
 
-      {/* controls: five labelled primaries + a ghost More that opens the sheet */}
+      {/* controls: 3×2 glass round controls, big red End centred below */}
       <div
         ref={controlsRef}
-        className="relative z-10 shrink-0 px-1 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
+        className="relative z-10 flex shrink-0 flex-col items-center gap-3 px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       >
-        <div className="flex items-end justify-between gap-0.5 sm:justify-center sm:gap-3">
+        <div className="grid w-full max-w-sm grid-cols-3 place-items-center gap-x-2 gap-y-3">
           <CallControl
             testId="call-control-mute"
             label={call.muted ? 'Unmute' : 'Mute'}
@@ -1771,16 +1909,6 @@ export function CallOverlay({ call }: { call: CallState }) {
             title={call.muted ? 'Unmute microphone (M)' : 'Mute microphone (M)'}
           >
             {call.muted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-          </CallControl>
-
-          <CallControl
-            testId="call-control-camera"
-            label="Camera"
-            active={call.video && !call.cameraOn}
-            onClick={call.video ? () => void toggleCamera() : requestVideoUpgrade}
-            title={call.video ? (call.cameraOn ? 'Turn camera off (V)' : 'Turn camera on (V)') : 'Switch this call to video'}
-          >
-            {call.video && call.cameraOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
           </CallControl>
 
           <CallControl
@@ -1803,23 +1931,33 @@ export function CallOverlay({ call }: { call: CallState }) {
           </CallControl>
 
           <CallControl
-            testId="call-control-flip"
-            label="Flip"
-            disabled={!call.video || !call.cameraOn}
-            onClick={() => void flipCamera()}
-            title="Flip camera"
+            testId="call-control-camera"
+            label="Camera"
+            active={call.video && call.cameraOn}
+            onClick={call.video ? () => void toggleCamera() : requestVideoUpgrade}
+            title={call.video ? (call.cameraOn ? 'Turn camera off (V)' : 'Turn camera on (V)') : 'Switch this call to video'}
           >
-            <SwitchCamera className="h-5 w-5" />
+            {call.video && call.cameraOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
           </CallControl>
 
-          <CallControl testId="call-control-more" label="More" ghost onClick={() => setMoreOpen(true)} title="More call actions">
+          <CallControl
+            testId="call-control-chat"
+            label="Chat"
+            active={messagesOpen}
+            onClick={() => setMessagesOpen(!messagesOpen)}
+            title="Chat during the call"
+          >
+            <MessageCircle className="h-5 w-5" />
+          </CallControl>
+
+          <CallControl testId="call-control-more" label="More" onClick={() => setMoreOpen(true)} title="More call actions">
             <MoreHorizontal className="h-5 w-5" />
           </CallControl>
-
-          <CallControl testId="call-control-end" label="End call" danger onClick={hangUp} title="End call">
-            <PhoneOff className="h-6 w-6" />
-          </CallControl>
         </div>
+
+        <CallControl testId="call-control-end" label="End call" danger onClick={hangUp} title="End the call">
+          <PhoneOff className="h-7 w-7" fill="currentColor" />
+        </CallControl>
       </div>
 
       {call.cameraOn === false && call.video && !call.screenSharing ? (
@@ -1866,6 +2004,24 @@ export function CallOverlay({ call }: { call: CallState }) {
                 <UserPlus className="h-5 w-5" />
               </MoreAction>
 
+              <MoreAction
+                testId="call-more-flip"
+                label="Flip camera"
+                disabled={!call.video || !call.cameraOn || !canFlipCamera()}
+                title={
+                  !call.video || !call.cameraOn
+                    ? 'Turn the camera on first'
+                    : canFlipCamera()
+                      ? isMobileCallDevice()
+                        ? 'Switch between front and back camera'
+                        : 'Switch camera'
+                      : 'Only one camera is connected'
+                }
+                onClick={() => { void flipCamera(); setMoreOpen(false); }}
+              >
+                <SwitchCamera className="h-5 w-5" />
+              </MoreAction>
+
               <MoreAction testId="call-more-chat" label="Chat" onClick={() => { setMessagesOpen(true); setMoreOpen(false); }}>
                 <MessageSquare className="h-5 w-5" />
               </MoreAction>
@@ -1898,6 +2054,16 @@ export function CallOverlay({ call }: { call: CallState }) {
                   <ScreenShare className="h-5 w-5" />
                 </MoreAction>
               ) : null}
+
+              <MoreAction
+                testId="call-more-noise-suppression"
+                label={call.noiseSuppression ? 'Noise suppression on' : 'Noise suppression off'}
+                active={call.noiseSuppression}
+                title={call.noiseSuppression ? 'Turn noise suppression off (raw microphone)' : 'Turn noise suppression on'}
+                onClick={() => void toggleNoiseSuppression()}
+              >
+                {call.noiseSuppression ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+              </MoreAction>
 
               <MoreAction
                 testId="incoming-video-toggle"

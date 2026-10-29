@@ -178,6 +178,14 @@ export interface CallDiagnostics {
   controlRemote: boolean | null;
   /** A control data channel is open. */
   controlChannel: boolean;
+  /** Selected candidate-pair kind: direct host/srflx path or a TURN relay. */
+  connectionKind: 'direct' | 'relay' | 'unknown';
+  /** No inbound audio for the stall window (audio is what makes a call a call). */
+  audioStalled: boolean;
+  /** No inbound video for the stall window (only meaningful in video calls). */
+  videoStalled: boolean;
+  /** Human-readable name of the active microphone. */
+  audioInputLabel: string | null;
 }
 
 
@@ -215,6 +223,13 @@ export interface CallState {
   videoUpgradePending: boolean;
   /** My screen is being shared right now. */
   screenSharing: boolean;
+  /** Which physical camera is active: front ('user') or back ('environment'). */
+  cameraFacing: 'user' | 'environment';
+  /** Voice processing (noise suppression) is on for the microphone. */
+  noiseSuppression: boolean;
+  /** Device ids currently in use (so pickers can show the active choice). */
+  inputDeviceId: string;
+  cameraDeviceId: string;
   /** System audio is being shared along with the screen (where supported). */
   screenAudio: boolean;
   /** Low-bandwidth mode: incoming video is hidden until the user turns it back on. */
@@ -240,6 +255,8 @@ export interface CallState {
   screenStats: ScreenShareStats;
   /** True when this shell can inject remote-control input (Windows desktop app). */
   controlSupported: boolean;
+  /** Exact native-module failure from the desktop shell (null when ready). */
+  controlUnavailableReason: string | null;
   /** Sharer: I explicitly allow remote control of my shared screen (default off). */
   controlAllowed: boolean;
   /** Sharer: the viewer whose control request waits for approval. */
@@ -288,6 +305,7 @@ const IDLE: CallState = {
   screenQuality: 'unknown',
   screenStats: { active: false, bitrateKbps: null, rttMs: null, lossPct: null, low: false },
   controlSupported: false,
+  controlUnavailableReason: null,
   controlAllowed: false,
   controlPendingId: null,
   controlViewerId: null,
@@ -301,6 +319,10 @@ const IDLE: CallState = {
   videoRequest: null,
   videoUpgradePending: false,
   screenSharing: false,
+  cameraFacing: 'user',
+  noiseSuppression: true,
+  inputDeviceId: '',
+  cameraDeviceId: '',
   screenAudio: false,
   lowBandwidth: false,
   incomingVideoOff: false,
@@ -601,9 +623,9 @@ async function refreshDevices(): Promise<void> {
 function mediaConstraints(video: boolean): MediaStreamConstraints {
   return {
     audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
+      echoCancellation: state.noiseSuppression,
+      noiseSuppression: state.noiseSuppression,
+      autoGainControl: state.noiseSuppression,
     },
     video: video
       ? {
@@ -653,6 +675,13 @@ async function acquireMedia(wantVideo: boolean): Promise<{ stream: MediaStream; 
   try {
     const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints(wantVideo));
     localStream = stream;
+    const freshVideo = stream.getVideoTracks()[0];
+    const freshAudio = stream.getAudioTracks()[0];
+    setState({
+      inputDeviceId: freshAudio?.getSettings().deviceId ?? '',
+      cameraDeviceId: freshVideo?.getSettings().deviceId ?? '',
+      cameraFacing: freshVideo?.getSettings().facingMode === 'environment' ? 'environment' : 'user',
+    });
     void refreshDevices();
     return { stream, video: wantVideo };
   } catch (error) {
@@ -1045,6 +1074,17 @@ async function measureQuality(): Promise<void> {
   // The banner appears as soon as a one-way peer is proven (5 s), or later for a
   // plain stall when no peer is sending anything at all.
   const mediaStalled = mediaExpected && (mediaMissing || (waited >= MEDIA_STALL_MS && audioIn + videoIn === 0));
+  // The panel needs: direct vs relayed path, per-medium stalls (8 s), mic name.
+  const pairText = candidatePair === null ? '' : String(candidatePair);
+  const connectionKind: 'direct' | 'relay' | 'unknown' = pairText
+    ? pairText.includes('relay')
+      ? 'relay'
+      : 'direct'
+    : 'unknown';
+  const audioStalled = mediaExpected && (mediaMissing || waited >= 8_000) && audioIn === 0;
+  const videoStalled = mediaExpected && state.video && (mediaMissing || waited >= 8_000) && videoIn === 0;
+  const activeInput =
+    state.devices.audioInput.find((device) => device.deviceId === state.inputDeviceId) ?? state.devices.audioInput[0];
   const diagnostics: CallDiagnostics = {
     iceConnectionState,
     connectionState,
@@ -1068,6 +1108,10 @@ async function measureQuality(): Promise<void> {
     controlLocal: state.controlSupported,
     controlRemote: state.controlHostCapable,
     controlChannel: state.controlChannelReady,
+    connectionKind,
+    audioStalled,
+    videoStalled,
+    audioInputLabel: activeInput?.label ?? null,
   };
   setState({
     quality: effectiveQuality,
@@ -1177,6 +1221,7 @@ function clearTimers(): void {
 
 function cleanup(): void {
   clearTimers();
+  stopDeviceWatch();
   for (const id of [...peers.keys()]) removePeer(id);
   stopTracks(localStream);
   localStream = null;
@@ -1540,7 +1585,7 @@ interface DesktopControlBridge {
   control?: {
     send?: (event: ControlInputMessage) => void | Promise<unknown>;
     setActive?: (active: boolean) => void | Promise<unknown>;
-    available?: () => Promise<boolean>;
+    available?: () => Promise<boolean | { available?: boolean; reason?: string | null }>;
   };
 }
 
@@ -1554,7 +1599,7 @@ function desktopControlBridge(): NonNullable<DesktopControlBridge['control']> | 
 export async function syncControlSupport(): Promise<boolean> {
   const bridge = desktopControlBridge();
   if (!bridge?.available) {
-    if (state.controlSupported) setState({ controlSupported: false });
+    if (state.controlSupported) setState({ controlSupported: false, controlUnavailableReason: null });
     if (state.screenSharing) {
       warnLocalControlUnavailable('this build has no input bridge');
       emitScreenSignal();
@@ -1562,12 +1607,20 @@ export async function syncControlSupport(): Promise<boolean> {
     return false;
   }
   let supported = false;
+  let reason: string | null = null;
   try {
-    supported = (await bridge.available()) === true;
-  } catch {
+    const result = await bridge.available();
+    if (typeof result === 'boolean') {
+      supported = result;
+    } else {
+      supported = result?.available === true;
+      reason = typeof result?.reason === 'string' && result.reason ? result.reason : null;
+    }
+  } catch (error) {
     supported = false;
+    reason = error instanceof Error ? error.message.slice(0, 200) : null;
   }
-  setState({ controlSupported: supported });
+  setState({ controlSupported: supported, controlUnavailableReason: supported ? null : reason });
   if (supported) {
     localControlWarned = false;
   } else if (state.screenSharing) {
@@ -1997,6 +2050,9 @@ function enterSession(session: ActiveCall, extra: Partial<CallState> = {}): void
   startStatsLoop();
   // Remote-control injection is only available inside the Windows desktop shell.
   void syncControlSupport();
+  // Device pickers: watch hot-plug, and restore remembered mic/speaker choices.
+  startDeviceWatch();
+  void restorePreferredDevices();
 }
 
 /* ---------------------------------------------------------------- lifecycle */
@@ -2955,6 +3011,8 @@ async function stopScreenShareInternal(): Promise<void> {
   }
   for (const handle of peers.values()) void sendOffer(handle);
   emitSignal({ kind: 'camera', cameraOn: state.cameraOn });
+  // A flip requested during the share is now applied without renegotiation.
+  applyPendingCameraFacing();
 }
 
 /** Add one contact to a 1:1 call: the server converts the room to a group room. */
@@ -2970,18 +3028,190 @@ export function inviteParticipant(userId: string): void {
   realtime.emit('call:add-participant', { callId: current.callId, userId });
 }
 
-/** Flip between front and back cameras on phones (cycles video inputs). */
-export async function flipCamera(): Promise<void> {
-  const devices = state.devices.videoInput;
-  if (!devices.length) {
-    setState({ notice: 'No other camera found.' });
+/* --------------------------------------------------- camera / devices ---- */
+
+/** True for the Android shell or Chrome-on-Android (WebView camera quirks). */
+function isAndroidCamera(): boolean {
+  return isAndroidNative() || (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent));
+}
+
+/** Phones can always flip; browsers only when a second camera exists. */
+export function isMobileCallDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  if (isAndroidCamera()) return true;
+  return /iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
+/** UI helper: show Flip on phones, or on desktop only with 2+ cameras. */
+export function canFlipCamera(): boolean {
+  return isMobileCallDevice() || state.devices.videoInput.length > 1;
+}
+
+/** Remembered state for a camera switch deferred until screen sharing stops. */
+let pendingCameraFacing: 'user' | 'environment' | null = null;
+
+function cameraErrorMessage(error: unknown): string {
+  const name = error instanceof Error ? error.name : '';
+  if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') return 'That camera is not available on this device.';
+  if (name === 'NotReadableError' || name === 'TrackStartError') return 'The camera is busy — close the other camera app and try again.';
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Camera permission was denied.';
+  return 'Could not switch the camera.';
+}
+
+/** Open one camera by facing mode: ideal first, exact fallback. */
+async function openCameraTrack(facing: 'user' | 'environment'): Promise<MediaStreamTrack> {
+  const base = { width: { ideal: 1280, max: 1280 }, height: { ideal: 720, max: 720 }, frameRate: { ideal: 30, max: 30 } };
+  let firstError: unknown = null;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { ...base, facingMode: { ideal: facing } } });
+    const track = stream.getVideoTracks()[0];
+    if (track) return track;
+    firstError = new Error('No camera track');
+  } catch (error) {
+    firstError = error;
+    const name = error instanceof Error ? error.name : '';
+    if (name === 'NotAllowedError' || name === 'NotReadableError' || name === 'AbortError') throw error;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { ...base, facingMode: { exact: facing } } });
+    const track = stream.getVideoTracks()[0];
+    if (track) return track;
+  } catch {
+    /* fall through to the first error */
+  }
+  throw firstError instanceof Error ? firstError : new Error('No camera track');
+}
+
+/**
+ * Attach a new camera track everywhere WITHOUT renegotiation:
+ * `sender.replaceTrack` keeps every peer connection (and any screen share
+ * negotiation in flight) untouched, so a flip cannot drop the call.
+ */
+async function applyCameraTrack(track: MediaStreamTrack, requestedFacing: 'user' | 'environment'): Promise<void> {
+  if (!localStream) {
+    track.stop();
     return;
   }
-  const currentTrack = localStream?.getVideoTracks()[0];
-  const currentDevice = currentTrack?.getSettings().deviceId;
-  const index = devices.findIndex((device) => device.deviceId === currentDevice);
+  const previous = localStream.getVideoTracks()[0];
+  if (previous && previous !== track) {
+    previous.stop();
+    localStream.removeTrack(previous);
+  }
+  if (track !== previous) localStream.addTrack(track);
+  const settings = track.getSettings();
+  const facing: 'user' | 'environment' =
+    settings.facingMode === 'environment' ? 'environment' : settings.facingMode === 'user' ? 'user' : requestedFacing;
+  const deviceId = settings.deviceId || state.cameraDeviceId;
+  for (const handle of peers.values()) {
+    try {
+      if (handle.videoSender) await handle.videoSender.replaceTrack(track);
+    } catch {
+      /* the next full negotiation catches up; the call stays up */
+    }
+  }
+  setState({
+    cameraOn: true,
+    cameraFacing: facing,
+    cameraDeviceId: deviceId,
+    notice: facing === 'environment' ? 'Back camera on.' : 'Front camera on.',
+  });
+  emitSignal({ kind: 'camera', cameraOn: true });
+  try {
+    window.localStorage.setItem('chatgram.call.cameraFacing', facing);
+  } catch {
+    /* storage is best effort */
+  }
+}
+
+/** Switch to a specific camera device (desktop picker / multiple cameras). */
+export async function switchCameraDevice(deviceId: string): Promise<void> {
+  if (!state.video) {
+    setState({ notice: 'Turn the camera on before switching cameras.' });
+    return;
+  }
+  if (state.screenSharing) {
+    setState({ notice: 'Camera will switch when you stop sharing your screen.' });
+    return;
+  }
+  const previous = localStream?.getVideoTracks()[0] ?? null;
+  // Android WebViews often cannot keep two cameras open at once.
+  if (isAndroidCamera() && previous) {
+    previous.stop();
+    localStream?.removeTrack(previous);
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { ...(mediaConstraints(true).video as MediaTrackConstraints), deviceId: { exact: deviceId } },
+    });
+    const track = stream.getVideoTracks()[0];
+    if (!track) throw new Error('No camera track');
+    await applyCameraTrack(track, state.cameraFacing);
+    try {
+      window.localStorage.setItem('chatgram.call.cameraDevice', deviceId);
+    } catch {
+      /* storage is best effort */
+    }
+    void refreshDevices();
+  } catch (error) {
+    setState({ notice: cameraErrorMessage(error) });
+    void refreshDevices();
+  }
+}
+
+/**
+ * Flip between front and back cameras on phones (facingMode ideal → exact), or
+ * cycle cameras on desktop. Uses `sender.replaceTrack` (no renegotiation) and
+ * keeps the call, group calls and an active screen share alive.
+ */
+export async function flipCamera(): Promise<void> {
+  if (!state.video) {
+    setState({ notice: 'Turn the camera on before flipping.' });
+    return;
+  }
+  const mobile = isMobileCallDevice();
+  if (!mobile && state.devices.videoInput.length < 2) {
+    setState({ notice: 'Only one camera is connected.' });
+    return;
+  }
+  const nextFacing: 'user' | 'environment' = state.cameraFacing === 'user' ? 'environment' : 'user';
+  if (state.screenSharing) {
+    // The outgoing video is the screen; defer the flip until sharing stops.
+    pendingCameraFacing = nextFacing;
+    setState({ notice: 'Camera will switch when you stop sharing your screen.' });
+    return;
+  }
+  if (mobile) {
+    const previous = localStream?.getVideoTracks()[0] ?? null;
+    // Stop the old camera BEFORE opening the new one on Android (single-camera
+    // WebViews fail with NotReadableError when both are held at once).
+    if (isAndroidCamera() && previous) {
+      previous.stop();
+      localStream?.removeTrack(previous);
+    }
+    try {
+      const track = await openCameraTrack(nextFacing);
+      await applyCameraTrack(track, nextFacing);
+    } catch (error) {
+      setState({ notice: cameraErrorMessage(error) });
+      // Recover: try to bring the previous facing back.
+      if (!localStream?.getVideoTracks().length) {
+        void toggleCamera();
+      }
+    }
+    return;
+  }
+  const devices = state.devices.videoInput;
+  const current = localStream?.getVideoTracks()[0]?.getSettings().deviceId ?? state.cameraDeviceId;
+  const index = devices.findIndex((device) => device.deviceId === current);
   const next = devices[(index + 1) % devices.length];
-  if (next) await switchDevice('video', next.deviceId);
+  if (next) await switchCameraDevice(next.deviceId);
+}
+
+/** Any camera switch deferred while screen sharing is applied after the stop. */
+function applyPendingCameraFacing(): void {
+  const facing = pendingCameraFacing;
+  pendingCameraFacing = null;
+  if (facing && facing !== state.cameraFacing) void flipCamera();
 }
 
 /* ------------------------------------------------------------------ controls */
@@ -3034,26 +3264,144 @@ export async function toggleCamera(): Promise<void> {
   }
 }
 
-/** Switch microphone or camera to a different device. */
+/** Switch microphone or camera to a different device (no renegotiation). */
 export async function switchDevice(kind: 'audio' | 'video', deviceId: string): Promise<void> {
+  if (kind === 'video') {
+    await switchCameraDevice(deviceId);
+    return;
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: kind === 'audio' ? { deviceId: { exact: deviceId }, echoCancellation: true, noiseSuppression: true } : false,
-      video: kind === 'video' ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+      audio: {
+        deviceId: { exact: deviceId },
+        echoCancellation: true,
+        noiseSuppression: state.noiseSuppression,
+        autoGainControl: state.noiseSuppression,
+      },
+      video: false,
     });
-    const track = kind === 'audio' ? stream.getAudioTracks()[0] : stream.getVideoTracks()[0];
+    const track = stream.getAudioTracks()[0];
     if (!track) return;
-    await replaceLocalTrack(kind, track);
+    await replaceLocalTrack('audio', track);
+    setState({ inputDeviceId: deviceId, muted: false, notice: 'Microphone switched.' });
+    emitSignal({ kind: 'muted', muted: false });
+    try {
+      window.localStorage.setItem('chatgram.call.mic', deviceId);
+    } catch {
+      /* storage is best effort */
+    }
     void refreshDevices();
-    setState({ notice: kind === 'audio' ? 'Microphone switched.' : 'Camera switched.' });
   } catch {
-    setState({ notice: 'Could not switch that device.' });
+    setState({ notice: 'Could not switch that microphone.' });
+  }
+}
+
+/** Voice processing toggle (noise suppression + AGC on the live audio track). */
+export async function toggleNoiseSuppression(): Promise<void> {
+  const next = !state.noiseSuppression;
+  const track = localStream?.getAudioTracks()[0];
+  if (track) {
+    try {
+      await track.applyConstraints({ noiseSuppression: next, echoCancellation: next, autoGainControl: next });
+    } catch {
+      setState({ notice: 'This device cannot change noise suppression.' });
+      return;
+    }
+  }
+  setState({ noiseSuppression: next, notice: next ? 'Noise suppression on.' : 'Noise suppression off.' });
+  try {
+    window.localStorage.setItem('chatgram.call.noiseSuppression', next ? '1' : '0');
+  } catch {
+    /* storage is best effort */
+  }
+}
+
+/* ------------------------------------------------------- device watching -- */
+
+let deviceWatchAttached = false;
+
+/** Re-enumerate on plug/unplug and fall back gracefully mid-call. */
+function handleDeviceChange(): void {
+  void refreshDevices().then(() => {
+    if (!current) return;
+    const has = (kind: 'audioinput' | 'videoinput' | 'audiooutput', id: string): boolean => {
+      const list = kind === 'audioinput' ? state.devices.audioInput : kind === 'videoinput' ? state.devices.videoInput : state.devices.audioOutput;
+      return list.some((device) => device.deviceId === id);
+    };
+    if (state.inputDeviceId && !has('audioinput', state.inputDeviceId)) {
+      const fallback = state.devices.audioInput[0];
+      if (fallback) {
+        void switchDevice('audio', fallback.deviceId).then(() =>
+          setState({ notice: `Microphone disconnected — switched to ${fallback.label}.` }),
+        );
+      }
+    }
+    const activeCameras = state.devices.videoInput;
+    if (state.cameraDeviceId && !has('videoinput', state.cameraDeviceId) && activeCameras.length > 0 && state.cameraOn && !state.screenSharing) {
+      const fallbackDevice = activeCameras[0];
+      if (fallbackDevice) {
+        void switchCameraDevice(fallbackDevice.deviceId).then(() =>
+          setState({ notice: `Camera disconnected — switched to ${fallbackDevice.label}.` }),
+        );
+      }
+    } else if (state.cameraDeviceId && activeCameras.length === 0 && state.cameraOn && !state.screenSharing) {
+      void replaceLocalTrack('video', null);
+      setState({ cameraOn: false, notice: 'Camera disconnected.' });
+      emitSignal({ kind: 'camera', cameraOn: false });
+    }
+    if (state.sinkId && state.sinkId !== 'default' && !has('audiooutput', state.sinkId)) {
+      void setSpeaker('default');
+    }
+  });
+}
+
+function startDeviceWatch(): void {
+  if (deviceWatchAttached) return;
+  if (!navigator.mediaDevices?.addEventListener) return;
+  navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+  deviceWatchAttached = true;
+}
+
+function stopDeviceWatch(): void {
+  if (!deviceWatchAttached) return;
+  try {
+    navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange);
+  } catch {
+    /* older WebViews */
+  }
+  deviceWatchAttached = false;
+}
+
+/** Restore the remembered microphone/speaker choices once devices are known. */
+async function restorePreferredDevices(): Promise<void> {
+  await refreshDevices();
+  if (!current) return;
+  try {
+    const mic = window.localStorage.getItem('chatgram.call.mic');
+    if (mic && state.devices.audioInput.some((device) => device.deviceId === mic)) {
+      await switchDevice('audio', mic);
+    } else if (state.devices.audioInput[0]) {
+      setState({ inputDeviceId: state.devices.audioInput[0].deviceId });
+    }
+    const camera = window.localStorage.getItem('chatgram.call.cameraDevice');
+    if (camera && state.cameraOn && !state.screenSharing && state.devices.videoInput.some((device) => device.deviceId === camera)) {
+      await switchCameraDevice(camera);
+    }
+    const speaker = window.localStorage.getItem('chatgram.call.speaker');
+    if (speaker && supportsSpeakerSelection()) await setSpeaker(speaker);
+  } catch {
+    /* preferences are best effort */
   }
 }
 
 /** Route remote audio to a chosen speaker, where the browser supports it. */
 export async function setSpeaker(deviceId: string): Promise<void> {
   setState({ sinkId: deviceId });
+  try {
+    window.localStorage.setItem('chatgram.call.speaker', deviceId);
+  } catch {
+    /* storage is best effort */
+  }
   for (const handle of peers.values()) {
     for (const element of document.querySelectorAll<HTMLMediaElement>(`[data-call-audio="${handle.info.id}"]`)) {
       const withSink = element as HTMLMediaElement & { setSinkId?: (id: string) => Promise<void> };

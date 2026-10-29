@@ -93,38 +93,75 @@ export function CallMessageCard({
     );
   };
 
+  // "Message" focuses the conversation composer; the call card itself must not
+  // navigate or send anything (the composer owns sending).
+  const focusComposer = (): void => {
+    const input = document.querySelector<HTMLElement>('[data-testid="composer-input"], textarea, [contenteditable="true"]');
+    if (!input) return;
+    input.focus();
+    input.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  };
+
+  const showSummary = !live && call.status === 'completed' && Boolean(onJoin);
+
   return (
     <div className="my-1 flex justify-center" data-testid="call-card">
-      <div className="flex w-full max-w-[420px] items-center gap-1">
-        <button
-          type="button"
-          onClick={activate}
-          aria-label={actionLabel}
-          title={actionLabel}
-          data-testid="call-history-row"
-          className="group flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-full px-2.5 py-1 text-left transition hover:bg-ink-100/80 dark:hover:bg-white/5"
-        >
-          <StatusIcon call={call} />
-          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink-800 dark:text-ink-100" data-testid="call-card-title">
-            {label}
-          </span>
-          {detail ? (
-            <span className="shrink-0 text-[12px] text-ink-500 dark:text-ink-400" data-testid="call-card-status">
-              · {detail}
-            </span>
-          ) : null}
-          <span className="shrink-0 text-[11px] text-ink-500 dark:text-ink-400">{formatTime(message.sentAt, timeFormat)}</span>
-        </button>
-        {canDecline ? (
+      <div className="flex w-full max-w-[420px] flex-col gap-1">
+        <div className="flex w-full items-center gap-1">
           <button
             type="button"
-            onClick={() => onDecline?.(call)}
-            aria-label="Decline the call"
-            title="Decline"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-rose-500 transition hover:bg-rose-500/10"
+            onClick={activate}
+            aria-label={actionLabel}
+            title={actionLabel}
+            data-testid="call-history-row"
+            className="group flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-full px-2.5 py-1 text-left transition hover:bg-ink-100/80 dark:hover:bg-white/5"
           >
-            <PhoneOff className="h-4 w-4" aria-hidden="true" />
+            <StatusIcon call={call} />
+            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink-800 dark:text-ink-100" data-testid="call-card-title">
+              {label}
+            </span>
+            {detail ? (
+              <span className="shrink-0 text-[12px] text-ink-500 dark:text-ink-400" data-testid="call-card-status">
+                · {detail}
+              </span>
+            ) : null}
+            <span className="shrink-0 text-[11px] text-ink-500 dark:text-ink-400">{formatTime(message.sentAt, timeFormat)}</span>
           </button>
+          {canDecline ? (
+            <button
+              type="button"
+              onClick={() => onDecline?.(call)}
+              aria-label="Decline the call"
+              title="Decline"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-rose-500 transition hover:bg-rose-500/10"
+            >
+              <PhoneOff className="h-4 w-4" aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+        {showSummary ? (
+          <div className="flex items-center gap-2 pl-8 text-[12px]" data-testid="call-summary-actions">
+            <span className="text-ink-500 dark:text-ink-400">
+              {call.durationSeconds > 0 ? `Duration ${formatDuration(call.durationSeconds)}` : 'No answer'}
+            </span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              data-testid="call-summary-back"
+              onClick={activate}
+              className="rounded-full bg-brand-600 px-3 py-1 font-semibold text-white transition hover:bg-brand-700"
+            >
+              Call back
+            </button>
+            <button
+              type="button"
+              data-testid="call-summary-message"
+              onClick={focusComposer}
+              className="rounded-full bg-ink-100 px-3 py-1 font-semibold text-ink-700 transition hover:bg-ink-200 dark:bg-white/10 dark:text-ink-100 dark:hover:bg-white/20"
+            >
+              Message
+            </button>
+          </div>
         ) : null}
       </div>
     </div>
