@@ -52,6 +52,7 @@ import { takeRefreshDraft } from './lib/appUpdate';
 import { ProfilePanelContext, type ProfilePanelApi } from './lib/profilePanel';
 import { dateSeparatorLabel, findQuotedMessage, quoteSnippetOf, sameDay, statusOf, type ReplyQuote } from './lib/ui';
 import { useChatWallpaper } from './lib/wallpaper';
+import { messageKeyOf, useSmartReplies } from './lib/smartReplies';
 import { WallpaperEditor } from './pages/settings/WallpaperPage';
 
 type Tab = 'chats' | 'calls' | 'status' | 'groups' | 'settings' | 'ai';
@@ -191,6 +192,9 @@ function ChatWindow({
     queryKey: ['messages', chat.id],
     queryFn: () => api.messages(chat.id),
   });
+
+  // Opt-in smart replies: nothing is requested unless the Settings toggle is on.
+  const smartReplies = useSmartReplies(chat.id, messageKeyOf(messages.data), readOnly);
 
   // On open (or chat switch) restore a draft saved by the version-refresh banner
   // (Chunk 7D); the ref guard keeps it through React StrictMode's double effect.
@@ -900,6 +904,11 @@ function ChatWindow({
           readOnly={readOnly}
           replyTo={replyTo ? { name: replyTo.name, preview: replyTo.preview } : null}
           onCancelReply={() => setReplyTo(null)}
+          smartReplies={smartReplies.suggestions}
+          onSmartReply={(text: string) => {
+            smartReplies.dismiss();
+            void sendText(text);
+          }}
           notice={notice}
           onDismissNotice={() => setNotice(null)}
         />
@@ -1728,4 +1737,5 @@ export default function App() {
     </>
   );
 }
+
 

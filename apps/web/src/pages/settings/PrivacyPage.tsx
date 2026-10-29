@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Check, ChevronLeft, ChevronRight, Eye, ExternalLink, Flag, Info, Mail, Phone, ShieldCheck, UserRound, UserX,
+  Check, ChevronLeft, ChevronRight, Eye, ExternalLink, Flag, Info, Mail, Phone, ShieldCheck, Timer, UserRound, UserX,
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
@@ -37,7 +37,7 @@ const CHECKUP_STEPS = [
  * Privacy: the existing server-backed switches (unchanged endpoints) plus the
  * protected-messages notice (same wording as before) and a three-step checkup.
  */
-export default function PrivacyPage({ onBack }: SettingsPageProps) {
+export default function PrivacyPage({ onBack, navigate }: SettingsPageProps) {
   const queryClient = useQueryClient();
   const privacy = useQuery({ queryKey: ['privacy'], queryFn: () => api.privacy() });
   const blocked = useQuery({ queryKey: ['blocked-users'], queryFn: () => api.blockedUsers() });
@@ -233,6 +233,16 @@ export default function PrivacyPage({ onBack }: SettingsPageProps) {
         />
       </SettingsGroup>
 
+      <SettingsGroup title="Messages">
+        <SettingsRow
+          icon={Timer}
+          title="Disappearing messages default"
+          subtitle="Off / 24 hours / 7 days / 90 days — new direct chats only"
+          testId="settings-row-disappearing-default"
+          onClick={() => navigate('disappearing-default')}
+        />
+      </SettingsGroup>
+
       <SettingsGroup
         title="Hide my last seen"
         description={`Currently hidden from ${hiddenFrom.length > 0 ? `${hiddenFrom.length} ${hiddenFrom.length === 1 ? 'person' : 'people'}` : 'nobody'}.`}
@@ -334,3 +344,4 @@ export default function PrivacyPage({ onBack }: SettingsPageProps) {
     </SettingsPage>
   );
 }
+

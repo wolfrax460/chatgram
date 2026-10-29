@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Bot, Lightbulb, MessageSquareWarning, Sparkles, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { ReportProblemDialog } from './ReportProblemDialog';
 import type { SettingsPageProps } from './types';
-import { SettingsDialog, SettingsGroup, SettingsNotice, SettingsPage, SettingsRow, SettingsCross, focusRing } from './ui';
+import { SettingsDialog, SettingsGroup, SettingsNotice, SettingsPage, SettingsRow, SettingsCross, SettingsToggle, focusRing } from './ui';
+import { hydrateSuggestedReplies, saveSuggestedReplies, useSuggestedRepliesPref } from '../../lib/settingsPrefs';
 
 interface AiConversation {
   id?: string;
@@ -14,20 +15,37 @@ interface AiConversation {
 /**
  * Chatgram AI: the honest state of each knob.
  *
- * - Suggested replies: no setting exists yet (and it needs to be opt-in and
- *   disclosed), so the row is disabled rather than a switch that does nothing.
- * - Clear AI memory/history: real — it deletes the user's AI conversations
+ * - Suggested replies: real opt-in toggle, persisted on the account via
+ *   GET/PUT /api/users/me/ai-settings (local fallback if that route is missing).
+ * - Clear AI memory/history: real — deletes the user's AI conversations
  *   through the existing /api/ai/conversations endpoints.
  * - Report a bad answer: reuses the Help report flow (same endpoint + local
  *   fallback prompt).
  */
 export default function AiPage({ onBack }: SettingsPageProps) {
+  const [suggestedReplies] = useSuggestedRepliesPref();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [count, setCount] = useState<number | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+
+  // Mirror the account setting once when the page opens.
+  useEffect(() => {
+    void hydrateSuggestedReplies();
+  }, []);
+
+  async function toggleSuggestedReplies(next: boolean) {
+    setError('');
+    setNotice('');
+    const outcome = await saveSuggestedReplies(next);
+    if (outcome === 'fallback') {
+      setNotice('Saved on this device only — the server setting is not available yet.');
+    } else if (outcome === 'error') {
+      setError('Could not save the suggested-replies setting. Try again.');
+    }
+  }
 
   async function clearHistory() {
     setBusy(true);
@@ -63,18 +81,18 @@ export default function AiPage({ onBack }: SettingsPageProps) {
       {notice ? <div className="mb-2"><SettingsNotice tone="success">{notice}</SettingsNotice></div> : null}
 
       <SettingsGroup title="Assistance">
-        <SettingsRow
+        <SettingsToggle
           icon={Sparkles}
           title="Suggested replies"
-          subtitle="Let Chatgram AI propose quick replies in conversations (opt-in, answers are processed by a third-party provider)"
-          badge="Coming soon"
-          disabled
-          testId="settings-ai-suggestions"
+          subtitle="Opt-in. When on, the last 5 messages are sent to the AI provider (redacted, never stored) and up to three quick replies appear above the composer."
+          checked={suggestedReplies}
+          onChange={(next) => void toggleSuggestedReplies(next)}
+          testId="settings-suggested-replies"
         />
         <div className="px-4 pb-3">
           <SettingsCross>
-            Suggested replies will be opt-in and off by default; the row stays disabled until the feature ships so
-            nothing is silently enabled.
+            Off by default. Replies are generated for the open conversation only and are discarded when you type or
+            send. The provider receives no names, phone numbers or email addresses from this app.
           </SettingsCross>
         </div>
       </SettingsGroup>
@@ -153,3 +171,6 @@ export default function AiPage({ onBack }: SettingsPageProps) {
     </SettingsPage>
   );
 }
+
+
+

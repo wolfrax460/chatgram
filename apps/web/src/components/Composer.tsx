@@ -42,6 +42,10 @@ export interface ComposerProps {
    * are disabled, with the same banner message used at the top of the app.
    */
   readOnly?: boolean;
+  /** Opt-in smart replies for this conversation (empty when off or loading). */
+  smartReplies?: string[];
+  /** Tap a chip: WhatsApp fills and sends in one tap. */
+  onSmartReply?: (text: string) => void;
 }
 
 /**
@@ -63,6 +67,8 @@ export default function Composer({
   textOnly = false,
   placeholder,
   readOnly = false,
+  smartReplies,
+  onSmartReply,
 }: ComposerProps) {
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -292,6 +298,31 @@ export default function Composer({
             dismiss
           </button>
         </p>
+      ) : null}
+
+      {/* Smart replies (opt-in): one tap sends, typing or sending dismisses them. */}
+      {smartReplies && smartReplies.length > 0 && !draft.trim() && !readOnly && !busy ? (
+        <div
+          data-testid="smart-replies"
+          aria-label="Suggested replies"
+          className="mx-3 mt-2 flex flex-wrap items-center gap-1.5"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-wider text-ink-500 dark:text-ink-400">
+            Suggested
+          </span>
+          {smartReplies.map((suggestion, index) => (
+            <button
+              key={`${index}-${suggestion}`}
+              type="button"
+              data-testid="smart-reply-chip"
+              title={suggestion}
+              onClick={() => onSmartReply?.(suggestion)}
+              className="max-w-full truncate rounded-full border border-brand-600/30 bg-brand-600/5 px-3 py-1 text-[12px] font-medium text-brand-700 transition hover:bg-brand-600/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/70 focus-visible:ring-offset-1 dark:border-brand-400/25 dark:bg-brand-500/10 dark:text-brand-300 dark:hover:bg-brand-500/20"
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
       ) : null}
 
       {readOnly ? (

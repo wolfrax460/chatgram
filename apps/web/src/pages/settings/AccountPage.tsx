@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KeyRound, LogOut, ShieldOff, Smartphone, Trash2, UserRound } from 'lucide-react';
+import { Clock, KeyRound, LogOut, ShieldOff, Smartphone, Trash2, UserRound } from 'lucide-react';
 import { useSession } from '@chatgram/core';
 import { api } from '../../lib/api';
 import { unregisterPushToken } from '../../lib/nativeNotifications';
@@ -90,6 +90,16 @@ export default function AccountPage({ onBack, navigate }: SettingsPageProps) {
           subtitle="This device is signed in. Sign out every other session."
           testId="settings-active-sessions"
           onClick={() => setSessionsOpen(true)}
+        />
+      </SettingsGroup>
+
+      <SettingsGroup title="Automation">
+        <SettingsRow
+          icon={Clock}
+          title="Auto-reply"
+          subtitle="Send an automatic reply when you are away"
+          testId="settings-row-auto-reply"
+          onClick={() => navigate('auto-reply')}
         />
       </SettingsGroup>
 
@@ -188,3 +198,4 @@ export default function AccountPage({ onBack, navigate }: SettingsPageProps) {
     </SettingsPage>
   );
 }
+

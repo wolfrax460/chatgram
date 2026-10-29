@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BookOpen, Download, ExternalLink, LifeBuoy, MessageCircle, Send } from 'lucide-react';
+import { BookOpen, ExternalLink, LifeBuoy, MessageCircle, Send, Sparkles } from 'lucide-react';
 import { api, APP_VERSION } from '../../lib/api';
 import { DesktopUpdateCard } from '../../components/DesktopUpdateCard';
 import { AndroidUpdateCard } from '../../components/AndroidUpdateCard';
@@ -10,6 +10,7 @@ import { RowDivider, SettingsGroup, SettingsLinkRow, SettingsNotice, SettingsPag
 /** Help: the existing help centre/assistant, support chat, report flow and legal links. */
 export default function HelpPage({
   onBack,
+  navigate,
   onOpenSupport,
 }: SettingsPageProps & { onOpenSupport: (chatId: string) => void }) {
   const [error, setError] = useState('');
@@ -85,12 +86,12 @@ export default function HelpPage({
       <SettingsGroup title="App">
         <SettingsRow icon={LifeBuoy} title="Chatgram" subtitle={`Version ${APP_VERSION}`} testId="settings-version" />
         <RowDivider />
-        <SettingsLinkRow
-          icon={Download}
+        <SettingsRow
+          icon={Sparkles}
           title="What's new"
-          subtitle="Release notes and downloads"
-          href="/docs/"
+          subtitle="Release notes for every platform"
           testId="settings-whats-new"
+          onClick={() => navigate('whats-new')}
         />
         <div className="px-4 pb-3">
           <SettingsCross>The server address is deliberately not shown here.</SettingsCross>
@@ -112,3 +113,5 @@ export default function HelpPage({
     </SettingsPage>
   );
 }
+
+

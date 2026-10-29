@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Bell, Bot, Check, Copy, HardDrive, Info, LifeBuoy, Search, Settings as SettingsIcon,
-  ShieldCheck, UserRound, UserRoundPlus, MessageCircle,
+  Bell, Bot, Check, Clock, Copy, HardDrive, Info, LifeBuoy, Search, Settings as SettingsIcon,
+  ShieldCheck, Sparkles, Timer, UserRound, UserRoundPlus, MessageCircle,
 } from 'lucide-react';
 import { useSession } from '@chatgram/core';
 import AccountPage from './settings/AccountPage';
 import AiPage from './settings/AiPage';
+import AutoReplyPage from './settings/AutoReplyPage';
 import ChatsPage from './settings/ChatsPage';
 import DeleteAccountPage from './settings/DeleteAccountPage';
+import DisappearingDefaultPage from './settings/DisappearingDefaultPage';
 import HelpPage from './settings/HelpPage';
 import InvitePage from './settings/InvitePage';
 import NotificationsPage from './settings/NotificationsPage';
@@ -15,6 +17,7 @@ import PrivacyPage from './settings/PrivacyPage';
 import ProfilePage from './settings/ProfilePage';
 import StoragePage from './settings/StoragePage';
 import WallpaperPage from './settings/WallpaperPage';
+import WhatsNewPage from './settings/WhatsNewPage';
 import type { SettingsRoute } from './settings/types';
 import { SettingsRow, focusRing, useCopyToClipboard } from './settings/ui';
 
@@ -48,8 +51,8 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
         route: 'account',
         icon: UserRound,
         title: 'Account',
-        subtitle: 'Sign-in details, password, two-factor, sessions, delete account',
-        keywords: 'email phone password security two factor 2fa sessions logout delete',
+        subtitle: 'Sign-in details, password, two-factor, sessions, auto-reply, delete account',
+        keywords: 'email phone password security two factor 2fa sessions logout delete auto reply away vacation',
         testId: 'settings-row-account',
       },
       {
@@ -57,7 +60,7 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
         icon: ShieldCheck,
         title: 'Privacy',
         subtitle: 'Who can see your info, blocked users, disappearing messages',
-        keywords: 'online last seen profile photo about phone email receipts groups blocked checkup',
+        keywords: 'online last seen profile photo about phone email receipts groups blocked checkup disappearing ephemeral timer default',
         testId: 'settings-row-privacy',
       },
       {
@@ -89,7 +92,7 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
         icon: Bot,
         title: 'Chatgram AI',
         subtitle: 'Suggested replies, clear AI history, report a bad answer',
-        keywords: 'assistant memory history suggested replies feedback',
+        keywords: 'assistant memory history suggested replies smart chips feedback',
         testId: 'settings-row-ai',
       },
       {
@@ -97,7 +100,7 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
         icon: LifeBuoy,
         title: 'Help',
         subtitle: 'Help centre, contact support, report a problem, terms',
-        keywords: 'support guide report problem terms privacy version what\'s new',
+        keywords: 'support guide report problem terms privacy version what\'s new changelog release notes updates',
         testId: 'settings-row-help',
       },
       {
@@ -107,6 +110,49 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
         subtitle: 'Share your invite link',
         keywords: 'share link invite friend',
         testId: 'settings-row-invite',
+      },
+    ],
+    [],
+  );
+
+  /**
+   * Rows that only live inside a sub-page but must be findable from the search
+   * (auto-reply, disappearing default, What's new, suggested replies). They are
+   * rendered only while searching and open the page that hosts them.
+   */
+  const searchOnlyRows: ListRow[] = useMemo(
+    () => [
+      {
+        route: 'auto-reply',
+        icon: Clock,
+        title: 'Auto-reply',
+        subtitle: 'Account · automatic reply when you are away',
+        keywords: 'auto reply away vacation out of office automation schedule audience',
+        testId: 'settings-search-auto-reply',
+      },
+      {
+        route: 'disappearing-default',
+        icon: Timer,
+        title: 'Disappearing messages default',
+        subtitle: 'Privacy · new direct chats only',
+        keywords: 'disappearing messages timer ephemeral 24 hours 7 days 90 days default',
+        testId: 'settings-search-disappearing-default',
+      },
+      {
+        route: 'whats-new',
+        icon: Sparkles,
+        title: "What's new",
+        subtitle: 'Help · release notes and changelog',
+        keywords: 'whats new changelog release notes updates version',
+        testId: 'settings-search-whats-new',
+      },
+      {
+        route: 'ai',
+        icon: Sparkles,
+        title: 'Suggested replies',
+        subtitle: 'Chatgram AI · opt-in smart replies in the composer',
+        keywords: 'suggested replies smart chips opt in ai composer',
+        testId: 'settings-search-suggested-replies',
       },
     ],
     [],
@@ -126,9 +172,10 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
   }, []);
 
   const needle = query.trim().toLowerCase();
+  const matches = (row: ListRow) => `${row.title} ${row.subtitle} ${row.keywords}`.toLowerCase().includes(needle);
   const filtered = needle
-    ? rows.filter((row) =>
-        `${row.title} ${row.subtitle} ${row.keywords}`.toLowerCase().includes(needle),
+    ? [...rows.filter(matches), ...searchOnlyRows.filter(matches)].filter(
+        (row, index, list) => list.findIndex((other) => other.testId === row.testId) === index,
       )
     : rows;
 
@@ -152,10 +199,14 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
         return <ProfilePage onBack={onBack} navigate={setRoute} />;
       case 'account':
         return <AccountPage onBack={onBack} navigate={setRoute} />;
+      case 'auto-reply':
+        return <AutoReplyPage onBack={onBack} navigate={setRoute} />;
       case 'delete-account':
         return <DeleteAccountPage onBack={onBack} navigate={setRoute} />;
       case 'privacy':
         return <PrivacyPage onBack={onBack} navigate={setRoute} />;
+      case 'disappearing-default':
+        return <DisappearingDefaultPage onBack={onBack} navigate={setRoute} />;
       case 'chats':
         return <ChatsPage onBack={onBack} navigate={setRoute} />;
       case 'wallpaper':
@@ -168,6 +219,8 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
         return <AiPage onBack={onBack} navigate={setRoute} />;
       case 'help':
         return <HelpPage onBack={onBack} navigate={setRoute} onOpenSupport={onOpenSupport} />;
+      case 'whats-new':
+        return <WhatsNewPage onBack={onBack} navigate={setRoute} />;
       case 'invite':
         return <InvitePage onBack={onBack} navigate={setRoute} />;
       default:
@@ -262,11 +315,11 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
 
         <div role="list" aria-label="Settings sections">
           {filtered.map((row) => (
-            <div role="listitem" key={row.route}>
+            <div role="listitem" key={row.testId}>
               <SettingsRow
                 icon={row.icon}
                 title={row.title}
-                subtitle={needle ? undefined : row.subtitle}
+                subtitle={row.subtitle}
                 onClick={() => open(row.route)}
                 testId={row.testId}
               />

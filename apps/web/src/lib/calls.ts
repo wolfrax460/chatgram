@@ -63,6 +63,8 @@ export interface CallParticipant {
   incomingVideoOff?: boolean;
   /** This participant's video tile should be treated as camera-off. */
   videoOff?: boolean;
+  /** This person's client can host remote control of their shared screen. */
+  controlCapable?: boolean;
 }
 
 /** In-call state signal, relayed by the server via call:signal / call:participant-state. */
@@ -73,6 +75,11 @@ export interface CallSignal {
   screenSharing?: boolean;
   sharingKind?: 'screen' | 'window' | 'browser';
   hasSystemAudio?: boolean;
+  /**
+   * Advertised by the sharer: whether their client can inject remote-control
+   * input (Windows desktop app). Absent = older client that did not say.
+   */
+  controlCapable?: boolean;
   /** For 'incoming-video-off': true = that person stopped receiving video. */
   off?: boolean;
 }
@@ -165,6 +172,12 @@ export interface CallDiagnostics {
   screenLossPct: number | null;
   /** True when the share bitrate has been under SCREEN_LOW_KBPS for SCREEN_LOW_MS. */
   screenLow: boolean;
+  /** This client can host remote control (Windows desktop bridge available). */
+  controlLocal: boolean;
+  /** The remote sharer's client can host control (null = not advertised). */
+  controlRemote: boolean | null;
+  /** A control data channel is open. */
+  controlChannel: boolean;
 }
 
 
@@ -241,6 +254,10 @@ export interface CallState {
   controlPeerId: string | null;
   /** Honest reason when control is unavailable/refused (never keystrokes). */
   controlMessage: string | null;
+  /** Viewer: can the remote sharer's client host control (null = not advertised)? */
+  controlHostCapable: boolean | null;
+  /** Viewer: a `control` data channel is open to at least one peer. */
+  controlChannelReady: boolean;
 }
 
 /** Honest mesh caps, mirrored from the server. */
@@ -278,6 +295,8 @@ const IDLE: CallState = {
   controlStatus: 'idle',
   controlPeerId: null,
   controlMessage: null,
+  controlHostCapable: null,
+  controlChannelReady: false,
   minimised: false,
   videoRequest: null,
   videoUpgradePending: false,

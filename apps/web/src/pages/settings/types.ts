@@ -3,14 +3,17 @@ export type SettingsRoute =
   | 'list'
   | 'profile'
   | 'account'
+  | 'auto-reply'
   | 'delete-account'
   | 'privacy'
+  | 'disappearing-default'
   | 'chats'
   | 'wallpaper'
   | 'notifications'
   | 'storage'
   | 'ai'
   | 'help'
+  | 'whats-new'
   | 'invite';
 
 /** Props every settings sub-page receives. */
@@ -21,4 +24,5 @@ export interface SettingsPageProps {
 }
 
 export type SettingsNoticeTone = 'info' | 'success' | 'error' | 'warning';
+
 
