@@ -10,10 +10,37 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from 'react';
 import {
-  Camera, CameraOff, ChevronDown, Grid2x2, Maximize2, MessageCircle, MessageSquare, Mic, MicOff, Minimize2,
-  MoreHorizontal, Pause, Phone, PhoneOff, PictureInPicture2, Pin, PinOff, ScreenShare, Settings2, Signal, SignalLow,
-  SignalMedium, SwitchCamera, UserPlus, Users, Video, VideoOff, Volume2, VolumeX, X,
-} from 'lucide-react';
+  ArrowsClockwise as SwitchCamera,
+  ArrowsInSimple as Minimize2,
+  ArrowsOutSimple as Maximize2,
+  Camera,
+  CameraSlash as CameraOff,
+  CaretDown as ChevronDown,
+  CellSignalHigh as Signal,
+  CellSignalLow as SignalLow,
+  CellSignalMedium as SignalMedium,
+  ChatCircle as MessageCircle,
+  ChatCircleText as MessageSquare,
+  DotsThree as MoreHorizontal,
+  Microphone as Mic,
+  MicrophoneSlash as MicOff,
+  MonitorArrowUp as ScreenShare,
+  Pause,
+  Phone,
+  PhoneDisconnect as PhoneOff,
+  PictureInPicture as PictureInPicture2,
+  PushPin as Pin,
+  PushPinSlash as PinOff,
+  SlidersHorizontal as Settings2,
+  SpeakerHigh as Volume2,
+  SpeakerLow as VolumeX,
+  SquaresFour as Grid2x2,
+  UserPlus,
+  Users,
+  VideoCamera as Video,
+  VideoCameraSlash as VideoOff,
+  X,
+} from '@phosphor-icons/react/dist/ssr';
 import {
   MAX_AUDIO_PARTICIPANTS,
   MAX_VIDEO_PARTICIPANTS,
@@ -584,7 +611,7 @@ function RemoteTile({
         <div className="relative flex flex-col items-center justify-center gap-2 p-4 text-center">
           {/* The only remote audio sink while no video element is mounted. */}
           <audio ref={audio} autoPlay playsInline className="hidden" aria-hidden="true" />
-          <Avatar name={participant.displayName} url={participant.avatarUrl} className="h-20 w-20 text-2xl" />
+          <Avatar name={participant.displayName} url={participant.avatarUrl} className="h-24 w-24 text-3xl sm:h-28 sm:w-28" />
           <span className="text-sm font-semibold">{participant.displayName ?? 'Chatgram user'}</span>
           {sharing ? (
             <span className="inline-flex items-center gap-1 text-[11px] text-emerald-200/90" data-testid="remote-screen-waiting">
@@ -592,7 +619,7 @@ function RemoteTile({
             </span>
           ) : participant.incomingVideoOff ? (
             <span className="inline-flex items-center gap-1 text-[11px] text-white/70" data-testid="remote-video-off-for-you">
-              <VolumeX className="h-3.5 w-3.5" /> Incoming video off for you
+              <VideoOff className="h-3.5 w-3.5" /> Incoming video off for you
             </span>
           ) : participant.cameraOn === false || participant.videoOff ? (
             <span className="inline-flex items-center gap-1 text-[11px] text-white/70" data-testid="remote-camera-off">
@@ -743,6 +770,16 @@ export function CallOverlay({ call }: { call: CallState }) {
   const [onHold, setOnHold] = useState(false);
   const routeAppliedRef = useRef(false);
   const routeTouchedRef = useRef(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // ONE toast at the top of the control area (never over a button), 3 s auto-hide.
+  useEffect(() => {
+    const next = routeNotice ?? call.notice ?? null;
+    if (!next) return undefined;
+    setToast(next);
+    const timer = window.setTimeout(() => setToast(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [routeNotice, call.notice]);
 
   // Local "hold": the server has no hold concept, so this is an honest local
   // microphone mute with an "On hold" state, never a fake server-side hold.
@@ -763,7 +800,9 @@ export function CallOverlay({ call }: { call: CallState }) {
   const showVideo = call.video && !call.audioOnly;
   const remoteCount = call.participants.length;
   const cap = call.video ? MAX_VIDEO_PARTICIPANTS : MAX_AUDIO_PARTICIPANTS;
-  const showSelfView = showVideo && remoteCount > 0;
+  // While calling/ringing/connecting the middle stage is the OTHER person.
+  const ringingStage = (call.status === 'calling' || call.status === 'connecting') && !call.screenSharing;
+  const showSelfView = showVideo && (remoteCount > 0 || ringingStage);
   const qualityVisible = call.status === 'active' && call.quality !== 'unknown';
   const screenShareSupported = isScreenSharingSupported();
   const participantIds = useMemo(() => call.participants.map((participant) => participant.id), [call.participants]);
@@ -1355,15 +1394,24 @@ export function CallOverlay({ call }: { call: CallState }) {
   const controlUnknownReason = "The other person's app cannot be controlled (control needs the Windows app)";
   const controlConnectingReason = 'Connecting the control channel…';
   const gridClass = galleryGridClass(remoteCount);
+  // Middle stage peer for calling/ringing (ringingStage is computed above).
+  const otherParticipant = prominent ?? call.participants[0] ?? null;
+  const otherName = otherParticipant?.displayName || call.title || 'Chatgram user';
+  const otherAvatar = otherParticipant?.avatarUrl ?? null;
 
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 z-[70] flex flex-col bg-gradient-to-b from-ink-900 via-ink-900 to-black text-white"
+      className="fixed inset-0 z-[70] flex h-[100dvh] flex-col overflow-hidden bg-gradient-to-b from-ink-900 via-ink-900 to-black text-white"
       role="dialog"
       aria-label={call.isGroup ? 'Group call' : 'Call'}
       data-testid="call-overlay"
     >
+      {/* full-screen backdrop = the other person's blurred avatar (or gradient) */}
+      {otherAvatar ? (
+        <img src={otherAvatar} alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-30 blur-3xl" />
+      ) : null}
+      <div className="pointer-events-none absolute inset-0 bg-black/45 backdrop-blur-2xl dark:bg-black/50" aria-hidden="true" />
       {/* header: centred name + ONE status line; quality pill floats right */}
       <div ref={headerRef} className="relative flex shrink-0 flex-col items-center gap-0.5 px-12 pb-1 pt-[max(0.75rem,env(safe-area-inset-top))] text-center">
         <div className="min-w-0 max-w-full">
@@ -1387,7 +1435,7 @@ export function CallOverlay({ call }: { call: CallState }) {
               onClick={() => setMenu(menu === 'connection' ? null : 'connection')}
             >
               <QualityIcon className="h-4 w-4" />
-              {qualityLabel(call.quality)}
+              <span className="hidden sm:inline">{qualityLabel(call.quality)}</span>
               <ChevronDown className="h-3 w-3" />
             </button>
             {menu === 'connection' ? (
@@ -1411,23 +1459,6 @@ export function CallOverlay({ call }: { call: CallState }) {
           </div>
         ) : null}
       </div>
-
-      {/* local hold pill (top-left, glass) */}
-      {inCall ? (
-        <div className="absolute left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20">
-          <button
-            type="button"
-            data-testid="call-hold"
-            aria-pressed={onHold}
-            onClick={toggleHold}
-            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-[11.5px] font-semibold backdrop-blur hover:bg-black/55"
-            title="Local hold: mutes your microphone (calls have no server-side hold)"
-          >
-            <Pause className="h-3.5 w-3.5" aria-hidden="true" />
-            {onHold ? 'Resume call' : 'Hold this call'}
-          </button>
-        </div>
-      ) : null}
 
       {/* stage */}
       {call.mediaStalled ? (
@@ -1689,7 +1720,23 @@ export function CallOverlay({ call }: { call: CallState }) {
           </div>
         ) : null}
 
-        {showVideo ? (
+        {ringingStage ? (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden px-6 text-center" data-testid="call-ringing-stage">
+            <div className="relative grid place-items-center">
+              <span
+                className="absolute h-[min(32vh,16rem)] w-[min(32vh,16rem)] rounded-full bg-brand-500/20 motion-safe:animate-ping"
+                aria-hidden="true"
+              />
+              <span
+                className="absolute h-[min(32vh,16rem)] w-[min(32vh,16rem)] rounded-full bg-brand-500/10 motion-safe:animate-pulse"
+                aria-hidden="true"
+              />
+              <Avatar name={otherName} url={otherAvatar} className="relative h-[min(26vh,12rem)] w-[min(26vh,12rem)] text-4xl shadow-2xl" />
+            </div>
+            <p className="max-w-full truncate text-xl font-bold sm:text-2xl" data-testid="ringing-peer-name">{otherName}</p>
+            <p className="text-[13px] text-white/70" data-testid="ringing-peer-status">{statusLine(call)}</p>
+          </div>
+        ) : showVideo ? (
           <div className="flex h-full min-h-0 flex-col gap-2">
             {(layout === 'speaker' && remoteCount > 0) || remoteSharer !== null || call.screenSharing ? (
               <div className="relative h-full min-h-0 flex-1">
@@ -1879,28 +1926,23 @@ export function CallOverlay({ call }: { call: CallState }) {
         </div>
       ) : null}
 
-      {routeNotice ? (
-        <div className="pointer-events-none absolute inset-x-4 bottom-24 z-40 flex justify-center">
-          <p className="rounded-full bg-black/70 px-3 py-1.5 text-center text-[12px] text-white/90" role="status" data-testid="call-route-notice">{routeNotice}</p>
-        </div>
-      ) : call.notice ? (
-        <div className="pointer-events-none absolute inset-x-4 bottom-24 z-40 flex justify-center">
-          <p className="rounded-full bg-black/70 px-3 py-1.5 text-center text-[12px] text-white/90" role="status">{call.notice}</p>
-        </div>
-      ) : null}
-
-      {showVideo && call.muted ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center">
-          <p className="rounded-full bg-black/70 px-3 py-1 text-[12px] font-semibold text-rose-200" data-testid="youre-muted">You're muted</p>
-        </div>
-      ) : null}
+      {/* notices are shown once as the toast above the control grid */}
 
       {/* controls: 3×2 glass round controls, big red End centred below */}
       <div
         ref={controlsRef}
-        className="relative z-10 flex shrink-0 flex-col items-center gap-3 px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+        className="relative z-10 flex shrink-0 flex-col items-center gap-2 px-2 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
       >
-        <div className="grid w-full max-w-sm grid-cols-3 place-items-center gap-x-2 gap-y-3">
+        {toast ? (
+          <p
+            className="max-w-[92%] whitespace-normal break-words rounded-full border border-white/10 bg-black/75 px-3 py-1.5 text-center text-[12px] text-white/90 backdrop-blur"
+            role="status"
+            data-testid="call-toast"
+          >
+            {toast}
+          </p>
+        ) : null}
+        <div className="grid w-full max-w-sm grid-cols-3 place-items-center gap-x-2 gap-y-2">
           <CallControl
             testId="call-control-mute"
             label={call.muted ? 'Unmute' : 'Mute'}
@@ -1908,7 +1950,7 @@ export function CallOverlay({ call }: { call: CallState }) {
             onClick={() => void toggleMute()}
             title={call.muted ? 'Unmute microphone (M)' : 'Mute microphone (M)'}
           >
-            {call.muted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+            {call.muted ? <MicOff className="h-5 w-5" weight="fill" /> : <Mic className="h-5 w-5" weight="regular" />}
           </CallControl>
 
           <CallControl
@@ -1927,7 +1969,7 @@ export function CallOverlay({ call }: { call: CallState }) {
                     : 'Speaker switching is not available on this device'
             }
           >
-            {speakerActive ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+            {speakerActive ? <Volume2 className="h-5 w-5" weight="fill" /> : <VolumeX className="h-5 w-5" weight="regular" />}
           </CallControl>
 
           <CallControl
@@ -1937,7 +1979,7 @@ export function CallOverlay({ call }: { call: CallState }) {
             onClick={call.video ? () => void toggleCamera() : requestVideoUpgrade}
             title={call.video ? (call.cameraOn ? 'Turn camera off (V)' : 'Turn camera on (V)') : 'Switch this call to video'}
           >
-            {call.video && call.cameraOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+            {call.video && call.cameraOn ? <Video className="h-5 w-5" weight="fill" /> : <VideoOff className="h-5 w-5" weight="regular" />}
           </CallControl>
 
           <CallControl
@@ -1950,22 +1992,27 @@ export function CallOverlay({ call }: { call: CallState }) {
             <MessageCircle className="h-5 w-5" />
           </CallControl>
 
+          <CallControl
+            testId="call-control-add"
+            label="Add person"
+            onClick={() => {
+              if (call.isGroup) setParticipantsOpen(true);
+              else setAddParticipantOpen(true);
+            }}
+            title={call.isGroup ? 'Participants' : 'Add someone to this call'}
+          >
+            <UserPlus className="h-5 w-5" />
+          </CallControl>
+
           <CallControl testId="call-control-more" label="More" onClick={() => setMoreOpen(true)} title="More call actions">
             <MoreHorizontal className="h-5 w-5" />
           </CallControl>
         </div>
 
         <CallControl testId="call-control-end" label="End call" danger onClick={hangUp} title="End the call">
-          <PhoneOff className="h-7 w-7" fill="currentColor" />
+          <PhoneOff className="h-7 w-7" weight="fill" />
         </CallControl>
       </div>
-
-      {call.cameraOn === false && call.video && !call.screenSharing ? (
-        <p className="relative z-10 -mt-1 pb-2 text-center text-[11.5px] text-white/65" data-testid="camera-off-note">
-          Camera off — others can still hear your audio.
-        </p>
-      ) : null}
-
       {/* More sheet: everything that is not a primary control lives here. */}
       {moreOpen ? (
         <div
@@ -2066,6 +2113,20 @@ export function CallOverlay({ call }: { call: CallState }) {
               </MoreAction>
 
               <MoreAction
+                testId="call-more-hold"
+                label={onHold ? 'Resume call' : 'Hold this call'}
+                active={onHold}
+                title="Local hold: mutes your microphone (calls have no server-side hold)"
+                onClick={() => { toggleHold(); setMoreOpen(false); }}
+              >
+                <Pause className="h-5 w-5" weight={onHold ? 'fill' : 'regular'} />
+              </MoreAction>
+
+              <MoreAction testId="call-more-mute" label="Mute" active={call.muted} onClick={() => void toggleMute()} title={call.muted ? 'Unmute microphone (M)' : 'Mute microphone (M)'}>
+                {call.muted ? <MicOff className="h-5 w-5" weight="fill" /> : <Mic className="h-5 w-5" weight="regular" />}
+              </MoreAction>
+
+              <MoreAction
                 testId="incoming-video-toggle"
                 label={call.incomingVideoOff ? 'Incoming video on' : 'Incoming video off'}
                 active={call.incomingVideoOff}
@@ -2086,7 +2147,7 @@ export function CallOverlay({ call }: { call: CallState }) {
 
               {call.video ? (
                 <MoreAction testId="call-more-audio-only" label="Audio only" onClick={() => void switchToAudioOnly()}>
-                  <VolumeX className="h-5 w-5" />
+                  <VideoOff className="h-5 w-5" />
                 </MoreAction>
               ) : null}
 
