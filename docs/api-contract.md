@@ -483,6 +483,64 @@ redacted, at most 10 commands per chat per minute.
 GitHub issue line when one exists, followed by a second message carrying the
 ready-to-use prompt (redacted); the alert keeps working unchanged without GitHub.
 
+### Smart reply suggestions (opt-in)
+
+`POST /api/ai/suggest-replies` (signed-in user) body `{ chatId }` →
+`200 { suggestions: string[] }` (0–3 items). The user must opt in with
+`GET/PUT /api/users/me/ai-settings` → `{ suggestReplies: boolean }` (**default
+`false`**; also mirrored in `GET/PUT /api/users/me/notifications`).
+
+- Reads the last 5 text messages of the chat (media and AI/bot/support senders
+  excluded); the transcript is redacted with the existing AI redaction helper
+  before it reaches the provider (NVIDIA Nemotron first, then the configured
+  fallback chain). Nothing is stored — no transcript, no suggestions.
+- The provider is asked for exactly 3 short replies in the conversation
+  language; output is deduped, trimmed, capped at 120 chars, and lines with
+  links/emails/phones are dropped.
+- Any provider failure returns `200 { suggestions: [] }` (never an error).
+- Rate limit: **20 requests per user per hour** → `429 { code: 'RATE_LIMITED' }`.
+  An invalid `chatId` is `400 { code: 'INVALID_CHAT' }`.
+
+### Auto-reply / away message
+
+`GET/PUT /api/users/me/auto-reply` → `{ enabled, message, schedule, startTime,
+endTime, audience }`:
+`enabled` default `false`, `message` ≤500 chars, `schedule` `always` |
+`outside-hours` (the "between start and end" window; overnight windows such as
+`18:00`–`08:00` wrap), `audience` `contacts` | `everyone`. Validation errors:
+`code` `MESSAGE_REQUIRED`, `MESSAGE_TOO_LONG`, `INVALID_SCHEDULE`, `INVALID_TIME`,
+`INVALID_AUDIENCE`, `INVALID_ENABLED`.
+
+Behaviour in the message-send path (REST and socket), for **direct chats only**:
+when the recipient has it enabled, the local time is inside the window and the
+sender is in the audience, the server stores a message from the recipient with
+`autoReply: true` and the configured text. Groups, blocked pairs and the
+AI/bot/support accounts never receive one; at most **one per sender per 24 h**
+and **30 per recipient per day**; an auto-reply message can never trigger another
+auto-reply. Clients should render `autoReply: true` as "Automatic reply".
+
+### Disappearing messages default
+
+`GET/PUT /api/users/me/disappearing-default` → `{ duration, seconds }` where
+`duration` is `off` (default) | `24h` | `7d` | `90d`; PUT accepts
+`{ duration }` (also `value`/`default`). Invalid → `400 INVALID_DURATION`.
+
+- Applied **only to new direct chats**: the chat is created with the creator's
+  default; existing chats are never modified. **Groups do not inherit it**
+  (conservative rule; per-chat settings stay independent).
+- Per-chat setting: `GET/PUT /api/chats/:id/disappearing` (`{ disappearing }`)
+  for chat participants. Messages sent in a chat with a non-off setting get
+  `expiresAt`; readers (`GET /api/messages`) hide expired messages. `off` keeps
+  the existing forever behaviour.
+
+### Changelog
+
+`GET /api/app/changelog?limit=20` (public) → `{ entries: [{ version, platform,
+releasedAt, notes, url? }], generatedAt }`. Published, non-withdrawn AppRelease
+rows are merged with the curated web-only entries in
+`server/src/data/changelog.js`; newest first; `limit` is clamped to 1–50
+(default 20); `Cache-Control: public, max-age=300`.
+
 ### Maintenance / read-only gate
 
 While `GET /api/app/features` reports `maintenanceMode: true`, every `/api/*`

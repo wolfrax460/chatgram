@@ -145,6 +145,22 @@ const userSchema = new mongoose.Schema({
     dndStart: { type: String, default: '22:00' },
     dndEnd: { type: String, default: '07:00' },
   },
+  // Per-user AI preferences (opt-in, default off). `suggestReplies` is exposed by
+  // GET/PUT /api/users/me/ai-settings and in the notification-settings payload.
+  suggestReplies: { type: Boolean, default: false },
+  // Auto-reply / away message (GET/PUT /api/users/me/auto-reply).
+  autoReply: {
+    enabled: { type: Boolean, default: false },
+    message: { type: String, default: '', maxlength: 500 },
+    schedule: {
+      mode: { type: String, enum: ['always', 'outsideHours'], default: 'always' },
+      start: { type: String, default: '18:00' },
+      end: { type: String, default: '08:00' },
+    },
+    audience: { type: String, enum: ['contacts', 'everyone'], default: 'contacts' },
+  },
+  // Global disappearing-messages default applied to NEW direct chats only.
+  disappearingDefault: { type: String, enum: ['off', '24h', '7d', '90d'], default: 'off' },
   // Empty-screen recommendation keys this user dismissed (item 4).
   dismissedRecommendations: { type: [String], default: [] },
   // Users this account has blocked, and chats this account muted.

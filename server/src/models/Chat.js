@@ -7,6 +7,13 @@ const chatSchema = new mongoose.Schema({
     enum: ['direct', 'group'],
     required: true
   },
+  // Disappearing messages for this chat (per-chat setting; 'off' keeps forever).
+  // New direct chats inherit the creator's global default at creation time.
+  disappearing: {
+    type: String,
+    enum: ['off', '24h', '7d', '90d'],
+    default: 'off'
+  },
   participants: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

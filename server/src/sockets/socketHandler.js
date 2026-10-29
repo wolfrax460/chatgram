@@ -323,6 +323,8 @@ function registerSocketHandlers(io) {
           readBy: [socket.userId],
           mentionUserIds: mentioned,
           visibleTo,
+          // Per-chat disappearing messages: readers hide it after this time.
+          expiresAt: require('../utils/disappearing').expiresAtFor(chat),
         });
 
         await Chat.findByIdAndUpdate(chatId, {
@@ -387,6 +389,12 @@ function registerSocketHandlers(io) {
       // Group "@Chatgram AI" mentions: off by default, rate limited, silent on error.
       groupMentions
         .maybeAnswer({ chat, message: payload, io })
+        .catch(() => {});
+
+      // Away / auto-reply: direct chats only, opt-in, never loops and never
+      // fails the original socket send.
+      await require('../utils/autoReply')
+        .maybeSendAutoReply({ chat, message: payload, io })
         .catch(() => {});
       } catch (error) {
         console.error('Message send error:', error);

@@ -3,11 +3,15 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
 const ai = require('../ai/chatgram');
+const { suggestReplies } = require('../controllers/suggestRepliesController');
 
 // Admin feature flag: Chatgram AI can be disabled platform-wide.
 router.use(require('../utils/platformSettings').featureGate('aiEnabled', 'AI_DISABLED', 'Chatgram AI is temporarily disabled.'));
 
 router.use(protect);
+
+// Opt-in smart replies (default off). Returns { suggestions: [] } when off/unavailable.
+router.post('/suggest-replies', suggestReplies);
 
 function fail(res, error) {
   const status = error.code === 'RATE_LIMITED' ? 429 : error.code === 'TOO_LONG' || error.code === 'EMPTY' ? 400 : 500;

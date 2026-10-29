@@ -28,6 +28,8 @@ const {
   unpinMessage,
   getChatMedia,
   reportChat,
+  getChatDisappearing,
+  updateChatDisappearing,
 } = require('../controllers/chatController');
 
 // All routes require authentication
@@ -38,6 +40,10 @@ router.post('/', createChat);
 
 // Get user's chats
 router.get('/', getChats);
+
+// Per-chat disappearing-messages setting (participants only).
+router.get('/:id/disappearing', getChatDisappearing);
+router.put('/:id/disappearing', updateChatDisappearing);
 
 // Groups only — must be declared before `/:id` so "groups" is not read as an id.
 router.get('/groups', getGroups);

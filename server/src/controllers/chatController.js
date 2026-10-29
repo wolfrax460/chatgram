@@ -99,9 +99,13 @@ const createChat = async (req, res) => {
         return res.status(200).json(existingChat);
       }
 
+      // New direct chats inherit the creator's global disappearing default.
+      // Existing chats are never changed, and groups do not inherit it.
+      const creator = await User.findById(req.user._id).select('disappearingDefault').lean();
       const chat = await Chat.create({
         type: 'direct',
         participants: [req.user._id, participantId],
+        disappearing: creator?.disappearingDefault || 'off',
       });
 
       const populatedChat = await Chat.findById(chat._id).populate(
@@ -1232,7 +1236,58 @@ const reportChat = async (req, res) => {
   }
 };
 
+// @desc    Read this chat's disappearing-messages setting
+// @route   GET /api/chats/:id/disappearing
+// @access  Private (participants only)
+const getChatDisappearing = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid chat ID' });
+    }
+    const chat = await Chat.findOne({ _id: req.params.id, participants: req.user._id })
+      .select('disappearing')
+      .lean();
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    return res.json({ disappearing: chat.disappearing || 'off' });
+  } catch (error) {
+    console.error('Get chat disappearing error:', error);
+    return res.status(500).json({ message: 'Server error loading the disappearing setting' });
+  }
+};
+
+// @desc    Update this chat's disappearing-messages setting (per-chat setting)
+// @route   PUT /api/chats/:id/disappearing
+// @access  Private (participants only)
+const updateChatDisappearing = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid chat ID' });
+    }
+    const duration = require('../utils/disappearing').normalize(
+      req.body?.disappearing ?? req.body?.duration ?? req.body?.value,
+    );
+    if (!duration) {
+      return res.status(400).json({
+        message: 'Duration must be one of: off, 24h, 7d, 90d.',
+        code: 'INVALID_DURATION',
+      });
+    }
+    const chat = await Chat.findOneAndUpdate(
+      { _id: req.params.id, participants: req.user._id },
+      { $set: { disappearing: duration } },
+      { new: true },
+    ).select('disappearing');
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    return res.json({ disappearing: chat.disappearing });
+  } catch (error) {
+    console.error('Update chat disappearing error:', error);
+    return res.status(500).json({ message: 'Server error saving the disappearing setting' });
+  }
+};
+
 module.exports = {
+  getChatDisappearing,
+  updateChatDisappearing,
   createChat,
   getChats,
   getChatById,

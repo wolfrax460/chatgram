@@ -30,7 +30,35 @@ function notificationPrefsShape(me) {
     dndEnabled: prefs.dndEnabled === true,
     dndStart: prefs.dndStart || '22:00',
     dndEnd: prefs.dndEnd || '07:00',
+    // Opt-in smart replies (also exposed by /api/users/me/ai-settings).
+    suggestReplies: me?.suggestReplies === true,
   };
+}
+
+const DISAPPEARING_VALUES = ['off', '24h', '7d', '90d'];
+
+function aiSettingsShape(me) {
+  return { suggestReplies: me?.suggestReplies === true };
+}
+
+function autoReplyShape(me) {
+  const prefs = me?.autoReply || {};
+  const schedule = prefs.schedule || {};
+  const outside = schedule.mode === 'outsideHours';
+  return {
+    enabled: prefs.enabled === true,
+    message: String(prefs.message || '').slice(0, 500),
+    // Web contract sends/reads the dashed spelling; the DB keeps the enum value.
+    schedule: outside ? 'outside-hours' : 'always',
+    startTime: schedule.start || '18:00',
+    endTime: schedule.end || '08:00',
+    audience: prefs.audience === 'everyone' ? 'everyone' : 'contacts',
+  };
+}
+
+function disappearingShape(me) {
+  const duration = DISAPPEARING_VALUES.includes(me?.disappearingDefault) ? me.disappearingDefault : 'off';
+  return { duration, seconds: require('../utils/disappearing').secondsFor(duration) };
 }
 
 function privacyShape(me) {
@@ -209,12 +237,181 @@ const updateNotificationPrefs = async (req, res) => {
       }
       update['notificationPrefs.dndEnd'] = String(body.dndEnd);
     }
+    // Opt-in smart replies travel with the same settings payload for
+    // compatibility with the existing Settings screen.
+    if (body.suggestReplies !== undefined) update.suggestReplies = bool(body.suggestReplies);
 
     const me = await User.findByIdAndUpdate(req.user._id, { $set: update }, { new: true }).select('notificationPrefs');
     res.json({ message: 'Notification settings saved', ...notificationPrefsShape(me) });
   } catch (error) {
     console.error('Update notification prefs error:', error);
     res.status(500).json({ message: 'Server error saving notification settings' });
+  }
+};
+
+/* ------------------------------------------------ AI + privacy settings pages */
+
+// @desc    Get my AI preferences (opt-in smart replies)
+// @route   GET /api/users/me/ai-settings
+// @access  Private
+const getAiSettings = async (req, res) => {
+  try {
+    const me = await User.findById(req.user._id).select('suggestReplies');
+    return res.json(aiSettingsShape(me));
+  } catch (error) {
+    console.error('Get AI settings error:', error);
+    return res.status(500).json({ message: 'Server error fetching AI settings' });
+  }
+};
+
+// @desc    Update my AI preferences
+// @route   PUT /api/users/me/ai-settings
+// @access  Private
+const updateAiSettings = async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (body.suggestReplies !== undefined && typeof body.suggestReplies !== 'boolean') {
+      return res.status(400).json({ message: 'suggestReplies must be true or false.', code: 'INVALID_SUGGEST_REPLIES' });
+    }
+    const update = {};
+    if (body.suggestReplies !== undefined) update.suggestReplies = body.suggestReplies;
+    const me = await User.findByIdAndUpdate(req.user._id, { $set: update }, { new: true }).select('suggestReplies');
+    return res.json(aiSettingsShape(me));
+  } catch (error) {
+    console.error('Update AI settings error:', error);
+    return res.status(500).json({ message: 'Server error saving AI settings' });
+  }
+};
+
+// @desc    Get my auto-reply / away message
+// @route   GET /api/users/me/auto-reply
+// @access  Private
+const getAutoReply = async (req, res) => {
+  try {
+    const me = await User.findById(req.user._id).select('autoReply');
+    return res.json(autoReplyShape(me));
+  } catch (error) {
+    console.error('Get auto-reply error:', error);
+    return res.status(500).json({ message: 'Server error fetching the auto-reply settings' });
+  }
+};
+
+// @desc    Update my auto-reply / away message (validated)
+// @route   PUT /api/users/me/auto-reply
+// @access  Private
+const updateAutoReply = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const timePattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    const me = await User.findById(req.user._id).select('autoReply');
+    const next = autoReplyShape(me);
+
+    if (body.enabled !== undefined) {
+      if (typeof body.enabled !== 'boolean') {
+        return res.status(400).json({ message: 'enabled must be true or false.', code: 'INVALID_ENABLED' });
+      }
+      next.enabled = body.enabled;
+    }
+    if (body.message !== undefined) {
+      if (typeof body.message !== 'string') {
+        return res.status(400).json({ message: 'The auto-reply message must be text.', code: 'INVALID_MESSAGE' });
+      }
+      const message = body.message.trim();
+      if (message.length > 500) {
+        return res.status(400).json({ message: 'The auto-reply message is too long (max 500 characters).', code: 'MESSAGE_TOO_LONG' });
+      }
+      next.message = message;
+    }
+
+    let mode = body.schedule?.mode ?? body.schedule ?? body.mode;
+    if (mode !== undefined) {
+      const value = String(mode).trim();
+      if (value === 'always') next.schedule = 'always';
+      else if (value === 'outsideHours' || value === 'outside-hours') next.schedule = 'outside-hours';
+      else return res.status(400).json({ message: 'Schedule must be always or outside-hours.', code: 'INVALID_SCHEDULE' });
+    }
+    const startRaw = body.startTime ?? body.start ?? body.schedule?.start;
+    const endRaw = body.endTime ?? body.end ?? body.schedule?.end;
+    if (startRaw !== undefined) {
+      if (!timePattern.test(String(startRaw))) {
+        return res.status(400).json({ message: 'Use a 24-hour time like 18:00 for the start.', code: 'INVALID_TIME' });
+      }
+      next.startTime = String(startRaw);
+    }
+    if (endRaw !== undefined) {
+      if (!timePattern.test(String(endRaw))) {
+        return res.status(400).json({ message: 'Use a 24-hour time like 08:00 for the end.', code: 'INVALID_TIME' });
+      }
+      next.endTime = String(endRaw);
+    }
+    if (body.audience !== undefined) {
+      const audience = String(body.audience).trim();
+      if (audience !== 'contacts' && audience !== 'everyone') {
+        return res.status(400).json({ message: 'Audience must be contacts or everyone.', code: 'INVALID_AUDIENCE' });
+      }
+      next.audience = audience;
+    }
+
+    if (next.enabled && !String(next.message || '').trim()) {
+      return res.status(400).json({ message: 'Write the auto-reply message before enabling it.', code: 'MESSAGE_REQUIRED' });
+    }
+
+    const updated = await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        $set: {
+          'autoReply.enabled': next.enabled,
+          'autoReply.message': next.message,
+          'autoReply.schedule.mode': next.schedule === 'outside-hours' ? 'outsideHours' : 'always',
+          'autoReply.schedule.start': next.startTime,
+          'autoReply.schedule.end': next.endTime,
+          'autoReply.audience': next.audience,
+        },
+      },
+      { new: true },
+    ).select('autoReply');
+    return res.json(autoReplyShape(updated));
+  } catch (error) {
+    console.error('Update auto-reply error:', error);
+    return res.status(500).json({ message: 'Server error saving the auto-reply settings' });
+  }
+};
+
+// @desc    Get my global disappearing-messages default (new direct chats only)
+// @route   GET /api/users/me/disappearing-default
+// @access  Private
+const getDisappearingDefault = async (req, res) => {
+  try {
+    const me = await User.findById(req.user._id).select('disappearingDefault');
+    return res.json(disappearingShape(me));
+  } catch (error) {
+    console.error('Get disappearing default error:', error);
+    return res.status(500).json({ message: 'Server error fetching the disappearing-messages default' });
+  }
+};
+
+// @desc    Update my global disappearing-messages default
+// @route   PUT /api/users/me/disappearing-default
+// @access  Private
+const updateDisappearingDefault = async (req, res) => {
+  try {
+    const raw = req.body?.duration ?? req.body?.value ?? req.body?.default;
+    const duration = require('../utils/disappearing').normalize(raw);
+    if (!duration) {
+      return res.status(400).json({
+        message: 'Duration must be one of: off, 24h, 7d, 90d.',
+        code: 'INVALID_DURATION',
+      });
+    }
+    const me = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { disappearingDefault: duration } },
+      { new: true },
+    ).select('disappearingDefault');
+    return res.json(disappearingShape(me));
+  } catch (error) {
+    console.error('Update disappearing default error:', error);
+    return res.status(500).json({ message: 'Server error saving the disappearing-messages default' });
   }
 };
 
@@ -679,6 +876,12 @@ const getMe = async (req, res) => {
 
 module.exports = {
   getMe,
+  getAiSettings,
+  updateAiSettings,
+  getAutoReply,
+  updateAutoReply,
+  getDisappearingDefault,
+  updateDisappearingDefault,
   getNotificationPrefs,
   updateNotificationPrefs,
   getUsers,

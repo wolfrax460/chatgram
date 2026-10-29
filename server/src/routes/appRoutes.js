@@ -3,12 +3,15 @@ const express = require('express');
 const router = express.Router();
 const { heartbeat, updateCheck, versionUsage } = require('../controllers/appController');
 const { publicReleases } = require('../controllers/appReleasesController');
+const { changelog } = require('../controllers/changelogController');
 const { createVersionLimiter } = require('../utils/appUpdate');
 
 const versionLimiter = createVersionLimiter();
 
 // Public: clients must be able to check for updates before signing in.
 router.post('/heartbeat', heartbeat);
+// Public changelog: published releases + curated web-only entries (5 min cache).
+router.get('/changelog', changelog);
 // Chunk 7A public update check (rate limited, ETag + 60 s cache).
 router.get('/version', versionLimiter, updateCheck);
 router.get('/versions', versionUsage);

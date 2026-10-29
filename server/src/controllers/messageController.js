@@ -111,6 +111,8 @@ const sendMessage = async (req, res) => {
       readBy: [req.user._id],
       mentionUserIds: mentioned,
       visibleTo,
+      // Per-chat disappearing messages: readers hide it after this time.
+      expiresAt: require('../utils/disappearing').expiresAtFor(chat),
     });
 
     await Chat.findByIdAndUpdate(chatId, {
@@ -177,6 +179,13 @@ const sendMessage = async (req, res) => {
       .maybeAnswer({ chat, message: payload, io: realtime.getIo() })
       .catch(() => {});
 
+    // Away / auto-reply: direct chats only, opt-in, at most once per sender per
+    // day. Never blocks or fails the original send, and an auto-reply message
+    // never triggers another one.
+    await require('../utils/autoReply')
+      .maybeSendAutoReply({ chat, message: payload, io: realtime.getIo() })
+      .catch(() => {});
+
     res.status(201).json(payload);
   } catch (error) {
     console.error('Send message error:', error);
@@ -217,7 +226,12 @@ const getMessages = async (req, res) => {
       chatId,
       isDeleted: { $ne: true },
       deletedFor: { $ne: req.user._id },
-      ...Message.visibilityFilter(req.user._id),
+      // Visibility (private group AI answers) AND not-yet-expired disappearing
+      // messages. Both are $or fragments, so they are combined under $and.
+      $and: [
+        Message.visibilityFilter(req.user._id),
+        require('../utils/disappearing').notExpiredFilter(),
+      ],
     };
     if (before) {
       if (!mongoose.Types.ObjectId.isValid(before)) {

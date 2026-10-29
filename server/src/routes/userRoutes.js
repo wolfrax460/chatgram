@@ -4,6 +4,12 @@ const router = express.Router();
 const { protect } = require('../middleware/auth');
 const {
   getMe,
+  getAiSettings,
+  updateAiSettings,
+  getAutoReply,
+  updateAutoReply,
+  getDisappearingDefault,
+  updateDisappearingDefault,
   getUsers,
   searchUsers,
   getUserById,
@@ -44,6 +50,18 @@ router.put('/me/privacy', updatePrivacy);
 // Do-not-disturb schedule for desktop notifications and sounds.
 router.get('/me/notifications', getNotificationPrefs);
 router.put('/me/notifications', updateNotificationPrefs);
+
+// Opt-in smart replies (AI preferences). Default: off.
+router.get('/me/ai-settings', getAiSettings);
+router.put('/me/ai-settings', updateAiSettings);
+
+// Away / auto-reply settings.
+router.get('/me/auto-reply', getAutoReply);
+router.put('/me/auto-reply', updateAutoReply);
+
+// Global disappearing-messages default for NEW direct chats only.
+router.get('/me/disappearing-default', getDisappearingDefault);
+router.put('/me/disappearing-default', updateDisappearingDefault);
 
 // Blocked users and muted chats (before `/:id`, they start with "me").
 router.get('/me/blocked', getBlockedUsers);
