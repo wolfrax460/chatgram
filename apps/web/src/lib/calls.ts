@@ -410,7 +410,12 @@ type ControlMessage =
   | { t: 'accept' }
   | { t: 'deny' }
   | { t: 'revoke' }
-  | { t: 'allow'; on: boolean };
+  | { t: 'allow'; on: boolean; capable?: boolean };
+
+/** Peers we already warned about when they cannot host remote control. */
+const controlCapabilityWarned = new Set<string>();
+/** One local warning per call when this shell cannot inject input. */
+let localControlWarned = false;
 
 /** Sampler state for the screen-share path (separate from the camera stats). */
 let screenSample: { at: number; bytes: number } | null = null;
@@ -1151,6 +1156,8 @@ function removePeer(peerId: string): void {
   }
   stopTracks(handle.stream);
   peers.delete(peerId);
+  controlCapabilityWarned.delete(peerId);
+  refreshControlChannelReady();
   void applyVideoQuality();
 }
 
@@ -1183,6 +1190,11 @@ function cleanup(): void {
   screenLowSince = null;
   screenLowNotified = false;
   controlRateWindow = { at: 0, count: 0 };
+  controlCapabilityWarned.clear();
+  localControlWarned = false;
+  if (state.controlChannelReady || state.controlHostCapable !== null) {
+    setState({ controlChannelReady: false, controlHostCapable: null });
+  }
 }
 
 /**
@@ -1540,6 +1552,10 @@ export async function syncControlSupport(): Promise<boolean> {
   const bridge = desktopControlBridge();
   if (!bridge?.available) {
     if (state.controlSupported) setState({ controlSupported: false });
+    if (state.screenSharing) {
+      warnLocalControlUnavailable('this build has no input bridge');
+      emitScreenSignal();
+    }
     return false;
   }
   let supported = false;
@@ -1549,7 +1565,56 @@ export async function syncControlSupport(): Promise<boolean> {
     supported = false;
   }
   setState({ controlSupported: supported });
+  if (supported) {
+    localControlWarned = false;
+  } else if (state.screenSharing) {
+    warnLocalControlUnavailable('the native input module failed to load');
+  }
+  // The viewer needs the capability bit while sharing: advertise it as soon as
+  // it is known (the initial share signal may be sent before this resolves).
+  if (state.screenSharing) emitScreenSignal();
   return supported;
+}
+
+/** One console warning per sharing session explaining why control is off. */
+function warnLocalControlUnavailable(reason: string): void {
+  if (localControlWarned) return;
+  localControlWarned = true;
+  console.warn(
+    `[call] remote control unavailable locally (${reason}): this client cannot inject OS input, so viewers get a disabled Control button`,
+  );
+}
+
+/** Advertise the share + whether THIS client can host remote control. */
+function emitScreenSignal(): void {
+  emitSignal({
+    kind: 'screen',
+    screenSharing: state.screenSharing,
+    sharingKind: 'screen',
+    hasSystemAudio: state.screenAudio,
+    controlCapable: state.controlSupported,
+  });
+}
+
+/** Warn once per peer when a sharer cannot host control (browser/Android/old build). */
+function noteRemoteControlCapability(participantId: string, displayName: string, capable: boolean | null): void {
+  if (capable === true) {
+    controlCapabilityWarned.delete(participantId);
+    return;
+  }
+  if (controlCapabilityWarned.has(participantId)) return;
+  controlCapabilityWarned.add(participantId);
+  const reason =
+    capable === false
+      ? 'sharer cannot inject OS input (browser/Android client or native module missing)'
+      : 'sharer did not advertise control capability (older client)';
+  console.warn(`[call] remote control unavailable for ${displayName || participantId.slice(0, 8)}: ${reason}`);
+}
+
+/** Keep the viewer's "control channel ready" bit in sync with the peers. */
+function refreshControlChannelReady(): void {
+  const ready = [...peers.values()].some((handle) => handle.controlChannel?.readyState === 'open');
+  if (ready !== state.controlChannelReady) setState({ controlChannelReady: ready });
 }
 
 function nameOfPeer(handle: PeerHandle): string {
@@ -1653,7 +1718,11 @@ export function resetRemoteControl(notice?: string): void {
 }
 
 function announceControlConsent(): void {
-  broadcastControlMessage({ t: 'allow', on: state.controlAllowed && state.controlSupported && state.screenSharing });
+  broadcastControlMessage({
+    t: 'allow',
+    on: state.controlAllowed && state.controlSupported && state.screenSharing,
+    capable: state.controlSupported,
+  });
 }
 
 function handleControlRequest(handle: PeerHandle): void {
@@ -1678,9 +1747,16 @@ function handleViewerControlMessage(handle: PeerHandle, message: Record<string, 
   const sharer = state.participants.find((participant) => participant.id === handle.info.id);
   if (message.t === 'allow') {
     const allowed = message.on === true && sharer?.screenSharing === true && !state.screenSharing;
-    setState({ controlAvailable: allowed });
+    const capable = typeof message.capable === 'boolean' ? message.capable : state.controlHostCapable;
+    setState({ controlAvailable: allowed, controlHostCapable: capable });
+    if (capable !== null) noteRemoteControlCapability(handle.info.id, nameOfPeer(handle), capable);
     if (!allowed && state.controlStatus !== 'idle') {
       setState({ controlStatus: 'idle', controlPeerId: null, controlMessage: 'The other person stopped allowing remote control.' });
+    }
+    // The viewer asked while consent was off: once the owner allows it, send the
+    // request again so the owner actually gets the approval prompt.
+    if (allowed && state.controlStatus === 'requested' && state.controlPeerId === handle.info.id) {
+      sendControlMessage(handle, { t: 'request' });
     }
     return;
   }
@@ -1739,11 +1815,13 @@ function handleControlMessage(handle: PeerHandle, raw: unknown): void {
 function attachControlChannel(handle: PeerHandle, channel: RTCDataChannel): void {
   handle.controlChannel = channel;
   channel.onopen = () => {
+    refreshControlChannelReady();
     // Only the sharer announces consent; the viewer has nothing to allow.
     if (state.screenSharing) announceControlConsent();
   };
   channel.onclose = () => {
     if (handle.controlChannel === channel) handle.controlChannel = null;
+    refreshControlChannelReady();
     if (state.controlViewerId === handle.info.id) dropControlViewer('The viewer disconnected.');
     if (state.controlPeerId === handle.info.id) {
       setState({ controlStatus: 'idle', controlPeerId: null, controlAvailable: false, controlMessage: 'The connection closed.' });
@@ -1797,10 +1875,6 @@ export function requestRemoteControl(): void {
   if (!sharer) return;
   const handle = peers.get(sharer.id);
   if (!handle) return;
-  if (!state.controlAvailable) {
-    setState({ controlMessage: 'The sharer has not allowed remote control.' });
-    return;
-  }
   if (!sendControlMessage(handle, { t: 'request' })) {
     setState({ controlMessage: 'Remote control is not available (no control channel).' });
     return;
@@ -1808,8 +1882,10 @@ export function requestRemoteControl(): void {
   setState({
     controlStatus: 'requested',
     controlPeerId: sharer.id,
-    controlMessage: null,
-    notice: 'Control request sent. Waiting for approval…',
+    controlMessage: state.controlAvailable ? null : 'Waiting for the share owner to allow control',
+    notice: state.controlAvailable
+      ? 'Control request sent. Waiting for approval…'
+      : 'Waiting for the share owner to allow control…',
   });
 }
 
