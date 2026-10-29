@@ -1055,3 +1055,44 @@ path stays for browsers. The button is never greyed on Android: an old APK gets 
 
 **Cost to reverse:** low — the changes are additive and platform-gated; the only irreversible part is
 shipping 1.1.6 to installs older than it.
+
+---
+
+## D64 — Unattended report → PR automation with a hard human-review gate
+
+**Decision:** Take a *complete* error-report issue all the way to a **draft** pull
+request automatically, in two workflows, but keep every irreversible action with a
+human. `report-intake.yml` validates the prompt sections, comments a triage
+summary and routes the issue (`needs-human` or `autofix-candidate`).
+`autofix.yml` then runs the repo's real gates on a clean `main` checkout **before
+any AI work**, commits a deterministic plan to `docs/autofix/issue-<n>.md`,
+optionally applies a model diff that must stay inside the planned files and keep
+the gates green, and opens a draft PR labelled `autofix`. The model is optional:
+without `AUTOFIX_API_KEY` the run still produces the plan and the PR.
+
+**Why:** the owner wants reports picked up without waiting on a person, but an
+unattended agent that can merge or push to `main` is a one-prompt mistake away
+from shipping a regression — and the report text itself is untrusted input. A
+plan-first design makes the automation useful even with no secret configured, and
+makes every failure mode converge on "a human reads a draft PR". Running the
+baseline gates first means a broken `main` (or a stale lockfile) can never be
+dressed up as an AI fix; re-running them after the patch means a plausible diff
+that breaks the build is discarded, not proposed. Auth, billing, calls and
+product/legal decisions are explicitly excluded because the cost of a wrong
+autonomous change there is not a broken page, it is a security or policy
+incident.
+
+**Guard rails (by construction, not convention):** the intake job has only
+`issues: write`; the autofix job's write token is only ever used for an
+`autofix/issue-<n>-<sha>` branch (never `main`), a draft PR, comments and labels;
+no merge/auto-merge API is called; the diff checker rejects out-of-plan files,
+workflows, lockfiles, `.env*`, secrets, migrations and certificates even if the
+issue names them; bot authors, a non-`main` default branch and an issue that
+already has a PR are refused; `git apply --check` plus the gate re-run decide
+whether a diff survives; a failed PR creation deletes the branch. The API key is
+a repository secret scoped to one step and is never printed.
+
+**Cost to reverse:** low — deleting the two workflow files (and the
+`AUTOFIX_API_KEY` secret) returns the repository to its previous behaviour; the
+only artifacts are `docs/autofix/*.md` on throwaway branches, and closing a draft
+PR discards them. No data, no schema, no production deploy is touched.
