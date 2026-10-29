@@ -312,6 +312,8 @@ app.use('/api', require('./middleware/safety').blockBannedIp);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+// Protected account deletion with a 14-day grace (request code -> confirm -> cancel).
+app.use('/api/account', require('./routes/accountRoutes'));
 app.use('/api/contacts', contactRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/calls', require('./routes/callRoutes'));
@@ -366,19 +368,29 @@ const broadcastTimer = setInterval(() => {
 broadcastTimer.unref();
 
 // 9b Users extras: purge accounts whose 30-day deletion grace has ended.
+// Also runs the protected self-deletion purger (14-day `deleteAt` grace), which
+// erases the account and queues media URLs for operator cleanup.
 const deletionTimer = setInterval(async () => {
   try {
     const User = require('./models/User');
     const due = await User.find({ deletionScheduledAt: { $ne: null, $lte: new Date() } }).select('_id displayName').limit(20);
-    if (!due.length) return;
-    const { deleteAccountData } = require('./utils/accountDeletion');
-    for (const user of due) {
-      await deleteAccountData(user._id, user.displayName);
-      await require('./admin/auth').audit('admin_user_deletion_purged', { ip: 'scheduler', headers: {} }, String(user._id));
-      console.log('Purged account after deletion grace:', String(user._id));
+    if (due.length) {
+      const { deleteAccountData } = require('./utils/accountDeletion');
+      for (const user of due) {
+        await deleteAccountData(user._id, user.displayName);
+        await require('./admin/auth').audit('admin_user_deletion_purged', { ip: 'scheduler', headers: {} }, String(user._id));
+        console.log('Purged account after deletion grace:', String(user._id));
+      }
     }
   } catch (error) {
     console.warn('Deletion scheduler failed:', error.message);
+  }
+  try {
+    const { runAccountDeletionPurge } = require('./utils/accountDeletion');
+    const purged = await runAccountDeletionPurge({ limit: 10 });
+    if (purged.length) console.log(`Account deletion purger removed ${purged.length} expired account(s).`);
+  } catch (error) {
+    console.warn('Account deletion purger failed:', error.message);
   }
 }, 60 * 60 * 1000);
 deletionTimer.unref();

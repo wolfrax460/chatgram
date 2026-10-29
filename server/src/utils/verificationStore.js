@@ -192,7 +192,17 @@ function purgeMemory(nowMs) {
   }
 }
 
-function issueMemory(key, nowMs) {
+/**
+ * Per-call lifetime override (used by the 10-minute account-deletion code).
+ * Clamped to 1 minute .. 24 hours; anything invalid falls back to the default.
+ */
+function ttlOverride(options) {
+  const value = Number(options && options.ttlMs);
+  if (!Number.isFinite(value) || value < 60_000) return TTL_MS;
+  return Math.min(value, 24 * 60 * 60 * 1000);
+}
+
+function issueMemory(key, nowMs, ttlMs = TTL_MS) {
   purgeMemory(nowMs);
   const existing = memoryStore.get(key);
 
@@ -207,12 +217,12 @@ function issueMemory(key, nowMs) {
   memoryStore.set(key, {
     codeHash: hashCode(code),
     previousCodes: existing ? livePreviousCodes(existing, nowMs) : [],
-    expiresAt: nowMs + TTL_MS,
+    expiresAt: nowMs + ttlMs,
     attempts: 0,
     lastSentAt: nowMs,
   });
 
-  return { ok: true, code, expiresInSeconds: Math.floor(TTL_MS / 1000) };
+  return { ok: true, code, expiresInSeconds: Math.floor(ttlMs / 1000) };
 }
 
 function checkMemory(key, code, nowMs) {
@@ -234,15 +244,18 @@ function checkMemory(key, code, nowMs) {
 
 /**
  * Create (or replace) a code for a target.
+ * `options.ttlMs` overrides the store default for this record (account deletion
+ * uses 10 minutes); single use, 5 attempts and the resend cooldown are identical.
  * @returns {Promise<{ok: true, code: string, expiresInSeconds: number} | {ok: false, retryAfterSeconds: number}>}
  */
-async function issue(channel, target) {
+async function issue(channel, target, options = {}) {
   const normalized = normalizeTarget(target);
   const nowMs = clock();
+  const ttlMs = ttlOverride(options);
 
   if (!dbAvailable()) {
     warnFallbackOnce();
-    return issueMemory(keyOf(channel, normalized), nowMs);
+    return issueMemory(keyOf(channel, normalized), nowMs, ttlMs);
   }
 
   try {
@@ -268,7 +281,7 @@ async function issue(channel, target) {
       previousCodes: existing ? livePreviousCodes(existing, nowMs) : [],
       previousCodeHash: null,
       previousExpiresAt: null,
-      expiresAt: new Date(nowMs + TTL_MS),
+      expiresAt: new Date(nowMs + ttlMs),
       attempts: 0,
       lastSentAt: new Date(nowMs),
     };
@@ -282,10 +295,10 @@ async function issue(channel, target) {
       await VerificationCode.updateOne({ channel, target: normalized }, { $set: record }, { upsert: true });
     }
 
-    return { ok: true, code, expiresInSeconds: Math.floor(TTL_MS / 1000) };
+    return { ok: true, code, expiresInSeconds: Math.floor(ttlMs / 1000) };
   } catch (error) {
     warnFallbackOnce(error);
-    return issueMemory(keyOf(channel, normalized), nowMs);
+    return issueMemory(keyOf(channel, normalized), nowMs, ttlMs);
   }
 }
 

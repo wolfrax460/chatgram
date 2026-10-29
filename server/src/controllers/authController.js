@@ -7,6 +7,7 @@ const store = require('../utils/verificationStore');
 const resetStore = require('../utils/resetTokenStore');
 const notifier = require('../utils/notifier');
 const { validatePassword } = require('../utils/passwordPolicy');
+const { pendingDeletionShape, cancelPendingDeletion } = require('../utils/accountDeletion');
 
 const ACCESS_SECRET = () => process.env.JWT_SECRET || 'your-secret-key';
 const REFRESH_SECRET = () => process.env.JWT_REFRESH_SECRET || 'your-refresh-secret';
@@ -55,6 +56,9 @@ const userPayload = (user, accessToken, refreshToken) => ({
     lastSeen: user.lastSeen,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
+    // Protected self-deletion: null normally, or { deleteAt, reason? } during the
+    // 14-day grace. Additive: older clients ignore the field.
+    pendingDeletion: pendingDeletionShape(user),
   },
   accessToken,
   refreshToken,
@@ -244,10 +248,25 @@ const loginUser = async (req, res) => {
       }
     }
 
+    // Protected self-deletion: a successful sign-in during the grace window
+    // cancels the pending deletion automatically. Once deleteAt has passed the
+    // account is due for the purger and must not be restored.
+    if (user.pendingDeletionAt || user.deleteAt) {
+      const dueAt = user.deleteAt ? new Date(user.deleteAt).getTime() : 0;
+      if (dueAt && dueAt <= Date.now()) {
+        return res.status(403).json({
+          message: 'This account is scheduled for deletion and its grace period has ended.',
+          code: 'ACCOUNT_DELETION_DUE',
+        });
+      }
+      await cancelPendingDeletion(user, { req, detail: 'restored_on_login' });
+      user.pendingDeletionAt = null;
+      user.deleteAt = null;
+      user.deletionReason = '';
+    }
+
     const accessToken = generateToken(user._id, tokenVersionOf(user));
     const refreshToken = generateRefreshToken(user._id, tokenVersionOf(user));
-
-    // 9b Users extras: record the device session and login history (no tokens).
     try {
       const UserSession = require('../models/UserSession');
       const LoginEvent = require('../models/LoginEvent');
@@ -374,7 +393,10 @@ const getUserProfile = async (req, res) => {
     if (!req.user) {
       return res.status(401).json({ message: 'Not authorized' });
     }
-    return res.json(req.user);
+    const profile = req.user.toObject ? req.user.toObject() : { ...req.user };
+    // Additive contract field for the cancellation banner.
+    profile.pendingDeletion = pendingDeletionShape(req.user);
+    return res.json(profile);
   } catch (error) {
     console.error('Get profile error:', error);
     return res.status(500).json({ message: 'Server error fetching profile' });

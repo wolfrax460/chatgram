@@ -7,6 +7,7 @@ const Report = require('../models/Report');
 const realtime = require('../utils/realtime');
 const presence = require('../utils/presence');
 const { blockStatus } = require('../utils/blocks');
+const { pendingDeletionShape } = require('../utils/accountDeletion');
 
 const PUBLIC_FIELDS = '_id displayName avatarUrl about isOnline lastSeen phone email showOnlineStatus onlineStatusExceptions';
 
@@ -50,7 +51,7 @@ function privacyShape(me) {
 // @access  Private
 const getUsers = async (req, res) => {
   try {
-    const users = await User.find({ _id: { $ne: req.user._id } })
+    const users = await User.find({ _id: { $ne: req.user._id }, pendingDeletionAt: null })
       .select(PUBLIC_FIELDS)
       .sort({ displayName: 1 });
 
@@ -78,6 +79,8 @@ const searchUsers = async (req, res) => {
 
     const users = await User.find({
       _id: { $ne: req.user._id },
+      // Accounts inside the deletion grace period are hidden from discovery.
+      pendingDeletionAt: null,
       // The Chatgram AI contact is a system account, not a person to add.
       isAiAccount: { $ne: true },
       $or: [
@@ -659,7 +662,23 @@ const reportUser = async (req, res) => {
   }
 };
 
+// @desc    Current user's own record (sign-in client contract)
+// @route   GET /api/users/me
+// @access  Private
+const getMe = async (req, res) => {
+  try {
+    const me = req.user.toObject ? req.user.toObject() : { ...req.user };
+    // Additive: null normally, { deleteAt, reason? } during the 14-day grace.
+    me.pendingDeletion = pendingDeletionShape(req.user);
+    return res.json(me);
+  } catch (error) {
+    console.error('Get me error:', error);
+    return res.status(500).json({ message: 'Server error fetching the profile' });
+  }
+};
+
 module.exports = {
+  getMe,
   getNotificationPrefs,
   updateNotificationPrefs,
   getUsers,

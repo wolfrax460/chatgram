@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
 const {
+  getMe,
   getUsers,
   searchUsers,
   getUserById,
@@ -28,6 +29,10 @@ router.use(protect);
 
 // Get all users (for contacts list)
 router.get('/', getUsers);
+
+// Current user's own record, including pendingDeletion during the grace period.
+// Must be declared before `/:id`.
+router.get('/me', getMe);
 
 // Search users (must be declared before `/:id`)
 router.get('/search', searchUsers);

@@ -51,6 +51,12 @@ const userSchema = new mongoose.Schema({
   // 9b Users extras: verification and the 30-day deletion grace.
   verifiedAt: { type: Date, default: null },
   deletionScheduledAt: { type: Date, default: null, index: true },
+  // Protected self-deletion (account deletion v2): the user requested it with an
+  // emailed code, `deleteAt` is when the purger may erase the account (14 days by
+  // default), and `deletionReason` is an optional user-supplied note.
+  pendingDeletionAt: { type: Date, default: null, index: true },
+  deleteAt: { type: Date, default: null, index: true },
+  deletionReason: { type: String, default: '', maxlength: 300 },
   warningCount: { type: Number, default: 0 },
   passwordChangedAt: { type: Date, default: null },
 

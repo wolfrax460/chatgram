@@ -77,9 +77,9 @@ const createChat = async (req, res) => {
         return res.status(400).json({ message: 'Cannot start a direct chat with yourself' });
       }
 
-      const participant = await User.findById(participantId);
+      const participant = await User.findOne({ _id: participantId, pendingDeletionAt: null });
       if (!participant) {
-        return res.status(404).json({ message: 'Participant not found' });
+        return res.status(404).json({ message: 'Participant not found', code: 'USER_UNAVAILABLE' });
       }
 
       // A blocked pair cannot start a new conversation with each other.
@@ -144,11 +144,16 @@ const createChat = async (req, res) => {
       return res.status(400).json({ message: 'Add at least one other member to the group' });
     }
 
-    const existingUsers = await User.find({ _id: { $in: ids } }).select(
-      '_id displayName whoCanAddToGroups contacts isAiAccount'
-    );
+    const existingUsers = await User.find({
+      _id: { $in: ids },
+      // Accounts inside the deletion grace period cannot be added to new chats.
+      pendingDeletionAt: null,
+    }).select('_id displayName whoCanAddToGroups contacts isAiAccount');
     if (existingUsers.length !== ids.length) {
-      return res.status(404).json({ message: 'One or more members were not found' });
+      return res.status(404).json({
+        message: 'One or more members were not found',
+        code: 'USER_UNAVAILABLE',
+      });
     }
 
     // "Who can add me to groups" privacy applies at creation time too.

@@ -383,6 +383,41 @@ restart and are shared by every API instance.
 - **Observability:** every failed check logs a content-free line
   (`[otp] check failed reason=<reason> channel=<channel>`) — no target, no code.
 
+### Protected account deletion (14-day grace)
+
+All three routes require a signed-in user (`Authorization: Bearer <accessToken>`).
+There is no environment flag: the feature is always available to authenticated users.
+
+| Method | Path | Body | Success |
+|---|---|---|---|
+| POST | `/api/account/delete/request-code` | — | `200 { sent: true, channel: 'email', expiresInSeconds: 600 }` |
+| POST | `/api/account/delete/confirm` | `{ password?, code, confirmWord, reason? }` | `200 { scheduled: true, deleteAt }` |
+| POST | `/api/account/delete/cancel` | — | `200 { cancelled: true }` (idempotent) |
+
+- **Code:** emailed to the registered address only; 6 digits, 10 minutes, single use,
+  max 5 verify attempts, max 3 sends per user per hour (and the normal 60 s resend
+  cooldown). A phone-only account answers `409 { code: 'EMAIL_REQUIRED' }`.
+- **Confirm:** `password` is required for local password accounts (`PASSWORD_REQUIRED`
+  / `PASSWORD_INVALID`); Google-only accounts prove ownership with the code only.
+  `confirmWord` must be exactly `DELETE` (`CONFIRM_WORD_REQUIRED`). Code failures use
+  `CODE_MISSING` / `CODE_EXPIRED` / `CODE_INVALID` and `429 CODE_TOO_MANY_ATTEMPTS`.
+  `reason` is optional, trimmed and capped at 200 characters.
+- **Grace:** `deleteAt = now + 14 days`, stored on the user with `pendingDeletionAt`
+  and `deletionReason`. During grace the account is hidden from user search, the
+  contact directory and the contacts list, and cannot be added to a new direct/group
+  chat; existing chats keep their messages. Signing in before `deleteAt` cancels the
+  deletion automatically; the cancel endpoint always works.
+- **Profile field:** `GET /api/users/me` and `GET /api/auth/me` add
+  `pendingDeletion: { deleteAt, reason? } | null` (also present in the login/register/
+  refresh `user` payload). Older clients can ignore it.
+- **Admin:** `GET /api/admin/account-deletions` (admin session) returns
+  `{ now, counts, scheduled[], pending[], completed[] }` with ids/timestamps and a
+  `hasReason` flag only — no email, code or reason text.
+- **Purger:** hourly from the existing maintenance interval. It deletes the account,
+  sessions/login history, device tokens, verification codes and statuses; marks the
+  user's own messages deleted-author while keeping the chat and every other
+  participant's messages; queues media URLs in `PendingMediaDeletion` instead of
+  calling an external provider.
 
 ### Maintenance / read-only gate
 

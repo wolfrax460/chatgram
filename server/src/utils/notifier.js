@@ -59,10 +59,11 @@ function getTransporter() {
   return transporter;
 }
 
-async function sendEmailCode(to, code) {
+async function sendEmailCode(to, code, ttlMinutes = CODE_TTL_MINUTES) {
   const subject = 'Your Chatgram verification code';
-  const text = `Your Chatgram verification code is ${code}. It expires in ${CODE_TTL_MINUTES} minutes.`;
-  const html = `<p>Your Chatgram verification code is <strong style="font-size:20px">${code}</strong>.</p><p>It expires in ${CODE_TTL_MINUTES} minutes. If you did not request this, ignore this email.</p>`;
+  const minutes = Math.max(1, Number(ttlMinutes) || CODE_TTL_MINUTES);
+  const text = `Your Chatgram verification code is ${code}. It expires in ${minutes} minutes.`;
+  const html = `<p>Your Chatgram verification code is <strong style="font-size:20px">${code}</strong>.</p><p>It expires in ${minutes} minutes. If you did not request this, ignore this email.</p>`;
 
   if (emailProvider === 'smtp') {
     const tx = getTransporter();

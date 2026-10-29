@@ -29,6 +29,7 @@ const {
   bulkUsers,
 } = require('../controllers/adminOverviewController');
 const { systemHealth, auditList } = require('../controllers/adminHealthController');
+const accountDeletions = require('../controllers/adminAccountDeletionController');
 const systemAdmin = require('../controllers/adminSystemController');
 const moderation = require('../controllers/adminModerationController');
 const adminSecurity = require('../controllers/adminSecurityController');
@@ -114,6 +115,8 @@ router.get('/system/storage', requireAdminSession, systemAdmin.storage);
 router.get('/system/diagnostics', requireAdminSession, systemAdmin.diagnostics);
 router.post('/system/diagnostics/run', requireAdminSession, requireAdminCsrf, diagnosticLimiter, systemAdmin.runDiagnostic);
 router.get('/users', requireAdminSession, listUsers);
+// Protected account deletion lifecycle (14-day grace): no content, ids and dates.
+router.get('/account-deletions', requireAdminSession, accountDeletions.listAccountDeletions);
 router.get('/users/:id', requireAdminSession, userDetail);
 router.post('/users/bulk', requireAdminSession, requireAdminCsrf, bulkUsers);
 router.post('/users/:id/force-logout', requireAdminSession, requireAdminCsrf, forceLogout);

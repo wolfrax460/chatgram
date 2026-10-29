@@ -4,7 +4,7 @@ const User = require('../models/User');
 const Chat = require('../models/Chat');
 const presence = require('../utils/presence');
 
-const PUBLIC_FIELDS = '_id displayName avatarUrl about isOnline lastSeen phone email showOnlineStatus onlineStatusExceptions';
+const PUBLIC_FIELDS = '_id displayName avatarUrl about isOnline lastSeen phone email showOnlineStatus onlineStatusExceptions pendingDeletionAt';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -16,8 +16,9 @@ const getContacts = async (req, res) => {
     const me = await User.findById(req.user._id).populate('contacts', PUBLIC_FIELDS);
 
     const contacts = (me?.contacts || [])
-      // A contact may have deleted their account.
-      .filter((c) => c && c._id)
+      // A contact may have deleted their account, or be inside the deletion
+      // grace period (hidden from discovery/contacts until they cancel).
+      .filter((c) => c && c._id && !c.pendingDeletionAt)
       .sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()));
 
     res.json(presence.sortByPresence(presence.maskPresenceList(contacts, req.user._id)));
@@ -41,7 +42,7 @@ const addContact = async (req, res) => {
       return res.status(400).json({ message: 'You cannot add yourself as a contact' });
     }
 
-    const target = await User.findById(userId).select(PUBLIC_FIELDS);
+    const target = await User.findOne({ _id: userId, pendingDeletionAt: null }).select(PUBLIC_FIELDS);
     if (!target) return res.status(404).json({ message: 'User not found' });
 
     // $addToSet keeps this idempotent - adding twice is not an error.
@@ -99,6 +100,8 @@ const searchDirectory = async (req, res) => {
 
     const matches = await User.find({
       _id: { $ne: req.user._id },
+      // Accounts inside the deletion grace period are not discoverable.
+      pendingDeletionAt: null,
       // System accounts (Chatgram AI) are never people-search results.
       isAiAccount: { $ne: true },
       $or: [
