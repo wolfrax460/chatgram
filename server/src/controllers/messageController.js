@@ -322,14 +322,16 @@ const markAsRead = async (req, res) => {
 
     // Read-receipt privacy: with receipts off, delivery is still recorded but no
     // `message:read` is published, so the sender never sees the blue ticks.
+    // The reader's own unread tracking (readBy) is updated either way: the
+    // unread count is private to them and must not be gated on whether they
+    // publish receipts, otherwise the badge can never clear for users who
+    // opted out of read receipts.
     const reader = await User.findById(req.user._id).select('readReceipts');
     const publishReceipts = reader?.readReceipts !== false;
 
     await Message.updateMany(
       { _id: id, readBy: { $ne: req.user._id }, ...Message.visibilityFilter(req.user._id) },
-      publishReceipts
-        ? { $addToSet: { readBy: req.user._id, deliveredTo: req.user._id } }
-        : { $addToSet: { deliveredTo: req.user._id } }
+      { $addToSet: { readBy: req.user._id, deliveredTo: req.user._id } }
     );
 
     if (publishReceipts) {
@@ -361,6 +363,10 @@ const markChatAsRead = async (req, res) => {
     const reader = await User.findById(req.user._id).select('readReceipts');
     const publishReceipts = reader?.readReceipts !== false;
 
+    // Unread tracking is private to the reader: always record that they read
+    // the messages, regardless of whether the sender is allowed to see the
+    // blue ticks. Only the broadcast of `message:read` (which updates the
+    // sender's UI) is gated on the reader's read-receipts privacy setting.
     const result = await Message.updateMany(
       {
         chatId,
@@ -369,9 +375,7 @@ const markChatAsRead = async (req, res) => {
         // Private AI messages are only read by their allow-list.
         ...Message.visibilityFilter(req.user._id),
       },
-      publishReceipts
-        ? { $addToSet: { readBy: req.user._id, deliveredTo: req.user._id } }
-        : { $addToSet: { deliveredTo: req.user._id } }
+      { $addToSet: { readBy: req.user._id, deliveredTo: req.user._id } }
     );
 
     if (publishReceipts) {

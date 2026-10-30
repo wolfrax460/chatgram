@@ -210,6 +210,63 @@ async function main() {
     afterRead?.lastMessage?.content,
   );
 
+  /* ------------------------------------------------------------------------
+   * RPT-XIH4: the unread badge must clear even when the reader has read
+   * receipts switched OFF. `readBy` is the reader's own unread tracking, so it
+   * must be updated regardless of the read-receipts privacy setting; only the
+   * `message:read` broadcast to the sender is gated by that setting.
+   * ---------------------------------------------------------------------- */
+  const privacy = await api('PUT', '/api/users/me/privacy', {
+    token: bob.token,
+    body: { readReceipts: false },
+  });
+  check('reader can turn read receipts off', privacy.status === 200, privacy.status);
+
+  const aliceToBob = await api('POST', '/api/messages', {
+    token: alice.token,
+    body: { chatId, type: 'text', content: `for-bob-${run}` },
+  });
+  check('a message for the receipts-off reader is stored', aliceToBob.status === 201, aliceToBob.status);
+
+  // A truly unread chat still shows a badge: the fix must not blanket-clear it.
+  const bobBefore = await chatRow(bob.token, chatId);
+  check('unread icon still appears for a chat that really is unread', Number(bobBefore?.unreadCount) > 0, bobBefore?.unreadCount);
+
+  // Watch the sender's socket: with receipts off, no read receipt may arrive.
+  const aliceSocket = await connectSocket(alice.token);
+  const aliceReadEvents = [];
+  aliceSocket.on('message:read', (payload) => aliceReadEvents.push(payload));
+  try {
+    const bobRead = await api('POST', `/api/messages/chat/${chatId}/read`, { token: bob.token });
+    check('receipts-off reader marks the chat read (200)', bobRead.status === 200, bobRead.status);
+
+    const bobAfter = await chatRow(bob.token, chatId);
+    check(
+      'unread icon is gone after reading with receipts OFF (RPT-XIH4)',
+      Number(bobAfter?.unreadCount) === 0,
+      bobAfter?.unreadCount,
+    );
+
+    await sleep(700);
+    check(
+      'no read receipt is broadcast to the sender when receipts are off',
+      aliceReadEvents.length === 0,
+      aliceReadEvents.length,
+    );
+
+    // The reader's own list must show the read flag even though the sender was
+    // never told: the two concerns are independent.
+    const bobList = await messagesOf(bob.token, chatId);
+    const readRow = bobList.find((row) => String(row._id) === String(aliceToBob.body?._id));
+    check(
+      'the reader sees their own read flag on the message',
+      Boolean(readRow && Array.isArray(readRow.readBy) && readRow.readBy.some((id) => String(id) === bob.id)),
+      readRow?.readBy,
+    );
+  } finally {
+    aliceSocket.close();
+  }
+
   console.log(`\n${passed} passed, ${failures.length} failed\n`);
   if (failures.length > 0) {
     console.log('failures:', JSON.stringify(failures, null, 2));
