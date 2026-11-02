@@ -34,9 +34,9 @@
       powershell -ExecutionPolicy Bypass -File scripts/deploy-web-vm.ps1 -SkipBuild
       powershell -ExecutionPolicy Bypass -File scripts/deploy-web-vm.ps1 -SiteUrl https://chatgram.qd.je
 
-  -SkipBuild reuses the prebuilt tree (client/landing/.vercel/output/static when
-  present, else the existing client/landing/dist + apps/web/dist) and only
-  re-uploads it.
+  -SkipBuild reuses the existing client/landing/dist + apps/web/dist (falling
+  back to client/landing/.vercel/output/static only when dist is absent) and
+  only re-assembles and re-uploads the tree.
 
   -SiteUrl is passed through as SITE_URL (and VITE_SITE_URL) during the landing
   and web builds, exactly like scripts/deploy-web.ps1 does. Run it only after
@@ -130,8 +130,10 @@ try {
   Remove-Item -Recurse -Force $staging -ErrorAction SilentlyContinue
   New-Item -ItemType Directory -Force -Path $staging | Out-Null
 
-  $reusePrebuilt = $SkipBuild -and (Test-Path (Join-Path $prebuilt 'index.html')) -and (Test-Path (Join-Path $prebuilt 'web\index.html'))
-  if ($reusePrebuilt) {
+  $distReady = (Test-Path (Join-Path $dist 'index.html')) -and (Test-Path (Join-Path $repo 'apps\web\dist\index.html'))
+  $prebuiltReady = (Test-Path (Join-Path $prebuilt 'index.html')) -and (Test-Path (Join-Path $prebuilt 'web\index.html'))
+  if ($SkipBuild -and -not $distReady -and $prebuiltReady) {
+    # No dist tree (e.g. a clean checkout): reuse the last Vercel Build Output.
     Write-Host '    source: client/landing/.vercel/output/static (last Vercel build)' -ForegroundColor DarkGray
     Copy-Item -Recurse -Force (Join-Path $prebuilt '*') $staging
   } else {
