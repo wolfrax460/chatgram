@@ -76,3 +76,4 @@ backups/
 # ---- Firebase credentials (owner-supplied, never commit) --------------------
 firebase/
 apps/mobile/android/app/google-services.json
+.vm-output/
