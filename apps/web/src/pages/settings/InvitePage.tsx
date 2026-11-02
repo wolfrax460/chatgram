@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Check, Copy, Share2, UserRoundPlus } from 'lucide-react';
+import { chatgramSiteUrl } from '../../lib/mediaPermissions';
 import type { SettingsPageProps } from './types';
 import { SettingsGroup, SettingsNotice, SettingsPage, SettingsCross, focusRing } from './ui';
 
@@ -7,7 +8,7 @@ function inviteLink(): string {
   try {
     return `${window.location.origin}/`;
   } catch {
-    return 'https://chatgram-xi.vercel.app/';
+    return `${chatgramSiteUrl()}/`;
   }
 }
 

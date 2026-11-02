@@ -17,6 +17,10 @@ import java.util.Set;
 /**
  * Talks to {@code GET /api/app/version} and decides whether an update applies.
  *
+ * <p>DOMAIN MOVE: old host keeps working; next build switches the default to
+ * https://chatgram.qd.je. Both hosts are allowed, and the request tries the new
+ * host first with the old host as fallback (see {@link Sites#API_BASES}).
+ *
  * Kept free of Android UI types so the rules are easy to read and reason about:
  *  - the download URL must be on one of OUR HTTPS hosts (never a third party),
  *  - a withdrawn build is never offered,
@@ -28,11 +32,11 @@ final class VersionClient {
 
     /** Our own hosts. Anything else is refused before DownloadManager sees it. */
     private static final Set<String> ALLOWED_HOSTS = new HashSet<>(Arrays.asList(
-            "chatgram-xi.vercel.app",
+            Sites.HOST_NEW,
+            Sites.HOST_OLD,
             "chatgram.duckdns.org"
     ));
 
-    private static final String API_BASE = "https://chatgram-xi.vercel.app";
     private static final int TIMEOUT_MS = 12_000;
 
     private VersionClient() {
@@ -106,7 +110,28 @@ final class VersionClient {
     }
 
     static Info fetch(String currentVersion, int currentCode) throws IOException, JSONException {
-        String endpoint = API_BASE + "/api/app/version?platform=android"
+        // DOMAIN MOVE: the new host is tried first, the old host is the fallback,
+        // so a next build works after the switch while today's deployment still
+        // answers. Timeouts are per attempt and unchanged.
+        IOException ioFailure = null;
+        JSONException jsonFailure = null;
+        for (String apiBase : Sites.API_BASES) {
+            try {
+                return fetchFrom(apiBase, currentVersion, currentCode);
+            } catch (IOException error) {
+                ioFailure = error;
+            } catch (JSONException error) {
+                jsonFailure = error;
+            }
+        }
+        if (ioFailure != null) throw ioFailure;
+        if (jsonFailure != null) throw jsonFailure;
+        throw new IOException("version endpoint unreachable");
+    }
+
+    private static Info fetchFrom(String apiBase, String currentVersion, int currentCode)
+            throws IOException, JSONException {
+        String endpoint = apiBase + "/api/app/version?platform=android"
                 + "&current=" + urlEncode(currentVersion)
                 + "&build=" + currentCode;
         HttpURLConnection connection = null;

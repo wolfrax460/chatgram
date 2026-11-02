@@ -28,6 +28,7 @@ const appRoutes = require('./routes/appRoutes');
 const supportRoutes = require('./routes/supportRoutes');
 const supportAccount = require('./utils/supportAccount');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
+const { originAllowList } = require('./utils/publicUrls');
 
 const app = express();
 
@@ -40,21 +41,21 @@ const server = http.createServer(app);
 
 // ------------------------------------------------------------------- origin
 //
-// CLIENT_URL may be a comma-separated list, e.g. a production Vercel URL plus a
-// preview URL. Trailing slashes are stripped so `https://x.app/` and
-// `https://x.app` behave identically — a trailing slash in CLIENT_URL is one of
-// the most common causes of "blocked by CORS policy".
+// ALLOWED_ORIGINS is the exact, comma-separated origin allow-list (e.g.
+// https://chatgram.qd.je,https://chatgram-xi.vercel.app). CLIENT_URL remains a
+// backwards-compatible fallback so existing production .env files keep working.
+// Trailing slashes are stripped so `https://x.app/` and `https://x.app` behave
+// identically — a trailing slash is one of the most common causes of "blocked
+// by CORS policy".
 const isProd = process.env.NODE_ENV === 'production';
-const allowedOrigins = (process.env.CLIENT_URL || '')
-  .split(',')
-  .map((value) => value.trim().replace(/\/+$/, ''))
-  .filter(Boolean);
+const allowedOrigins = originAllowList();
 
 if (isProd && allowedOrigins.length === 0) {
   console.error(
-    '\nFATAL: CLIENT_URL is not set.\n' +
-      'In production it must be the exact frontend origin, for example:\n' +
-      '  CLIENT_URL=https://your-project.vercel.app\n' +
+    '\nFATAL: ALLOWED_ORIGINS is not set (and the CLIENT_URL fallback is empty).\n' +
+      'Set it to the exact frontend origin(s), comma separated, for example:\n' +
+      '  ALLOWED_ORIGINS=https://chatgram.qd.je,https://chatgram-xi.vercel.app\n' +
+      'CLIENT_URL still works as a fallback when ALLOWED_ORIGINS is unset.\n' +
       '(https, no trailing slash, not a preview URL)\n'
   );
   process.exit(1);
@@ -66,7 +67,8 @@ if (isProd && allowedOrigins.length === 0) {
  *  - **No `Origin` header** → native Android / Windows clients and curl. These
  *    are not browsers, CORS does not apply, and blocking them breaks the apps,
  *    so they are always allowed.
- *  - **Present `Origin`** → in production it must match CLIENT_URL exactly.
+ *  - **Present `Origin`** → in production it must match an entry in
+ *    ALLOWED_ORIGINS (or the CLIENT_URL fallback) exactly.
  *  - **Development** → everything allowed, because Flutter web picks a random
  *    port on each run.
  */

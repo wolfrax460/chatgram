@@ -3,6 +3,7 @@
  * mode and upload limits. Cached in utils/platformSettings.
  */
 const mongoose = require('mongoose');
+const { publicSiteUrl } = require('../utils/publicUrls');
 
 const platformSettingsSchema = new mongoose.Schema(
   {
@@ -31,7 +32,7 @@ const platformSettingsSchema = new mongoose.Schema(
     signupThrottleEnabled: { type: Boolean, default: true },
     // 9b Settings page.
     siteName: { type: String, default: 'Chatgram' },
-    siteUrl: { type: String, default: 'https://chatgram-xi.vercel.app' },
+    siteUrl: { type: String, default: publicSiteUrl() },
     supportEmail: { type: String, default: '' },
     smtpFromName: { type: String, default: 'Chatgram' },
     smtpFromAddress: { type: String, default: '' },

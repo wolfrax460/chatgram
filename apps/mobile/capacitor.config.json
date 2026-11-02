@@ -1,4 +1,5 @@
 {
+  "_comment": "DOMAIN MOVE: old host keeps working; next build switches the default to https://chatgram.qd.je (server.url and the first allowNavigation entry). Both hosts are allowed today.",
   "appId": "app.chatgram.android",
   "appName": "Chatgram",
   "webDir": "../web/dist",
@@ -17,6 +18,7 @@
     "errorPath": "error.html",
     "allowNavigation": [
       "chatgram-xi.vercel.app",
+      "chatgram.qd.je",
       "chatgram.duckdns.org"
     ]
   }

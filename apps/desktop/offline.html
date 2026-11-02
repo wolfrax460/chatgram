@@ -27,6 +27,12 @@
     </style>
   </head>
   <body>
+    <!--
+      DOMAIN MOVE: old host keeps working; next build switches the default to
+      https://chatgram.qd.je. The retry keeps the referrer when there is one, so
+      a page served from either host returns to that same host; the hard-coded
+      fallback stays on the host that serves installed builds today.
+    -->
     <div class="card">
       <div class="mark">💬</div>
       <h1>You&rsquo;re offline</h1>

@@ -4,6 +4,7 @@ import {
   ShieldCheck, Sparkles, Timer, UserRound, UserRoundPlus, MessageCircle,
 } from 'lucide-react';
 import { useSession } from '@chatgram/core';
+import { chatgramSiteUrl } from '../lib/mediaPermissions';
 import AccountPage from './settings/AccountPage';
 import AiPage from './settings/AiPage';
 import AutoReplyPage from './settings/AutoReplyPage';
@@ -183,7 +184,7 @@ export default function Settings({ onOpenSupport }: { onOpenSupport: (chatId: st
     try {
       return `${window.location.origin}/`;
     } catch {
-      return 'https://chatgram-xi.vercel.app/';
+      return `${chatgramSiteUrl()}/`;
     }
   })();
 

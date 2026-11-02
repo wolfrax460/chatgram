@@ -1096,3 +1096,22 @@ a repository secret scoped to one step and is never printed.
 `AUTOFIX_API_KEY` secret) returns the repository to its previous behaviour; the
 only artifacts are `docs/autofix/*.md` on throwaway branches, and closing a draft
 PR discards them. No data, no schema, no production deploy is touched.
+
+## D65 - Domain move is gated, never shipped half-way (2026-11-02)
+
+Moving to `https://chatgram.qd.je` is split into a *prepared* state and a *cutover* state, because a
+domain that is attached in Vercel but not verified serves nothing at all.
+
+- **Prepared (shipped now):** the backend accepts both origins from one variable
+  (`ALLOWED_ORIGINS`, `CLIENT_URL` fallback) and public links stay on today's hosts; the landing build
+  reads one `SITE_URL`; the apps accept both hosts. Nothing user-visible changes, so the old address
+  cannot break.
+- **Cutover (one command, refused until the target is healthy):** `scripts/deploy-web.ps1 -SiteUrl
+  https://chatgram.qd.je -EnableRedirect` rewrites canonical/SEO output and adds 308 host redirects,
+  but only after probing the new host for 200 + valid TLS + the landing marker, and it never redirects
+  `/api`, `/downloads`, `version.json`, `latest.yml`, `checksums.txt` or the installer/APK paths.
+- **Why `/web/` needs its own switch:** installed Android 1.1.7 and Windows 1.1.6 hard-code the old
+  `/web/` entry. Redirecting it before those builds are replaced would white-screen every installed
+  app, so `-IncludeWebApp` stays off until the new installers ship.
+- **Rejected:** cutting over optimistically (canonical pointing at a dead host), redirecting
+  everything at once, or hacking DNS/verification to force the domain in.

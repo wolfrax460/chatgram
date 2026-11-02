@@ -11,6 +11,7 @@
  * the configured public URLs.
  */
 const crypto = require('crypto');
+const { publicSiteUrl, originAllowList } = require('./publicUrls');
 
 const UPDATE_PLATFORMS = ['windows', 'android'];
 /** A public check answers from a published AppRelease, or from the legacy env policy. */
@@ -99,12 +100,15 @@ function hostOf(rawUrl) {
 function allowedHosts() {
   const hosts = new Set();
   const urls = [
+    process.env.PUBLIC_SITE_URL,
     process.env.CLIENT_URL,
     process.env.SITE_URL,
     process.env.PUBLIC_URL,
     process.env.APP_PUBLIC_BASE_URL,
     process.env.APP_UPDATE_URL,
     process.env.APP_DOWNLOAD_BASE_URL,
+    ...originAllowList(),
+    publicSiteUrl(),
   ];
   for (const url of urls) {
     const host = hostOf(url);
@@ -139,8 +143,15 @@ function rejectReason(parsed, allowed) {
 /** Public base for a site-relative file path (e.g. /downloads/app.exe). */
 function publicBase(requestOrigin) {
   const configured =
-    process.env.APP_PUBLIC_BASE_URL || process.env.CLIENT_URL || process.env.SITE_URL || process.env.PUBLIC_URL || '';
-  const raw = String(configured || requestOrigin || '').trim();
+    process.env.APP_PUBLIC_BASE_URL
+    || process.env.PUBLIC_SITE_URL
+    || process.env.CLIENT_URL
+    || process.env.SITE_URL
+    || process.env.PUBLIC_URL
+    || '';
+  // Keep requestOrigin as the final fallback (today's behaviour for env-less
+  // local runs); publicSiteUrl() only supplies the documented default.
+  const raw = String(configured || requestOrigin || publicSiteUrl()).trim();
   if (!raw) return '';
   try {
     const parsed = new URL(raw);

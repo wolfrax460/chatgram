@@ -17,6 +17,7 @@ const path = require('path');
 const mongoose = require('mongoose');
 const AppRelease = require('../models/AppRelease');
 const CURATED_CHANGELOG = require('../data/changelog');
+const { isOurHost } = require('../utils/publicUrls');
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_CONTEXT_CHARS = 4096;
@@ -56,8 +57,10 @@ function sanitizeUrls(text) {
       if (!/^https?:$/.test(parsed.protocol)) return '';
       if (host === 'duckdns.org' || host.endsWith('.duckdns.org')) return '';
       if (host === 'localhost' || HOST_IP_RE.test(host)) return '';
-      // Only public app/download URLs are useful in the context.
-      if (host === 'chatgram-xi.vercel.app' || host.endsWith('.vercel.app')) return url;
+      // Only public app/download URLs are useful in the context. Both Chatgram
+      // hosts (old Vercel + new qd.je domain) are ours; Vercel previews stay
+      // allowed for release links.
+      if (isOurHost(host) || host.endsWith('.vercel.app')) return url;
       if (host === 'github.com' || host.endsWith('.github.com')) return url;
       return '';
     } catch {

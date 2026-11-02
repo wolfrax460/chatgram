@@ -30,6 +30,7 @@
  */
 const platformSettings = require('../utils/platformSettings');
 const { redactPII } = require('../utils/githubIssues');
+const { publicSiteUrl } = require('../utils/publicUrls');
 
 const TELEGRAM_API = 'https://api.telegram.org';
 const TIMEOUT_MS = 12000;
@@ -38,7 +39,6 @@ const POLL_ERROR_WAIT_MS = 15000;
 const POLL_DISABLED_WAIT_MS = 60000;
 const REPLY_MAX_LENGTH = 4000;
 const PROMPT_MAX_LENGTH = 3500;
-const DEFAULT_CLIENT_URL = 'https://chatgram-xi.vercel.app';
 
 /** Testable endpoint override (the real bot API by default). */
 function telegramApiBase() {
@@ -137,11 +137,8 @@ function shortenSummary(value) {
 }
 
 function inboxUrl() {
-  const base =
-    String(process.env.CLIENT_URL || '')
-      .split(',')[0]
-      .trim()
-      .replace(/\/+$/, '') || DEFAULT_CLIENT_URL;
+  // PUBLIC_SITE_URL || SITE_URL || first CLIENT_URL entry || old-host default.
+  const base = publicSiteUrl().replace(/\/+$/, '');
   return `${base}/web/admin/inbox`;
 }
 

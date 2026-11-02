@@ -45,7 +45,12 @@ final class CallAlerts {
     static final String EXTRA_NOTIFICATION_ID = "app.chatgram.android.extra.CALL_NOTIFICATION_ID";
 
     private static final String TAG_PREFIX = "call:";
-    private static final String FALLBACK_APP_URL = "https://chatgram-xi.vercel.app/web/";
+    // DOMAIN MOVE: old host keeps working; next build switches the default to
+    // https://chatgram.qd.je. appBaseUrl() reads the packaged server.url (both
+    // hosts are accepted there), so this is only the fallback when
+    // assets/capacitor.config.json cannot be read; it stays on the host that
+    // serves installed builds today.
+    private static final String FALLBACK_APP_URL = Sites.WEB_OLD;
     private static final long RING_TIMEOUT_MS = 45_000L;
     private static final int AVATAR_MAX_BYTES = 2 * 1024 * 1024;
     private static final int AVATAR_TIMEOUT_MS = 5_000;

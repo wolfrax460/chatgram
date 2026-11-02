@@ -18,6 +18,17 @@ export type PermissionName = 'microphone' | 'camera';
 export type PermissionQueryState = 'granted' | 'denied' | 'prompt' | 'unsupported';
 export type MediaPlatform = 'android-app' | 'android-chrome' | 'ios-safari' | 'ios-browser' | 'desktop' | 'unknown';
 
+/**
+ * One source of the public site address for the web app (share/invite links and
+ * the copy below). A custom-domain build sets VITE_SITE_URL; until then the
+ * current host is the fallback so every link keeps working during the move.
+ * Keep in sync with client/landing/content/site-url.mjs.
+ */
+export function chatgramSiteUrl(): string {
+  const configured = (import.meta.env.VITE_SITE_URL as string | undefined)?.trim();
+  return (configured || 'https://chatgram-xi.vercel.app').replace(/\/+$/, '');
+}
+
 export interface MediaErrorInfo {
   /** The DOMException name we actually caught, for the debug line. */
   errorName: string;
@@ -235,7 +246,7 @@ export function describeMediaError(error: unknown, kind: MediaKind = 'microphone
       platform,
       title: 'Open Chatgram over HTTPS',
       message: `Browsers only allow the ${label} on a secure (https) page.`,
-      steps: ['Use https://chatgram-xi.vercel.app, or the Chatgram Android app.', 'Then try the call again.'],
+      steps: [`Use ${chatgramSiteUrl()}, or the Chatgram Android app.`, 'Then try the call again.'],
       canRetry: false,
       insecureContext: true,
     };

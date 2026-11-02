@@ -61,12 +61,20 @@
       // capacitor.config.json the app loads the hosted web client directly and
       // never shows this page. If a broken config ever made Capacitor load the
       // bundled asset instead, the user still reaches the real app.
+      //
+      // DOMAIN MOVE: old host keeps working; next build switches the default to
+      // https://chatgram.qd.je. Both hosts are kept here so the next build only
+      // changes which one TARGET uses; today it stays on the old host because
+      // that is the one that serves the app.
+      var SITE_OLD = 'https://chatgram-xi.vercel.app';
+      var SITE_NEW = 'https://chatgram.qd.je';
+      var TARGET = SITE_OLD + '/web/';
+
       function openApp() {
-        var target = 'https://chatgram-xi.vercel.app/web/';
         try {
-          window.location.replace(target);
+          window.location.replace(TARGET);
         } catch (e) {
-          window.location.href = target;
+          window.location.href = TARGET;
         }
       }
       // Give the WebView a moment, then send the user to the real app.

@@ -116,3 +116,12 @@ and PNG masters only.
 - HTTPS/WSS: already in place (nginx + certbot, TLS 1.3).
 - FormData uploads: already verified working from the React client.
 - No local Flutter database: so no offline-cache migration is required.
+
+## Domain move to chatgram.qd.je (owner/Vercel, blocks the cutover)
+
+`https://chatgram.qd.je` cannot be attached to Vercel project `chatgram`: the domain is reported as
+linked to another Vercel account and verification asks for `TXT _vercel.qd.je`, which lives in the
+parent zone `qd.je` that we do not control (DigitalPlat owns it; we only control `chatgram.qd.je`).
+`npx vercel domains add` -> 403. Nothing in the repo or on the VM can fix this; the exact message to
+send Vercel support is in `docs/reports/vercel-domain-support.md`. Until the host answers 200 with a
+valid certificate, the site keeps serving from `chatgram-xi.vercel.app` (see `docs/deploy.md` §3b).

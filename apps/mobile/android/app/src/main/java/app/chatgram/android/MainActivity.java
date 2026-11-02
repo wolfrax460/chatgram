@@ -9,12 +9,14 @@ import com.getcapacitor.BridgeActivity;
 /**
  * Chatgram for Android — Capacitor shell.
  *
- * <p>The web client itself is served from https://chatgram-xi.vercel.app/web/
- * (see {@code capacitor.config.json}, {@code server.url}), so this activity only
- * configures the WebView. It must NOT try to load local assets: with a
- * {@code server.url} configured Capacitor ignores them, and the older APK that
- * shipped without {@code server.url} loaded a stale local copy whose scripts
- * 404'd (blank white screen).
+ * <p>The web client itself is served from the hosted URL in
+ * {@code capacitor.config.json} ({@code server.url}), currently
+ * https://chatgram-xi.vercel.app/web/ — so this activity only configures the
+ * WebView. DOMAIN MOVE: old host keeps working; next build switches the default
+ * to https://chatgram.qd.je (see {@link Sites}). It must NOT try to load local
+ * assets: with a {@code server.url} configured Capacitor ignores them, and the
+ * older APK that shipped without {@code server.url} loaded a stale local copy
+ * whose scripts 404'd (blank white screen).
  *
  * <p>The class package matters. {@code AndroidManifest.xml} declares the
  * activity as {@code .MainActivity}, which resolves against the Gradle

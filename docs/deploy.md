@@ -6,6 +6,7 @@ what is currently deployed. **Deploy only when green** (`deploy-after-green`).
 | | |
 |---|---|
 | Web app + landing + `/docs` | https://chatgram-xi.vercel.app (`/web/`, `/`, `/docs/`) |
+| New domain (prepared, **not live**) | https://chatgram.qd.je — DNS points at Vercel, domain not attached (verification blocked; see §3b) |
 | API + WebSocket | https://chatgram.duckdns.org |
 | Server | `ubuntu@84.12.64.204` (Oracle VM, Johannesburg) |
 | Server code | `~/chatgram/server`, PM2 process `chatgram-api` |
@@ -137,6 +138,46 @@ curl.exe -sS -o NUL -w "%{http_code}`n" https://chatgram-xi.vercel.app/web/admin
 
 The deployment URL printed by the CLI is the new production alias; if it went to a
 preview URL, run `npx vercel alias <url> chatgram-xi.vercel.app`.
+
+## 3b. Domain cutover to https://chatgram.qd.je — prepared, waiting on Vercel
+
+**Status 2026-11-02: blocked.** `chatgram.qd.je` resolves to Vercel (`A 76.76.21.21`, `HTTP :80` →
+`X-Vercel-Error: DEPLOYMENT_NOT_FOUND`) but the domain is not attached to the project, so no
+certificate is issued and `https://chatgram.qd.je` fails the TLS handshake. The owner controls the zone
+`chatgram.qd.je` (DigitalPlat NS) but not the parent `qd.je`; Vercel demands
+`TXT _vercel.qd.je`, and `npx vercel domains add chatgram.qd.je chatgram` returns
+`403 Not authorized to use chatgram.qd.je` ("linked to another Vercel account"). The exact support
+request to send is in `docs/reports/vercel-domain-support.md`. **Do not cut over before the host
+answers 200 with a valid certificate.**
+
+Everything else is in place:
+
+1. **Backend (already deployed):** `ALLOWED_ORIGINS` is set on the VM to
+   `https://chatgram.qd.je,https://chatgram-xi.vercel.app` and drives Express CORS + Socket.IO
+   (`server/src/utils/publicUrls.js`; `CLIENT_URL` remains the fallback). Verify with
+   `curl -i -X OPTIONS -H "Origin: https://chatgram.qd.je" https://chatgram.duckdns.org/api/auth/login`
+   → `204` + `Access-Control-Allow-Origin: https://chatgram.qd.je`. Do **not** set
+   `PUBLIC_SITE_URL` until the cutover: release/download links must stay on
+   `https://chatgram.duckdns.org/downloads`.
+2. **One-step web switch** (rewrites canonical/hreflang/OG/Twitter/JSON-LD/sitemap/robots/QR and adds
+   the gated 308 redirects):
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-web.ps1 -SiteUrl https://chatgram.qd.je -EnableRedirect
+   ```
+
+   `-EnableRedirect` writes 308 host redirects for `chatgram-xi.vercel.app` and **refuses to write or
+   deploy anything** unless `https://chatgram.qd.je/` returns 200 with a valid certificate and the
+   landing marker. `/api/*`, `/downloads/*`, `version.json`, `latest.yml`, `checksums.txt`, `.apk` and
+   `.exe` are never redirected (installed apps and the updater depend on them). `/web/` is redirected
+   **only** together with `-IncludeWebApp`, i.e. after the Android/Windows builds that point at the new
+   host have shipped — otherwise installed 1.1.7 / 1.1.6 would break.
+3. **New-home notice:** rebuild web with `$env:VITE_NEW_HOME_URL='https://chatgram.qd.je'` (before or
+   with the redirect) so users see "Chatgram has a new home" and can sign in there once.
+4. **Apps (source only, not rebuilt):** `apps/desktop/main.js`, `apps/mobile/capacitor.config.json`,
+   `Sites.java`, `VersionClient.java` accept both hosts and keep the old one as default. The next
+   installer/APK build flips `PRIMARY_ORIGIN` / `server.url` to the new host and should ship **before**
+   `-IncludeWebApp`.
 
 ## 4. Production smoke test (create + delete TEST accounts)
 

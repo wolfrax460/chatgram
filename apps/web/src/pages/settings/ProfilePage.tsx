@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Camera, Check, Copy, Mail, Pencil, Phone, Share2 } from 'lucide-react';
 import { useSession } from '@chatgram/core';
 import { api } from '../../lib/api';
+import { chatgramSiteUrl } from '../../lib/mediaPermissions';
 import { useCopyToClipboard } from './ui';
 import type { SettingsPageProps } from './types';
 import { RowDivider, SettingsGroup, SettingsNotice, SettingsPage, SettingsField, focusRing } from './ui';
@@ -33,7 +34,7 @@ export default function ProfilePage({ onBack }: SettingsPageProps) {
     try {
       return `${window.location.origin}/`;
     } catch {
-      return 'https://chatgram-xi.vercel.app/';
+      return `${chatgramSiteUrl()}/`;
     }
   })();
 

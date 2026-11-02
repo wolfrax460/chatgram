@@ -22,6 +22,7 @@ import { useProfilePanel } from './lib/profilePanel';
 import { GroupInfoContext, useGroupInfo, type GroupInfoApi } from './lib/groupInfo';
 import { ChatList } from './components/ChatList';
 import AnnouncementBanner from './components/AnnouncementBanner';
+import NewHomeBanner from './components/NewHomeBanner';
 import { ChatHeader } from './components/ChatHeader';
 import { MessageBubble } from './components/MessageBubble';
 import Composer from './components/Composer';
@@ -1383,6 +1384,7 @@ function Shell({ features }: { features: AppFeatures | null }) {
             ) : (
               <>
             <AnnouncementBanner />
+            <NewHomeBanner />
             <ChatList
               onAskAi={(text: string) => {
                 setAiPendingQuestion(text);

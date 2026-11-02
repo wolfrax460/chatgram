@@ -54,7 +54,14 @@
       // Capacitor's `server.errorPath` loads this page (a local file, no network
       // needed) when the hosted web client cannot be fetched, instead of leaving
       // the user with a blank white WebView. It re-tries the real app by itself.
-      var TARGET = 'https://chatgram-xi.vercel.app/web/';
+      //
+      // DOMAIN MOVE: old host keeps working; next build switches the default to
+      // https://chatgram.qd.je. Both hosts are defined here, so switching over
+      // is a one-line change (TARGET); today it uses the old host because that
+      // is the one installed builds load.
+      var SITE_OLD = 'https://chatgram-xi.vercel.app';
+      var SITE_NEW = 'https://chatgram.qd.je';
+      var TARGET = SITE_OLD + '/web/';
       var attempts = 0;
 
       function retryNow() {

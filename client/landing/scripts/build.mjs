@@ -10,40 +10,30 @@
  *   /guides/*.html       four long-form content pages
  *   404.html, sitemap.xml, robots.txt, site.webmanifest
  *
- * The origin comes from SITE_URL (default https://chatgram-xi.vercel.app) so the
- * same build works on a custom domain without editing any page.
+ * The origin comes from SITE_URL (see content/site-url.mjs; default is the
+ * current host) so the same build works on a custom domain without editing any
+ * page. The Android APK QR code is generated from that same origin.
  */
 import { createHash } from 'node:crypto';
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { GUIDES, LANGUAGES, SITE } from '../content/site.mjs';
+import { GUIDES, LANGUAGES, RELEASES } from '../content/site.mjs';
+import { resolveSiteUrl } from '../content/site-url.mjs';
 import en from '../content/landing.en.mjs';
 import rw from '../content/landing.rw.mjs';
 import fr from '../content/landing.fr.mjs';
 import sw from '../content/landing.sw.mjs';
 import { GUIDES_CONTENT } from '../content/guides.mjs';
 import { renderGuidePage, renderLocalePage, renderManifest, renderNotFound, renderRobots, renderSitemap } from './templates.mjs';
+import { qrSvg } from './qr.mjs';
 import { validateSite } from './validate.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LANDING = path.resolve(__dirname, '..');
 const DIST = path.join(LANDING, 'dist');
 const CONTENT = { en, rw, fr, sw };
-
-function resolveSiteUrl() {
-  const raw = (process.env.SITE_URL || SITE.defaultUrl).trim();
-  let parsed;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new Error(`SITE_URL is not a valid URL: ${raw}`);
-  }
-  if (parsed.protocol !== 'https:') throw new Error(`SITE_URL must use https:// (got ${raw})`);
-  if (parsed.search || parsed.hash) throw new Error('SITE_URL must not contain a query string or hash');
-  return parsed.origin + parsed.pathname.replace(/\/+$/, '');
-}
 
 function assetHash(buffer) {
   return createHash('sha256').update(buffer).digest('hex').slice(0, 10);
@@ -67,8 +57,15 @@ async function main() {
   await rm(DIST, { recursive: true, force: true });
   await mkdir(path.join(DIST, 'static'), { recursive: true });
 
-  /* Public files (screenshots, QR, docs page, icons) are copied verbatim. */
+  /* Public files (screenshots, docs page, icons) are copied verbatim. */
   await cp(path.join(LANDING, 'public'), DIST, { recursive: true });
+
+  /* The APK QR code encodes an absolute URL, so it is generated from SITE_URL
+     here instead of shipping a checked-in image that would go stale when the
+     site moves to a new host. */
+  const apkUrl = `${siteUrl}${RELEASES.android.fileUrl}`;
+  await write('assets/apk-qr.svg', qrSvg(apkUrl));
+  console.log(`    qr   /assets/apk-qr.svg -> ${apkUrl}`);
 
   /* One small CSS + one small JS file, content-hashed for immutable caching. */
   const css = [

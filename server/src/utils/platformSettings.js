@@ -4,6 +4,7 @@
  * below reads the cached copy.
  */
 const PlatformSettings = require('../models/PlatformSettings');
+const { publicSiteUrl } = require('./publicUrls');
 
 const DEFAULTS = {
   registrationEnabled: true,
@@ -31,7 +32,7 @@ const DEFAULTS = {
   ipBans: [],
   // 9b Settings page.
   siteName: 'Chatgram',
-  siteUrl: 'https://chatgram-xi.vercel.app',
+  siteUrl: publicSiteUrl(),
   supportEmail: '',
   smtpFromName: 'Chatgram',
   smtpFromAddress: '',

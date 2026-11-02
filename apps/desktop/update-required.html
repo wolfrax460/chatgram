@@ -105,7 +105,12 @@
       async function start() {
         if (!bridge) {
           meta.textContent = 'This build cannot update itself.';
-          errorBox.textContent = 'Please download the latest installer from chatgram-xi.vercel.app/downloads';
+          // DOMAIN MOVE: old host keeps working; next build switches the default
+          // to https://chatgram.qd.je. The download path is /downloads on either
+          // deployment; the old host is named first because it serves today.
+          errorBox.textContent =
+            'Please download the latest installer from chatgram-xi.vercel.app/downloads '
+            + '(or chatgram.qd.je/downloads once the new domain is live)';
           action.disabled = true;
           return;
         }

@@ -2,13 +2,14 @@
  * Shared data for the static Chatgram landing site.
  *
  * Everything here is used by scripts/build.mjs to render real HTML. The origin
- * comes from the SITE_URL environment variable at build time (see build.mjs),
- * so nothing in this file is tied to a deployment domain.
+ * comes from the SITE_URL environment variable at build time (see
+ * content/site-url.mjs), so nothing in this file is tied to a deployment domain.
  */
+import { SITE_URL_OLD } from './site-url.mjs';
 
 export const SITE = {
   name: 'Chatgram',
-  defaultUrl: 'https://chatgram-xi.vercel.app',
+  defaultUrl: SITE_URL_OLD,
   appPath: '/web/',
   legalPath: '/docs/',
   brandColor: '#008069',
