@@ -179,6 +179,33 @@ Everything else is in place:
    installer/APK build flips `PRIMARY_ORIGIN` / `server.url` to the new host and should ship **before**
    `-IncludeWebApp`.
 
+### 3b-bis. Decision changed (2026-11-02 evening): `chatgram.qd.je` is served from the VM, not Vercel
+
+Vercel support confirmed the mechanism and it is final: `qd.je` is not on the Public Suffix List, so
+Vercel parses `qd.je` as the registrable root and only accepts ownership proof at `_vercel.qd.je`
+(apex). Vercel cannot override that parsing, cannot remove the claim held by another account, and
+cannot accept `_vercel.chatgram.qd.je`. The domain therefore **cannot** be attached to Vercel.
+
+Because we control the `chatgram.qd.je` zone, the domain is instead served from the Oracle VM,
+in parallel with Vercel (which keeps `chatgram-xi.vercel.app` and everything installed apps call):
+
+| Piece | Value |
+|---|---|
+| nginx vhost | `deploy/nginx/chatgram.qd.je.conf` → `/etc/nginx/sites-available/chatgram.qd.je` (HTTP only until certbot) |
+| web root | `/var/www/chatgram-site` (same Build Output bundle Vercel serves) |
+| `/api` | proxy to `127.0.0.1:5000` (same Node process) |
+| `/downloads/` | straight from `/var/www/downloads` (Range support kept) |
+| upload/deploy | `powershell -File scripts/deploy-web-vm.ps1 [-SiteUrl <url>]` — packs a tarball, installs into `chatgram-site.new`, verifies, then swaps (a failed upload never leaves a half site) |
+| certificate | after the A record points here: `sudo certbot --nginx -d chatgram.qd.je --redirect` |
+| DNS (owner) | `A @ 84.12.64.204` in the DigitalPlat zone for `chatgram.qd.je` (was `76.76.21.21`) |
+| cutover | `deploy-web.ps1 -SiteUrl https://chatgram.qd.je -EnableRedirect` (old host 308 + new canonical/SEO/QR) **and** `deploy-web-vm.ps1 -SiteUrl https://chatgram.qd.je`; `/web/` only with `-IncludeWebApp` after the new installers ship |
+
+Verified before DNS moved, with a `Host: chatgram.qd.je` request against nginx on the VM:
+`/`, `/web`, `/web/`, `/web/admin`, `/web/admin/users`, `/docs/`, `/fr`, `/rw`, `/web/version.json`,
+`/sitemap.xml`, `/robots.txt`, `/site.webmanifest`, `/favicon.ico`, `/guides/*`,
+`/downloads/latest.yml`, `/api/status/health` → **200**; `/nonexistent-page` → **404**;
+`/web/static/*.js` → 200 `application/javascript`; `https://chatgram.duckdns.org/` still 200.
+
 ## 4. Production smoke test (create + delete TEST accounts)
 
 Rules: two clearly named test accounts, never touch real users, delete everything
