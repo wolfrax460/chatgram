@@ -7,7 +7,7 @@
  */
 import { DIRECT_DOWNLOADS, INSTALL_GUIDE } from '../content/install-guide.mjs';
 import { ICON, PHONE_SCREENS } from '../content/media.mjs';
-import { GUIDES, LANGUAGES, OG_IMAGE, RELEASES, SCREENSHOTS, SITE } from '../content/site.mjs';
+import { CONTENT_PAGES, CONTENT_UPDATED_ISO, GUIDES, LANGUAGES, OG_IMAGE, RELEASES, SCREENSHOTS, SITE, contentPagePath } from '../content/site.mjs';
 
 /* ------------------------------------------------------------------ helpers */
 export function escapeHtml(value) {
@@ -635,6 +635,13 @@ ${locale.footer.legal.map((l) => `          <a href="${l.href}">${e(l.label)}</a
           <h4>${e(locale.footer.guidesTitle)}</h4>
 ${guideLinks}
         </div>
+        <div>
+          <h4>${e(CONTENT_CHROME[locale.code] ? CONTENT_CHROME[locale.code].more : CONTENT_CHROME.en.more)}</h4>
+          <a href="${contentPagePath('about', locale.code)}">${e(CONTENT_PAGES[0].label[locale.code])}</a>
+          <a href="${contentPagePath('is-chatgram-free', locale.code)}">${e(CONTENT_PAGES[1].label[locale.code])}</a>
+          <a href="${contentPagePath('whats-new', locale.code)}">${e(CONTENT_PAGES[2].label[locale.code])}</a>
+          <a href="${contentPagePath('privacy-and-safety', locale.code)}">${e(CONTENT_PAGES[3].label[locale.code])}</a>
+        </div>
       </div>
       <div class="foot-bottom">
         <span>${e(locale.footer.bottom.replace('{year}', String(new Date().getFullYear())))}</span>
@@ -820,6 +827,7 @@ export function renderGuidePage({ content, guide, siteUrl, cssHref, jsHref }) {
   const related = GUIDES.filter((g) => g.path !== guide.path)
     .map((g) => `            <li><a href="${g.path}">${e(g.title)}</a></li>`)
     .join('\n');
+  const relatedPages = CONTENT_PAGES.map((p) => `            <li><a href="${contentPagePath(p.slug, 'en')}">${e(p.label.en)}</a></li>`).join('\n');
 
   return `${head({
     siteUrl,
@@ -861,6 +869,10 @@ ${sections}
           <ul>
 ${related}
           </ul>
+          <h2>More about Chatgram</h2>
+          <ul>
+${relatedPages}
+          </ul>
           <p><a href="/#download">Download Chatgram for Android or Windows</a> · <a href="/#faq">Chatgram FAQ</a> · <a href="/web/">Open the web app</a></p>
         </div>
       </article>
@@ -871,6 +883,201 @@ ${related}
       <div class="foot-bottom">
         <span>© ${new Date().getFullYear()} Chatgram. All rights reserved.</span>
         <span><a href="/">Home</a> · <a href="/docs/">Terms &amp; Privacy</a></span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
+`;
+}
+
+/* Chrome strings for the long-form content pages. The page copy itself lives in
+   content/pages.<code>.mjs; these are only the surrounding labels. */
+const CONTENT_CHROME = {
+  en: {
+    updated: 'Updated',
+    skip: 'Skip to content',
+    openApp: 'Open Chatgram',
+    language: 'Languages',
+    faq: 'Common questions',
+    more: 'More about Chatgram',
+    guides: 'Chatgram guides',
+    download: 'Download Chatgram',
+    legal: 'Terms & Privacy',
+    home: 'Chatgram home',
+  },
+  rw: {
+    updated: 'Byavuguruwe',
+    skip: 'Simbuka ku bikubiyemo',
+    openApp: 'Fungura Chatgram',
+    language: 'Indimi',
+    faq: 'Ibibazo bikunze kubazwa',
+    more: 'Ibindi kuri Chatgram',
+    guides: 'Ubuyobozi bwa Chatgram',
+    download: 'Kura Chatgram',
+    legal: "Amabwiriza n'ibanga",
+    home: 'Ahabanza Chatgram',
+  },
+  fr: {
+    updated: 'Mis à jour le',
+    skip: 'Aller au contenu',
+    openApp: 'Ouvrir Chatgram',
+    language: 'Langues',
+    faq: 'Questions fréquentes',
+    more: 'En savoir plus sur Chatgram',
+    guides: 'Guides Chatgram',
+    download: 'Télécharger Chatgram',
+    legal: 'Conditions et confidentialité',
+    home: 'Accueil Chatgram',
+  },
+  sw: {
+    updated: 'Ilisasishwa',
+    skip: 'Ruka hadi maudhui',
+    openApp: 'Fungua Chatgram',
+    language: 'Lugha',
+    faq: 'Maswali ya kawaida',
+    more: 'Zaidi kuhusu Chatgram',
+    guides: 'Miongozo ya Chatgram',
+    download: 'Pakua Chatgram',
+    legal: 'Masharti na faragha',
+    home: 'Mwanzo wa Chatgram',
+  },
+};
+
+/* ------------------------------------------------- long-form content pages */
+export function renderContentPage({ page, meta, language, siteUrl, cssHref, jsHref }) {
+  const chrome = CONTENT_CHROME[language.code] || CONTENT_CHROME.en;
+  const canonicalPath = contentPagePath(meta.slug, language.code);
+  const alternates = [
+    ...LANGUAGES.map((l) => ({ hreflang: l.code, path: contentPagePath(meta.slug, l.code), ogLocale: l.ogLocale })),
+    { hreflang: 'x-default', path: contentPagePath(meta.slug, 'en'), ogLocale: 'en_US' },
+  ];
+  const orgId = `${siteUrl}/#organization`;
+  const graph = [
+    {
+      '@type': 'Organization',
+      '@id': orgId,
+      name: 'Chatgram',
+      url: `${siteUrl}/`,
+      logo: { '@type': 'ImageObject', url: `${siteUrl}${ICON.svg}`, width: 512, height: 512 },
+    },
+    {
+      '@type': 'BreadcrumbList',
+      '@id': `${siteUrl}${canonicalPath}#breadcrumbs`,
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Chatgram', item: `${siteUrl}${language.path}` },
+        { '@type': 'ListItem', position: 2, name: page.h1, item: `${siteUrl}${canonicalPath}` },
+      ],
+    },
+    {
+      '@type': 'WebPage',
+      '@id': `${siteUrl}${canonicalPath}#webpage`,
+      url: `${siteUrl}${canonicalPath}`,
+      name: page.title,
+      description: page.description,
+      inLanguage: language.htmlLang,
+      datePublished: CONTENT_UPDATED_ISO,
+      dateModified: CONTENT_UPDATED_ISO,
+      isPartOf: { '@id': `${siteUrl}/#website` },
+      publisher: { '@id': orgId },
+      primaryImageOfPage: { '@type': 'ImageObject', url: `${siteUrl}${OG_IMAGE.path}`, width: OG_IMAGE.width, height: OG_IMAGE.height },
+    },
+  ];
+  if (Array.isArray(page.faq) && page.faq.length) {
+    graph.push({
+      '@type': 'FAQPage',
+      '@id': `${siteUrl}${canonicalPath}#faq`,
+      mainEntity: page.faq.map((item) => ({
+        '@type': 'Question',
+        name: item.q,
+        acceptedAnswer: { '@type': 'Answer', text: item.a },
+      })),
+    });
+  }
+
+  const sections = page.sections
+    .map((s) => `        <h2>${e(s.h2)}</h2>\n${s.html.split('\n').map((line) => `        ${line}`).join('\n')}`)
+    .join('\n');
+
+  const languageLinks = LANGUAGES.map((l) => {
+    const href = contentPagePath(meta.slug, l.code);
+    const current = l.code === language.code ? ' aria-current="page"' : '';
+    return `<a href="${href}" hreflang="${l.code}" lang="${l.htmlLang}"${current}>${e(l.nativeLabel)}</a>`;
+  }).join('\n          ');
+
+  const relatedPages = CONTENT_PAGES.filter((p) => p.slug !== meta.slug)
+    .map((p) => `            <li><a href="${contentPagePath(p.slug, language.code)}">${e(p.label[language.code] || p.label.en)}</a></li>`)
+    .join('\n');
+
+  const relatedGuides = GUIDES.map((g) => `            <li><a href="${g.path}">${e(g.label[language.code] || g.label.en)}</a></li>`).join('\n');
+
+  const faqBlock = Array.isArray(page.faq) && page.faq.length
+    ? `        <h2>${e(chrome.faq)}</h2>
+        <div class="guide-faq">
+${page.faq
+  .map((item) => `          <details class="faq-item"><summary><span>${e(item.q)}</span></summary><p>${e(item.a)}</p></details>`)
+  .join('\n')}
+        </div>`
+    : '';
+
+  return `${head({
+    siteUrl,
+    htmlLang: language.htmlLang,
+    title: page.title,
+    description: page.description,
+    canonicalPath,
+    ogImageAlt: page.h1,
+    ogLocale: language.ogLocale,
+    jsonLd: { '@context': 'https://schema.org', '@graph': graph },
+    alternates,
+    preload: '',
+    cssHref,
+    jsHref,
+  })}
+<body>
+  <a class="skip-link" href="#main">${e(chrome.skip)}</a>
+  <header class="site-header">
+    <div class="wrap nav">
+      <a class="brand-link" href="${language.path}" aria-label="Chatgram home">${LOGO}<span>Chatgram</span></a>
+      <div class="nav-spacer"></div>
+      <a class="btn btn-primary nav-cta" href="/web/">${e(chrome.openApp)}</a>
+    </div>
+  </header>
+  <main id="main">
+    <div class="guide-head">
+      <div class="wrap">
+        <nav class="guide-breadcrumb" aria-label="Breadcrumb"><a href="${language.path}">Chatgram</a><span aria-hidden="true">/</span><span>${e(page.h1)}</span></nav>
+        <h1>${e(page.h1)}</h1>
+        <p class="guide-meta">${e(chrome.updated)} ${e(page.updated)}</p>
+        <nav class="guide-langs" aria-label="${e(chrome.language)}">
+          ${languageLinks}
+        </nav>
+      </div>
+    </div>
+    <div class="wrap">
+      <article class="guide-body">
+        <p class="guide-intro">${e(page.intro)}</p>
+${sections}
+${faqBlock}
+        <div class="guide-related">
+          <h2>${e(chrome.more)}</h2>
+          <ul>
+${relatedPages}
+          </ul>
+          <h3>${e(chrome.guides)}</h3>
+          <ul>
+${relatedGuides}
+          </ul>
+          <p><a href="${language.path}#download">${e(chrome.download)}</a> · <a href="/web/">${e(chrome.openApp)}</a> · <a href="/docs/">${e(chrome.legal)}</a></p>
+        </div>
+      </article>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="foot-bottom">
+        <span>© ${new Date().getFullYear()} Chatgram</span>
+        <span><a href="${language.path}">${e(chrome.home)}</a> · <a href="/docs/">${e(chrome.legal)}</a></span>
       </div>
     </div>
   </footer>
@@ -927,15 +1134,18 @@ export function renderNotFound({ siteUrl, cssHref, jsHref }) {
 
 export function renderSitemap({ siteUrl, entries, lastmod }) {
   const urls = entries
-    .map(
-      (entry) => `  <url>
+    .map((entry) => {
+      const alternates = (entry.alternates || [])
+        .map((a) => `    <xhtml:link rel="alternate" hreflang="${a.hreflang}" href="${siteUrl}${a.path}"/>`)
+        .join('\n');
+      return `  <url>
     <loc>${siteUrl}${entry.path}</loc>
-    <lastmod>${entry.lastmod || lastmod}</lastmod>
-  </url>`,
-    )
+${alternates ? `${alternates}\n` : ''}    <lastmod>${entry.lastmod || lastmod}</lastmod>
+  </url>`;
+    })
     .join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
 ${urls}
 </urlset>
 `;

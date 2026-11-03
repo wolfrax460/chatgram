@@ -26,6 +26,11 @@ const guides = [
   '/guides/chatgram-windows-download-smartscreen.html',
   '/guides/chatgram-ai-four-languages.html',
 ];
+const contentSlugs = ['about', 'is-chatgram-free', 'whats-new', 'privacy-and-safety'];
+const contentPaths = ['en', 'rw', 'fr', 'sw'].flatMap((code) =>
+  contentSlugs.map((slug) => (code === 'en' ? `/${slug}/` : `/${code}/${slug}/`)),
+);
+const totalUrls = pages.length + guides.length + contentPaths.length;
 
 let failures = 0;
 function ok(condition, message) {
@@ -85,13 +90,40 @@ for (const rel of guides) {
   ok(html.includes('<h2>'), 'guide page has section headings');
 }
 
+for (const url of contentPaths) {
+  const rel = `${url.slice(1)}index.html`;
+  const html = await readFile(path.join(DIST, rel), 'utf8');
+  const title = plain(text(html, /<title>([\s\S]*?)<\/title>/));
+  const description = text(html, /<meta name="description" content="([^"]*)"/);
+  const h1 = plain(text(html, /<h1>([\s\S]*?)<\/h1>/));
+  const canonical = text(html, /<link rel="canonical" href="([^"]+)"/);
+  const words = plain(html).split(/\s+/).filter(Boolean).length;
+  const ld = JSON.parse(text(html, /<script type="application\/ld\+json">([\s\S]*?)<\/script>/));
+  const nodes = ld['@graph'] || [];
+  console.log(`\n${url} -> ${rel}`);
+  console.log(`  title (${title.length}): ${title}`);
+  console.log(`  ${words} visible words, h1: ${h1}`);
+  ok(title.length > 0 && title.length <= 60, 'title is within 60 characters');
+  ok(description.length >= 70 && description.length <= 155, 'meta description is 70-155 characters');
+  ok(h1.includes('Chatgram'), 'H1 includes the Chatgram brand');
+  ok(canonical.endsWith(url), `canonical points at ${url}`);
+  ok((html.match(/<h1[\s>]/g) || []).length === 1, 'exactly one H1');
+  ok(html.includes('hreflang="x-default"'), 'hreflang x-default present');
+  ok(words >= 600, `${words} visible words (at least 600)`);
+  ok(nodes.some((node) => node['@type'] === 'WebPage'), 'WebPage JSON-LD present');
+  ok(nodes.some((node) => node['@type'] === 'BreadcrumbList'), 'BreadcrumbList JSON-LD present');
+}
+
 const sitemap = await readFile(path.join(DIST, 'sitemap.xml'), 'utf8');
 const robots = await readFile(path.join(DIST, 'robots.txt'), 'utf8');
 const notFound = await readFile(path.join(DIST, '404.html'), 'utf8');
 console.log('\nsitemap.xml / robots.txt / 404.html');
 console.log(`  sitemap URLs: ${(sitemap.match(/<loc>/g) || []).length}`);
 console.log(`  sitemap lastmod entries: ${(sitemap.match(/<lastmod>/g) || []).length}`);
-ok((sitemap.match(/<loc>/g) || []).length === 8, 'sitemap lists the 4 language pages + 4 guides');
+console.log(`  sitemap hreflang alternates: ${(sitemap.match(/<xhtml:link /g) || []).length}`);
+ok((sitemap.match(/<loc>/g) || []).length === totalUrls, `sitemap lists all ${totalUrls} URLs (4 languages + 4 guides + ${contentPaths.length} content pages)`);
+ok((sitemap.match(/<lastmod>/g) || []).length === totalUrls, 'every sitemap URL has a lastmod');
+ok((sitemap.match(/<xhtml:link /g) || []).length >= 40, 'sitemap carries hreflang alternates');
 ok(robots.includes('Sitemap: https://'), 'robots.txt points at the sitemap');
 ok(!/admin/i.test(robots), 'robots.txt does not mention admin paths');
 ok(notFound.includes('noindex'), '404.html is noindex');

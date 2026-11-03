@@ -87,7 +87,12 @@ if ($IncludeWebApp -and -not $EnableRedirect) {
 $routes = @(
   @{
     src = '/(.*)'
-    headers = @{ 'Permissions-Policy' = 'camera=(self), microphone=(self), display-capture=(self), fullscreen=(self)' }
+    headers = @{
+      'Permissions-Policy'           = 'camera=(self), microphone=(self), display-capture=(self), fullscreen=(self)'
+      'Strict-Transport-Security'    = 'max-age=31536000'
+      'X-Content-Type-Options'       = 'nosniff'
+      'Referrer-Policy'              = 'strict-origin-when-cross-origin'
+    }
     continue = $true
   },
   @{ src = '/static/(.*)'; headers = @{ 'cache-control' = 'public, max-age=31536000, immutable' }; continue = $true },
@@ -116,6 +121,13 @@ $redirects = @(
 $oldHost = 'chatgram-xi.vercel.app'
 $hostCondition = @(@{ type = 'host'; value = $oldHost })
 
+# Host redirects are written TWICE on purpose. The `redirects` array is what the
+# Vercel docs describe for Build Output v3, but a prebuilt deployment silently
+# ignored it (old host kept answering 200). These `routes` entries with
+# `status` + `dest` are the form the routing layer actually honours, so the two
+# written forms are kept in sync by the same loop below.
+$redirectRoutes = @()
+
 # Landing-page allow-list, as source -> destination-path pairs so the new home
 # always receives the canonical path (e.g. /rw -> /rw/). Everything that serves a
 # real file an installed app depends on (API, downloads, release feed,
@@ -141,6 +153,21 @@ $pageRedirects = @(
   @{ source = '/guides/chatgram-ai-four-languages.html'; destinationPath = '/guides/chatgram-ai-four-languages.html' }
 )
 
+# The long-form content pages (/about/, /fr/about/, /sw/whats-new/ ...). Generated
+# from the same slug list the landing build renders, so a new page can never be
+# added to the site without appearing in this redirect allow-list.
+$contentSlugs = @('about', 'is-chatgram-free', 'whats-new', 'privacy-and-safety')
+foreach ($slug in $contentSlugs) {
+  foreach ($source in @("/$slug", "/$slug/")) {
+    $pageRedirects += @{ source = $source; destinationPath = "/$slug/" }
+  }
+  foreach ($lang in @('rw', 'fr', 'sw')) {
+    foreach ($source in @("/$lang/$slug", "/$lang/$slug/")) {
+      $pageRedirects += @{ source = $source; destinationPath = "/$lang/$slug/" }
+    }
+  }
+}
+
 if ($EnableRedirect) {
   foreach ($pageRedirect in $pageRedirects) {
     $redirects += @{
@@ -149,6 +176,12 @@ if ($EnableRedirect) {
       destination = "$redirectTarget$($pageRedirect.destinationPath)"
       permanent = $true
     }
+    $redirectRoutes += @{
+      src = "^$([regex]::Escape($pageRedirect.source))$"
+      status = 308
+      dest = "$redirectTarget$($pageRedirect.destinationPath)"
+      has = $hostCondition
+    }
   }
 
   # /web/ is only redirected when every installed shell has been rebuilt to the
@@ -156,8 +189,10 @@ if ($EnableRedirect) {
   if ($IncludeWebApp) {
     foreach ($source in @('/web', '/web/')) {
       $redirects += @{ source = $source; has = $hostCondition; destination = "$redirectTarget/web/"; permanent = $true }
+      $redirectRoutes += @{ src = "^$([regex]::Escape($source))$"; status = 308; dest = "$redirectTarget/web/"; has = $hostCondition }
     }
     $redirects += @{ source = '/web/:path*'; has = $hostCondition; destination = "$redirectTarget/web/:path*"; permanent = $true }
+    $redirectRoutes += @{ src = '^/web/(.*)$'; status = 308; dest = "$redirectTarget/web/`$1"; has = $hostCondition }
   }
 
   # Safety rail (b): refuse to emit any redirect that touches the paths installed
@@ -174,12 +209,35 @@ if ($EnableRedirect) {
         throw 'Refusing to redirect /web without -IncludeWebApp'
       }
     }
+    foreach ($entry in $redirectRoutes) {
+      if ($entry.src -match '^(\^)?/web') {
+        throw 'Refusing to redirect /web without -IncludeWebApp'
+      }
+    }
   }
+  foreach ($entry in $redirectRoutes) {
+    if ($entry.src -match '(api|downloads|version|latest|checksums|apk|exe)') {
+      throw "Refusing to write a route redirect for a protected path: $($entry.src)"
+    }
+  }
+}
+
+# Host redirects must be evaluated before the filesystem handler, before the 404
+# fallback AND before the /rw, /fr and /sw rewrites below (otherwise the static
+# file wins and the old host keeps answering 200 for a landing page).
+$finalRoutes = @()
+foreach ($route in $routes) {
+  if ($route.ContainsKey('src') -and $route.src -eq '/rw/?') {
+    # Legacy alias: /app used to be 307'd to /web/ by the old landing deployment.
+    $finalRoutes += @{ src = '^/app/?$'; status = 307; dest = '/web/' }
+    foreach ($redirectRoute in $redirectRoutes) { $finalRoutes += $redirectRoute }
+  }
+  $finalRoutes += $route
 }
 
 $configObject = [ordered]@{
   version = 3
-  routes = $routes
+  routes = $finalRoutes
   redirects = $redirects
 }
 $config = ($configObject | ConvertTo-Json -Depth 12)

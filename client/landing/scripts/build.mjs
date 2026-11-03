@@ -19,14 +19,18 @@ import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { GUIDES, LANGUAGES, RELEASES } from '../content/site.mjs';
+import { CONTENT_PAGES, CONTENT_UPDATED_ISO, GUIDES, LANGUAGES, RELEASES, contentPagePath } from '../content/site.mjs';
 import { resolveSiteUrl } from '../content/site-url.mjs';
 import en from '../content/landing.en.mjs';
 import rw from '../content/landing.rw.mjs';
 import fr from '../content/landing.fr.mjs';
 import sw from '../content/landing.sw.mjs';
 import { GUIDES_CONTENT } from '../content/guides.mjs';
-import { renderGuidePage, renderLocalePage, renderManifest, renderNotFound, renderRobots, renderSitemap } from './templates.mjs';
+import * as pagesEn from '../content/pages.en.mjs';
+import * as pagesRw from '../content/pages.rw.mjs';
+import * as pagesFr from '../content/pages.fr.mjs';
+import * as pagesSw from '../content/pages.sw.mjs';
+import { renderContentPage, renderGuidePage, renderLocalePage, renderManifest, renderNotFound, renderRobots, renderSitemap } from './templates.mjs';
 import { qrSvg } from './qr.mjs';
 import { validateSite } from './validate.mjs';
 
@@ -34,6 +38,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LANDING = path.resolve(__dirname, '..');
 const DIST = path.join(LANDING, 'dist');
 const CONTENT = { en, rw, fr, sw };
+const PAGE_CONTENT = { en: pagesEn.PAGES, rw: pagesRw.PAGES, fr: pagesFr.PAGES, sw: pagesSw.PAGES };
 
 function assetHash(buffer) {
   return createHash('sha256').update(buffer).digest('hex').slice(0, 10);
@@ -99,8 +104,35 @@ async function main() {
 
   /* 404, sitemap, robots, web manifest. */
   await write('404.html', renderNotFound({ siteUrl, cssHref, jsHref }));
+
+  /* Long-form content pages: /about/, /fr/about/ ... one real HTML file each. */
+  const contentPages = [];
+  for (const locale of LANGUAGES) {
+    const bundle = PAGE_CONTENT[locale.code];
+    for (const meta of CONTENT_PAGES) {
+      const page = bundle[meta.slug];
+      if (!page) throw new Error(`pages.${locale.code}.mjs is missing "${meta.slug}"`);
+      const pathname = contentPagePath(meta.slug, locale.code);
+      await write(`${pathname.replace(/^\//, '')}index.html`, renderContentPage({ page, meta, language: locale, siteUrl, cssHref, jsHref }));
+      contentPages.push({ code: locale.code, path: pathname, meta, page });
+      console.log(`    wrote ${pathname}  (${locale.code})`);
+    }
+  }
+
+  const landingAlternates = [
+    ...LANGUAGES.map((l) => ({ hreflang: l.code, path: l.path })),
+    { hreflang: 'x-default', path: '/' },
+  ];
   const entries = [
-    ...LANGUAGES.map((l) => ({ path: l.path, lastmod: today })),
+    ...LANGUAGES.map((l) => ({ path: l.path, lastmod: today, alternates: landingAlternates })),
+    ...contentPages.map(({ path: pathname, meta }) => ({
+      path: pathname,
+      lastmod: CONTENT_UPDATED_ISO,
+      alternates: [
+        ...LANGUAGES.map((l) => ({ hreflang: l.code, path: contentPagePath(meta.slug, l.code) })),
+        { hreflang: 'x-default', path: contentPagePath(meta.slug, 'en') },
+      ],
+    })),
     ...GUIDES.map((g) => ({ path: g.path, lastmod: today })),
   ];
   await write('sitemap.xml', renderSitemap({ siteUrl, entries, lastmod: today }));
@@ -114,6 +146,7 @@ async function main() {
     locales: LANGUAGES.map((language) => ({ ...CONTENT[language.code], path: language.path, htmlLang: language.htmlLang })),
     guideContents: GUIDES_CONTENT,
     guideMeta,
+    contentPages,
   });
 
   for (const note of notes) console.log(`    · ${note}`);

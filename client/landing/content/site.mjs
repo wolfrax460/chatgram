@@ -168,3 +168,58 @@ export const GUIDES = [
 ];
 
 export const guideByPath = new Map(GUIDES.map((g) => [g.path, g]));
+
+/**
+ * Long-form content pages. One page per topic per language:
+ * English lives at `/<slug>/`, the other languages at `/<code>/<slug>/`.
+ * The copy comes from content/pages.<code>.mjs; this list only names the topics,
+ * their paths and the nav/footer labels used to link them together.
+ */
+export const CONTENT_PAGES = [
+  {
+    slug: 'about',
+    label: {
+      en: 'About Chatgram',
+      rw: 'Ibijyanye na Chatgram',
+      fr: 'À propos de Chatgram',
+      sw: 'Kuhusu Chatgram',
+    },
+  },
+  {
+    slug: 'is-chatgram-free',
+    label: {
+      en: 'Is Chatgram free?',
+      rw: 'Ese Chatgram ni ubuntu?',
+      fr: 'Chatgram est-il gratuit ?',
+      sw: 'Je, Chatgram ni bure?',
+    },
+  },
+  {
+    slug: 'whats-new',
+    label: {
+      en: "What's new",
+      rw: 'Ibishya muri Chatgram',
+      fr: 'Nouveautés',
+      sw: 'Mpya katika Chatgram',
+    },
+  },
+  {
+    slug: 'privacy-and-safety',
+    label: {
+      en: 'Privacy and safety',
+      rw: "Ubuzima bwite n'umutekano",
+      fr: 'Confidentialité et sécurité',
+      sw: 'Faragha na usalama',
+    },
+  },
+];
+
+/** ISO date of the last content review; used for sitemap lastmod and JSON-LD. */
+export const CONTENT_UPDATED_ISO = '2026-11-03';
+
+/** Path of a content page in one language: `/about/` or `/fr/about/`. */
+export function contentPagePath(slug, code) {
+  return code === 'en' ? `/${slug}/` : `/${code}/${slug}/`;
+}
+
+export const contentPageBySlug = new Map(CONTENT_PAGES.map((p) => [p.slug, p]));

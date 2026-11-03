@@ -162,6 +162,10 @@ export const GUIDES_CONTENT = [
         html: `<p>The Windows build checks the published release feed under /downloads/ and installs a newer version when one is published, so you do not need to download a new installer by hand each time. If an automatic update fails, download the installer again from this page and run it over the existing installation; your account data stays on the server and is not affected.</p>`,
       },
       {
+        h2: 'Keeping the Windows app healthy',
+        html: `<p>The installer is a normal Windows program. Keep a few hundred megabytes free on the Windows drive, let the app finish an update before you close the window, and do not run two installers at the same time. If a company firewall sits in front of your connection, Chatgram needs outbound HTTPS and WSS to reach the server; nothing has to be opened inbound. Removing the app with Windows Settings → Apps keeps your account and conversations, and installing it again brings them back after you sign in.</p>`,
+      },
+      {
         h2: 'Troubleshooting',
         html: `<ul>
 <li><strong>No “Run anyway” button:</strong> expand “More info” first — the button only appears after that. If the window still blocks you, the file may have been altered in transit; delete it and download again.</li>
@@ -212,7 +216,7 @@ export const GUIDES_CONTENT = [
       },
       {
         h2: 'When it cannot help',
-        html: `<p>The in-app help centre has 37 articles that the assistant can answer from, covering downloads, privacy settings, groups, calls and account changes. If the answer is still not good enough, use the hand-off action: it opens a support ticket and passes the conversation to a person. That is the fastest route for account-specific problems.</p>`,
+        html: `<p>The in-app help centre has 37 articles that the assistant can answer from, covering downloads, privacy settings, groups, calls and account changes. If the answer is still not good enough, use the hand-off action: it opens a support ticket and passes the conversation to a person. That is the fastest route for account-specific problems. If a call dropped, a message never arrived or your account shows something you do not recognise, open the ticket straight away instead of rewording the same question for the assistant.</p>`,
       },
       {
         h2: 'Get the app',

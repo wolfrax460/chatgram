@@ -6,8 +6,10 @@
  * robots, image dimensions and the anchors/strings the existing Playwright
  * landing spec looks for.
  */
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
+
+import { LANGUAGES, contentPagePath } from '../content/site.mjs';
 
 const failures = [];
 const notes = [];
@@ -73,7 +75,7 @@ async function readHtml(distDir, relPath) {
   return readFile(path.join(distDir, relPath), 'utf8');
 }
 
-export async function validateSite({ distDir, siteUrl, locales, guideContents, guideMeta }) {
+export async function validateSite({ distDir, siteUrl, locales, guideContents, guideMeta, contentPages = [] }) {
   const today = new Date().toISOString().slice(0, 10);
 
   /* ---------------------------------------------------------------- landing */
@@ -195,9 +197,11 @@ export async function validateSite({ distDir, siteUrl, locales, guideContents, g
     const html = await readHtml(distDir, meta.path.replace(/^\//, ''));
     check(meta.title.length <= 60, `[guide ${content.slug}] title is ${meta.title.length} chars (max 60)`);
     check(meta.description.length >= 70 && meta.description.length <= 160, `[guide ${content.slug}] description is ${meta.description.length} chars (70-160)`);
+    const bodyWords = visibleWordCount([content.intro, ...content.sections.map((s) => `${s.h2} ${s.html}`)].join(' '));
     const words = visibleWordCount(html);
-    check(words >= 400 && words <= 700, `[guide ${content.slug}] visible word count is ${words} (needs 400-700)`);
-    notes.push(`guide ${content.slug}: ${words} words`);
+    check(bodyWords >= 600 && bodyWords <= 900, `[guide ${content.slug}] article body is ${bodyWords} words (needs 600-900)`);
+    check(words >= 650 && words <= 1100, `[guide ${content.slug}] rendered page is ${words} words (needs 650-1100)`);
+    notes.push(`guide ${content.slug}: ${bodyWords} body words`);
     check(html.includes(`<link rel="canonical" href="${siteUrl}${meta.path}">`), `[guide ${content.slug}] missing canonical`);
     check(html.includes(`<h1>`), `[guide ${content.slug}] missing H1`);
     const jsonLd = extractLdJson(html);
@@ -210,6 +214,70 @@ export async function validateSite({ distDir, siteUrl, locales, guideContents, g
     for (const link of links) check(allowed.has(link), `[guide ${content.slug}] unexpected download link ${link}`);
   }
 
+  /* --------------------------------------------------------- content pages */
+  for (const { code, path: pathname, meta, page } of contentPages) {
+    const label = `[content ${code}/${meta.slug}]`;
+    const rel = `${pathname.replace(/^\//, '')}index.html`;
+    const html = await readHtml(distDir, rel);
+    const canonical = `${siteUrl}${pathname}`;
+
+    check(page.title.length >= 10 && page.title.length <= 60, `${label} title is ${page.title.length} chars (10-60)`);
+    check(page.description.length >= 70 && page.description.length <= 155, `${label} description is ${page.description.length} chars (70-155)`);
+    check(html.includes(`<link rel="canonical" href="${canonical}">`), `${label} missing self-referencing canonical ${canonical}`);
+    for (const language of LANGUAGES) {
+      const alt = `${siteUrl}${contentPagePath(meta.slug, language.code)}`;
+      check(html.includes(`hreflang="${language.code}" href="${alt}"`), `${label} missing hreflang="${language.code}" -> ${alt}`);
+    }
+    check(
+      html.includes(`hreflang="x-default" href="${siteUrl}${contentPagePath(meta.slug, 'en')}"`),
+      `${label} missing hreflang x-default -> English page`,
+    );
+
+    const h1s = html.match(/<h1[\s>]/g) || [];
+    check(h1s.length === 1, `${label} must have exactly one <h1>, found ${h1s.length}`);
+    check(html.includes(`<html lang="${code}"`), `${label} <html lang> must be "${code}"`);
+    const esc = (value) =>
+      value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    check(html.includes(`<h2>${esc(page.sections[0].h2)}</h2>`), `${label} first H2 is missing`);
+
+    const bodyWords = visibleWordCount(
+      [page.intro, ...page.sections.map((s) => `${s.h2} ${s.html}`), ...page.faq.flatMap((f) => [f.q, f.a])].join(' '),
+    );
+    check(bodyWords >= 600 && bodyWords <= 900, `${label} body has ${bodyWords} words (needs 600-900)`);
+    notes.push(`content ${code}/${meta.slug}: ${bodyWords} words`);
+
+    const nodes = collectTypes(extractLdJson(html));
+    const webpage = nodes.find((node) => node && node['@type'] === 'WebPage');
+    check(webpage && webpage.url === canonical, `${label} WebPage JSON-LD must carry the canonical url`);
+    check(nodes.some((node) => node && node['@type'] === 'BreadcrumbList'), `${label} missing BreadcrumbList JSON-LD`);
+    const faqNode = nodes.find((node) => node && node['@type'] === 'FAQPage');
+    check(faqNode && faqNode.mainEntity.length === page.faq.length, `${label} FAQPage must match the visible FAQ items`);
+
+    check(!html.includes('aggregateRating'), `${label} must not include aggregateRating`);
+    check(!html.includes('http://'), `${label} must not contain insecure http:// links`);
+
+    /* /web/, /api/ and /downloads/ are served by the app, the API and the
+       download directory, not by files in dist/, so they are checked by name. */
+    const runtimePaths = /^\/(web|api|downloads)(\/|$)/;
+    const hrefs = [...new Set((html.match(/href="(\/[^"#]*)"/g) || []).map((h) => h.slice(6, -1)))];
+    for (const href of hrefs) {
+      if (runtimePaths.test(href)) continue;
+      const target = path.join(distDir, href.replace(/^\//, ''));
+      const candidates = href.endsWith('/') ? [path.join(target, 'index.html')] : [target, `${target}.html`, path.join(target, 'index.html')];
+      let found = false;
+      for (const candidate of candidates) {
+        try {
+          await access(candidate);
+          found = true;
+          break;
+        } catch {
+          /* try the next candidate */
+        }
+      }
+      check(found, `${label} internal link ${href} does not resolve to a built file`);
+    }
+  }
+
   /* ----------------------------------------------------- sitemap / robots */
   const sitemap = await readFile(path.join(distDir, 'sitemap.xml'), 'utf8');
   const sitemapPaths = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
@@ -217,10 +285,13 @@ export async function validateSite({ distDir, siteUrl, locales, guideContents, g
     `${siteUrl}/`,
     ...locales.filter((l) => l.path !== '/').map((l) => `${siteUrl}${l.path}`),
     ...guideContents.map((g) => `${siteUrl}${guideMeta.get(g.slug).path}`),
+    ...contentPages.map((c) => `${siteUrl}${c.path}`),
   ];
   for (const url of expectedPaths) check(sitemapPaths.includes(url), `sitemap is missing ${url}`);
   check(sitemapPaths.length === expectedPaths.length, `sitemap has ${sitemapPaths.length} URLs, expected ${expectedPaths.length}`);
   check((sitemap.match(/<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/g) || []).length === expectedPaths.length, 'sitemap entries must all have lastmod');
+  check(sitemap.includes('xmlns:xhtml="http://www.w3.org/1999/xhtml"'), 'sitemap must declare the xhtml namespace for hreflang alternates');
+  check((sitemap.match(/<xhtml:link rel="alternate" hreflang="x-default"/g) || []).length === locales.length + contentPages.length, 'sitemap must carry an x-default alternate for every translated page');
   if (today) notes.push(`sitemap lastmod ${today}`);
 
   const robots = await readFile(path.join(distDir, 'robots.txt'), 'utf8');
