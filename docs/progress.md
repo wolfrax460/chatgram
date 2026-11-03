@@ -591,3 +591,10 @@ LIVE NOW: `https://chatgram.qd.je` (VM, Let's Encrypt to 2027-01-31, canonical e
 7. **Owner checklist** to hand back: Search Console domain property (DNS TXT) + sitemap submission + Change of address, Bing Webmaster import, request indexing, official profiles (GitHub/LinkedIn/X/Facebook/Instagram/YouTube/TikTok/Telegram) with the same name+logo, site link on GitHub, directories (Product Hunt, AlternativeTo, Android/Windows software sites, Rwandan tech communities), honest reviews from early users, and the reminder that rankings take weeks to months.
 
 Constraints that still apply: agents never deploy; Lead deploys after tsc/build/tests; no new Playwright suites; at most 2 screenshots; never commit `ads/`, `vercel.json`, `package-lock.json` is tracked on purpose; never print secrets; the SSH key needs a strict-ACL copy (`icacls /inheritance:r /grant:r "%USERNAME%:F"`) and must be deleted afterwards.
+
+
+### CONFIRMED (2026-11-03, owner): final domain is https://chatgram.qd.je
+- `chatgram.qd.je` is the FINAL address, not abandoned; it is already live over HTTPS, canonical, with the sitemap/robots/QR pointing at it. A `chatgram.dpdns.org` domain may be added LATER (not confirmed), so keep host handling multi-host: `SITE_URL` (landing build), `ALLOWED_ORIGINS` (API/Socket.IO), `VITE_SITE_URL` (web app) and `OUR_HOSTS` in `server/src/utils/publicUrls.js` are the only places that name a host.
+- So the SEO programme (task items 2-4) runs against `chatgram.qd.je` as-is; the app rebuilds (item 3) get `PRIMARY_ORIGIN = https://chatgram.qd.je` and `server.url = https://chatgram.qd.je/web/`; the Vercel 308 work stays on `chatgram-xi.vercel.app`.
+- Owner decisions still needed when they come up: (a) monetisation answer for the "Is Chatgram free?" page, (b) approval before ANY analytics, (c) the official social profiles for `sameAs`/JSON-LD (TODO list until they exist), (d) SmartScreen/installer copy review.
+- This session ended at its context limit by design (token rules); the queue above (items 1-7 of the previous note) is unchanged and is the next session's work order.
