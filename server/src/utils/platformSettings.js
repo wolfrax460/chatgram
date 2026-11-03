@@ -276,6 +276,13 @@ async function platformGate(req, res, next) {
     const settings = await get();
     const decision = gateDecision(settings, { path: req.path, method: req.method });
     if (!decision) return next();
+    // Crawlers and clients only back off on a 503 when Retry-After is present.
+    // Prefer the real end of the maintenance window, otherwise ask for 5 minutes.
+    if (decision.status === 503) {
+      const until = decision.maintenanceUntil ? Date.parse(decision.maintenanceUntil) : NaN;
+      const waitSeconds = Number.isFinite(until) ? Math.max(30, Math.ceil((until - Date.now()) / 1000)) : 300;
+      res.set('Retry-After', String(waitSeconds));
+    }
     return res.status(decision.status).json({
       message: decision.message,
       code: decision.code,

@@ -399,3 +399,13 @@ old host answers 200 instead of redirecting, and the legacy `/app` -> `/web/` ru
 now returns 404. Implement those rules through `routes` in the Build Output config (using `status`
 plus a `Location` header) or a project-level `client/landing/vercel.json`; keep `/api/*`,
 `/downloads/*`, `/web/version.json`, `latest.yml`, `checksums.txt` and the binary paths unredirected.
+
+#### chatgram.qd.je vhost: which file is live, and how to change it (2026-11-03)
+- The ENABLED file is `/etc/nginx/sites-available/chatgram.qd.je` (no `.conf` suffix): that is where certbot wrote the TLS block and what `/etc/nginx/sites-enabled/chatgram.qd.je` symlinks to. A second file named `chatgram.qd.je.conf` is NOT included by nginx, so editing it changes nothing.
+- `deploy/nginx/chatgram.qd.je.conf` in this repo is now a verbatim copy of the live file (certbot block included). Change it here, then install it with:
+  `scp -i %USERPROFILE%\cg-key.pem deploy/nginx/chatgram.qd.je.conf ubuntu@84.12.64.204:/tmp/chatgram.qd.je.conf`
+  `ssh ... 'bash -s' < scripts/install-qdje-nginx.sh` - backs up, runs `nginx -t` and restores on failure.
+- For a one-off header addition without replacing the file, `python3 scripts/patch-qdje-nginx.py` on the VM inserts HSTS/nosniff/Referrer-Policy after every `add_header Permissions-Policy` block (idempotent, backs up, rolls back if `nginx -t` fails).
+- The vhost sends HSTS (`max-age=31536000`), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, and gzips `text/css`, `application/javascript`, JSON, SVG and XML as well as HTML (nginx only compresses `text/html` by default, which cost ~35 KB on the landing page).
+- Adding a host redirect on the Vercel mirror: the Build Output `redirects` array is ignored by prebuilt deployments. `scripts/deploy-web.ps1 -EnableRedirect` writes the rules to BOTH `redirects` and `routes` (`status` + `dest`), and the `routes` form is the one that works - it must stay before the `/rw`, `/fr`, `/sw` rewrites and before `handle: filesystem`. Verify with `Invoke-WebRequest -MaximumRedirection 0` that `/`, `/rw/` and every guide answer 308 with the query string preserved while `/web/`, `/api`, `/downloads` and `version.json` stay 200.
+- SEO regression test for either copy: `node scripts/seo-audit.mjs` (live) or `node scripts/seo-audit.mjs --dist client/landing/dist` (offline). It exits non-zero on a failure and currently reports 258 passed / 0 failed / 4 warnings (guides not yet translated).
