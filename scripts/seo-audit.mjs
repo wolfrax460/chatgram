@@ -678,6 +678,8 @@ async function auditRobots(mode, origin, distDir) {
     return;
   }
 
+  if (body.startsWith('\uFEFF')) fail('robots.txt encoding', 'BOM at the start of robots.txt');
+
   const sitemapLines = [...body.matchAll(/^\s*Sitemap:\s*(\S+)\s*$/gim)].map((match) => match[1]);
   const nonHttps = sitemapLines.filter((line) => !/^https:\/\//i.test(line));
   if (sitemapLines.length === 0) {
@@ -698,6 +700,37 @@ async function auditRobots(mode, origin, distDir) {
   }
 }
 
+/**
+ * Plain HTTP must answer with exactly one 301/308 to the HTTPS origin. Search
+ * Console gave "Sitemap could not be read" while :80 returned 404 here, so this
+ * is checked on the home page and on the sitemap itself.
+ */
+async function auditPlainHttpRedirect(mode, origin) {
+  if (mode === 'dist') {
+    skip('http->https /', 'network-only (dist mode)');
+    skip('http->https /sitemap.xml', 'network-only (dist mode)');
+    return;
+  }
+  const httpOrigin = origin.replace(/^https:/, 'http:');
+  for (const pagePath of ['/', '/sitemap.xml']) {
+    const name = `http->https ${pagePath}`;
+    try {
+      const response = await rawFetch(`${httpOrigin}${pagePath}`, { redirect: 'manual', headers: { accept: '*/*' } });
+      const location = String(response.headers.get('location') || '');
+      const isRedirect = response.status === 301 || response.status === 308;
+      if (isRedirect && /^https:\/\//i.test(location)) {
+        pass(name, `${response.status} -> ${location}`);
+      } else if (isRedirect) {
+        fail(name, `${response.status} to a non-https location: ${location || '(none)'}`);
+      } else {
+        fail(name, `expected a single 301/308 to https, got ${response.status} (location: ${location || '(none)'})`);
+      }
+    } catch (error) {
+      fail(name, `network error: ${errorText(error)}`);
+    }
+  }
+}
+
 async function auditSitemap(mode, origin, distDir) {
   let body = null;
   let sourceNote = '';
@@ -714,6 +747,9 @@ async function auditSitemap(mode, origin, distDir) {
       const response = await fetchText(`${origin}/sitemap.xml`, 'application/xml,text/xml,*/*;q=0.8');
       if (response.status === 200) pass('sitemap.xml status', '200');
       else fail('sitemap.xml status', `expected 200, got ${response.status}`);
+      const sitemapType = String(response.headers.get('content-type') || '');
+      if (/xml/i.test(sitemapType)) pass('sitemap content-type', sitemapType);
+      else fail('sitemap content-type', `expected an XML content type, got ${sitemapType || '(none)'}`);
       if (response.status === 200) body = response.body;
     } catch (error) {
       fail('sitemap.xml status', `network error: ${errorText(error)}`);
@@ -725,6 +761,14 @@ async function auditSitemap(mode, origin, distDir) {
       fail(name, sourceNote || 'sitemap.xml not available');
     }
     return;
+  }
+
+  if (body.startsWith('\uFEFF')) {
+    fail('sitemap encoding', 'a BOM precedes the XML declaration');
+  } else if (!body.trimStart().startsWith('<?xml')) {
+    fail('sitemap encoding', 'missing the <?xml ... ?> declaration');
+  } else {
+    pass('sitemap encoding', 'no BOM, starts with the XML declaration');
   }
 
   const urlBlocks = [...body.matchAll(/<url>([\s\S]*?)<\/url>/gi)].map((match) => match[1]);
@@ -917,6 +961,7 @@ async function main() {
   await auditInternalLinks(pageInfos, mode, options.origin);
   await auditRobots(mode, options.origin, distDir);
   await auditSitemap(mode, options.origin, distDir);
+  await auditPlainHttpRedirect(mode, options.origin);
   await audit404Page(mode, options.origin, distDir);
   await auditWebApp(mode, options.origin);
   await auditSecurityHeaders(mode, sources.get('/'));
